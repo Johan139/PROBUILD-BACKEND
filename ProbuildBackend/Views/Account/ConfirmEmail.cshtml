@@ -1,0 +1,14 @@
+﻿@{
+    ViewData["Title"] = "Email Confirmation";
+}
+<div>
+    <p>Email confirmed successfully. You will be redirected shortly.</p>
+    <p>If not redirected, <a href="@Url.Action("Index", "Home")">click here</a>.</p>
+</div>
+
+<script>
+    // Redirect after 10 seconds
+    setTimeout(function() {
+        window.location.href = '@Url.Action("Index", "Home")';
+    }, 10000);
+</script>

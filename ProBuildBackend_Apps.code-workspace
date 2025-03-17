@@ -1,0 +1,23 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../../nodejs/ProBuild-OnBoarding"
+		},
+		{
+			"path": "../../nodejs/ProBuild-UI"
+		},
+		{
+			"path": "../../nodejs/Probuild-UI-Beta"
+		},
+		{
+			"path": "../../python/ProbuildAI"
+		},
+		{
+			"path": "../../nodejs/chroma-ui"
+		}
+	],
+	"settings": {}
+}

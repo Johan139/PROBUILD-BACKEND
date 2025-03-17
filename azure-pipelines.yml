@@ -1,0 +1,54 @@
+trigger:
+
+  branches:
+    include:
+      - master
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+- stage: BuildAndDeploy
+  displayName: Build, Push Docker Image & Deploy to Azure Container Apps
+  jobs:
+  - job: BuildPushDeploy
+    displayName: Build, Push, and Deploy Docker Image
+    steps:
+
+    - task: DockerInstaller@0
+      inputs:
+        dockerVersion: '17.09.0-ce'
+      displayName: Install Docker
+
+    - task: AzureCLI@2
+      displayName: Log in to Azure Container Registry
+      inputs:
+        azureSubscription: '$(AZURE_SUBCRIPTION)'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          az acr login --name $(ACR_NAME)
+
+    - task: Docker@2
+      displayName: Build and push Docker image to ACR
+      inputs:
+        command: buildAndPush
+        repository: $(ACR_NAME).azurecr.io/probuild-backend
+        dockerfile: 'Dockerfile'
+        tags: 'latest'
+
+    - task: AzureCLI@2
+      displayName: Deploy to Azure Container Apps
+      inputs:
+        azureSubscription: '$(AZURE_SUBCRIPTION)'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          az containerapp update \
+            --name $(AZURE_CONTAINER_APP) \
+            --resource-group $(AZURE_RESOURCE_GROUP) \
+            --image $(ACR_NAME).azurecr.io/$(ACR_IMAGE) \
+            --cpu 2 \
+            --memory 4.0Gi \
+            --env-vars DB_CONNECTION_STRING="$(DB_CONNECTION_STRING)" \
+            FRONTEND_URL="$(FRONTEND_URL)"

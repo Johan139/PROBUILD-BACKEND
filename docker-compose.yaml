@@ -1,0 +1,14 @@
+version: '3.8'
+services:
+  probuild-ai-backend:
+    image: ghcr.io/initd-itservices/probuild-backend:latest  # Replace with your image name
+    container_name: probuild-ai-backend
+    environment:
+      - DB_CONNECTION_STRING=${DB_CONNECTION_STRING}
+    ports:
+      - "5000:8080"  # Adjust ports as needed 
+    networks:
+      - mssql_network
+networks:
+  mssql_network:
+    driver: bridge
