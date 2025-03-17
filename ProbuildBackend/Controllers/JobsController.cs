@@ -90,10 +90,13 @@ namespace ProbuildBackend.Controllers
 
             return Ok(job);
         }
-
-
-
-        [HttpPut("{id}")]
+        [HttpPost]
+        [RequestSizeLimit(200 * 1024 * 1024)]
+        public async Task<IActionResult> UploadImage([FromForm] JobDto jobrequest)
+        {
+            return null;
+        }
+            [HttpPut("{id}")]
         public async Task<IActionResult> PutJob(int id, [FromBody] JobModel job)
         {
             Console.WriteLine(job.Id);
