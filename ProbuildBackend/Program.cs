@@ -1,9 +1,12 @@
-using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
-using ProbuildBackend.Models;
-using Microsoft.AspNetCore.Identity.UI.Services;
-using ProbuildBackend.Services;
 using Elastic.Apm.NetCoreAll;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.UI.Services;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using ProbuildBackend.Middleware;
+using ProbuildBackend.Models;
+using ProbuildBackend.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,13 +14,42 @@ builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 builder.Logging.AddDebug();
 
-builder.Services.AddCors(policyBuilder =>
-    policyBuilder.AddDefaultPolicy(policy =>
-        policy.WithOrigins("*").AllowAnyHeader().AllowAnyMethod())
-);
+// Configure CORS to allow Angular app with credentials
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAngularApp", policy =>
+    {
+        policy.WithOrigins("http://localhost:4200") // Explicitly allow Angular origin
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials(); // Required for SignalR with credentials
+    });
+});
 
-// Add services to the container.
-builder.Services.AddControllers();
+// Add services to the container
+builder.Services.AddControllers(options =>
+{
+    options.Filters.Add(new RequestSizeLimitAttribute(200 * 1024 * 1024)); // 200MB
+})
+.ConfigureApiBehaviorOptions(options =>
+{
+    options.SuppressModelStateInvalidFilter = true;
+});
+
+// Configure FormOptions for multipart requests
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 200 * 1024 * 1024; // 200MB
+    options.ValueLengthLimit = int.MaxValue;
+    options.MultipartBoundaryLengthLimit = int.MaxValue;
+});
+
+// Kestrel configuration
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 200 * 1024 * 1024; // 200MB
+    options.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(5); // 5-minute timeout
+});
 
 var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
                        ?? builder.Configuration.GetConnectionString("DefaultConnection");
@@ -32,15 +64,19 @@ builder.Services.AddIdentity<UserModel, IdentityRole>(options =>
 .AddEntityFrameworkStores<ApplicationDbContext>()
 .AddDefaultTokenProviders();
 
-
 builder.Services.AddTransient<IEmailSender, EmailSender>();
 builder.Services.AddSingleton<AzureBlobService>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<WebSocketManager>();
+builder.Services.AddSignalR();
+builder.Services.AddHttpContextAccessor(); // Required for AzureBlobService
 
 var app = builder.Build();
 
+app.MapHub<ProgressHub>("/progressHub");
+
+// Middleware pipeline
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -53,11 +89,8 @@ else
     app.UseHsts();
 }
 
-app.UseHttpsRedirection();  // Ensure this is here
-
+app.UseHttpsRedirection();
 app.UseStaticFiles();
-
-// Enable Elastic APM Middleware
 
 var elasticEnabledString = Environment.GetEnvironmentVariable("ELASTIC_ENABLED");
 if (string.IsNullOrEmpty(elasticEnabledString))
@@ -68,42 +101,14 @@ if (string.IsNullOrEmpty(elasticEnabledString))
 var elasticEnabled = bool.Parse(elasticEnabledString);
 if (elasticEnabled)
 {
-#pragma warning disable CS0618 // Type or member is obsolete
     app.UseAllElasticApm(builder.Configuration);
-#pragma warning restore CS0618 // Type or member is obsolete
 }
 
-
-
 app.UseWebSockets();
-
-app.Use(async (context, next) =>
-{
-    if (context.Request.Path == "/ws")
-    {
-        if (context.WebSockets.IsWebSocketRequest)
-        {
-            var userId = context.Request.Query["userId"];
-            var webSocket = await context.WebSockets.AcceptWebSocketAsync();
-            var webSocketManager = context.RequestServices.GetRequiredService<WebSocketManager>();
-            await webSocketManager.HandleWebSocketAsync(webSocket, userId);
-        }
-        else
-        {
-            context.Response.StatusCode = 400;
-        }
-    }
-    else
-    {
-        await next();
-    }
-});
-
 app.UseRouting();
+app.UseCors("AllowAngularApp"); // Apply the named CORS policy
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseCors();
 app.MapControllers();
 
 app.Run();
-
