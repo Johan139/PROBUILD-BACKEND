@@ -1,63 +1,115 @@
+using Azure.Storage;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Configuration;
+using ProbuildBackend.Middleware;
+using System.IO.Compression;
 
 namespace ProbuildBackend.Services
 {
     public class AzureBlobService
     {
-        BlobServiceClient _blobClient;
-        BlobContainerClient _containerClient;
-        readonly string azureConnectionString = Environment.GetEnvironmentVariable("AZURE_BLOB_STORAGE_URL");
-        public AzureBlobService()
+        private readonly BlobServiceClient _blobClient;
+        private readonly BlobContainerClient _containerClient;
+        private readonly string _containerName = "probuildaiprojects";
+        private readonly IHttpContextAccessor _httpContextAccessor;
+
+        public AzureBlobService(IConfiguration configuration, IHttpContextAccessor httpContextAccessor)
         {
+            _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
+            var azureConnectionString = configuration["ConnectionStrings:AzureBlobConnection"];
             if (string.IsNullOrEmpty(azureConnectionString))
             {
-                Console.WriteLine("Warning: AZURE_BLOB_STORAGE_URL environment variable is not set. Defaulting to ''.");
+                throw new ArgumentNullException(nameof(azureConnectionString), "Azure Blob Storage connection string is not configured");
             }
-            else
-            {
-                _blobClient = new BlobServiceClient(azureConnectionString);
-                _containerClient = _blobClient.GetBlobContainerClient("probuildaiprojects");
-            }
+
+            _blobClient = new BlobServiceClient(azureConnectionString);
+            _containerClient = _blobClient.GetBlobContainerClient(_containerName);
+            InitializeContainerAsync().GetAwaiter().GetResult();
         }
 
-
-        public async Task UploadFiles(List<IFormFile> files)
+        private async Task InitializeContainerAsync()
         {
-            var azureResponse = new List<Azure.Response<BlobContentInfo>>();
+            await _containerClient.CreateIfNotExistsAsync(PublicAccessType.Blob);
+        }
+
+        public async Task<List<string>> UploadFiles(List<IFormFile> files, IHubContext<ProgressHub> hubContext, string connectionId)
+        {
+            var uploadedUrls = new List<string>();
+            if (string.IsNullOrEmpty(connectionId))
+            {
+                throw new InvalidOperationException("No valid connectionId provided.");
+            }
+
+            Console.WriteLine($"Using connectionId for SignalR: {connectionId}");
+
             foreach (var file in files)
             {
-                string fileName = file.FileName;
-                using (var memoryStream = new MemoryStream())
+                string fileName = $"{Guid.NewGuid()}_{file.FileName}";
+                BlobClient blobClient = _containerClient.GetBlobClient(fileName);
+
+                var blobHttpHeaders = new BlobHttpHeaders { ContentType = "application/gzip" };
+                var metadata = new Dictionary<string, string>
                 {
-                    await file.CopyToAsync(memoryStream);
-                    memoryStream.Position = 0;
+                    { "originalFileName", file.FileName },
+                    { "compression", "gzip" }
+                };
 
-                    // Check if the blob already exists
-                    BlobClient blobClient = _containerClient.GetBlobClient(fileName);
-                    if (await blobClient.ExistsAsync())
+                using var inputStream = file.OpenReadStream();
+                using var compressedStream = new MemoryStream();
+                using (var gzipStream = new GZipStream(compressedStream, CompressionLevel.Optimal, leaveOpen: true))
+                {
+                    await inputStream.CopyToAsync(gzipStream);
+                    gzipStream.Flush();
+                    compressedStream.Position = 0;
+
+                    long totalBytes = compressedStream.Length; // Compressed size
+                    long bytesUploaded = 0;
+
+                    var progressHandler = new Progress<long>(async progress =>
                     {
-                        // Delete the existing blob if it exists
-                        await blobClient.DeleteAsync();
-                    }
+                        bytesUploaded = progress;
+                        int progressPercent = (int)Math.Min(100, (bytesUploaded * 100) / totalBytes);
+                        Console.WriteLine($"Azure Upload Progress: {progressPercent}% for {file.FileName} (Bytes: {bytesUploaded}/{totalBytes})");
+                        await hubContext.Clients.Client(connectionId).SendAsync("ReceiveProgress", progressPercent);
+                    });
 
-                    // Upload the new blob
-                    var response = await blobClient.UploadAsync(memoryStream, overwrite: true);
-                    azureResponse.Add(response);
+                    await blobClient.UploadAsync(compressedStream, new BlobUploadOptions
+                    {
+                        HttpHeaders = blobHttpHeaders,
+                        Metadata = metadata,
+                        TransferOptions = new StorageTransferOptions
+                        {
+                            MaximumTransferSize = 4 * 1024 * 1024 // 4MB chunks
+                        },
+                        ProgressHandler = progressHandler // Track Azure upload progress
+                    });
+
+                    uploadedUrls.Add(blobClient.Uri.ToString());
                 }
             }
+
+            Console.WriteLine("Upload complete, sending UploadComplete signal");
+            // Send the number of files uploaded along with the completion signal
+            await hubContext.Clients.Client(connectionId).SendAsync("UploadComplete", files.Count);
+            return uploadedUrls;
         }
 
         public async Task<List<BlobItem>> GetUploadedBlobs()
         {
             var items = new List<BlobItem>();
-            var uploadedFiles = _containerClient.GetBlobsAsync();
-            await foreach (BlobItem file in uploadedFiles)
+            await foreach (BlobItem file in _containerClient.GetBlobsAsync())
             {
                 items.Add(file);
             }
-
             return items;
+        }
+
+        public BlobClient GetBlobClient(string fileName)
+        {
+            return _containerClient.GetBlobClient(fileName);
         }
     }
 }

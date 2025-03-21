@@ -1,9 +1,12 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Services;
 using System.Net;
+using static Google.Apis.Requests.BatchRequest;
 
 namespace ProbuildBackend.Controllers
 {
@@ -12,12 +15,15 @@ namespace ProbuildBackend.Controllers
     public class JobsController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
-
+        private readonly IHubContext<ProgressHub> _hubContext; // Inject IHubContext
         private readonly AzureBlobService _azureBlobservice;
-        public JobsController(ApplicationDbContext context, AzureBlobService azureBlobservice)
+        private readonly IHttpContextAccessor _httpContextAccessor;
+        public JobsController(ApplicationDbContext context, AzureBlobService azureBlobservice, IHubContext<ProgressHub> hubContext, IHttpContextAccessor httpContextAccessor)
         {
+            _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
             _context = context;
             _azureBlobservice = azureBlobservice;
+            _hubContext = hubContext;
         }
 
         [HttpGet]
@@ -71,32 +77,73 @@ namespace ProbuildBackend.Controllers
                 Status = jobrequest.Status
             };
 
-            if (jobrequest.Blueprint != null)
-            {
-                 await _azureBlobservice.UploadFiles(jobrequest.Blueprint);
-                // Read the blueprint file into a byte array
-
-                var fileNames = jobrequest.Blueprint.Select(file => file.FileName).ToList();
-                job.Blueprint = string.Join(", ", fileNames);
-
-            }
-            else
-            {
-                job.Blueprint = null;
-            }
-
             _context.Jobs.Add(job);
             await _context.SaveChangesAsync();
 
             return Ok(job);
         }
-        [HttpPost]
-        [RequestSizeLimit(200 * 1024 * 1024)]
-        public async Task<IActionResult> UploadImage([FromForm] JobDto jobrequest)
+
+        [HttpPost("UploadImage")]
+        [RequestSizeLimit(200 * 1024 * 1024)] // 200MB
+        public async Task<IActionResult> UploadImage([FromForm] UploadDocumentDTO jobRequest)
         {
-            return null;
+            try
+            {
+                if (jobRequest == null)
+                {
+                    return BadRequest(new { error = "Invalid job request" });
+                }
+
+                if (jobRequest.Blueprint == null || !jobRequest.Blueprint.Any())
+                {
+                    return BadRequest(new { error = "No blueprint files provided" });
+                }
+
+                // Validate files
+                var allowedExtensions = new[] { ".pdf", ".png", ".jpg", ".jpeg" };
+                var uploadedFileUrls = new List<string>();
+
+                foreach (var file in jobRequest.Blueprint)
+                {
+                    if (file.Length == 0)
+                    {
+                        return BadRequest(new { error = $"Empty file detected: {file.FileName}" });
+                    }
+
+                    var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+                    if (!allowedExtensions.Contains(extension))
+                    {
+                        return BadRequest(new { error = $"Invalid file type: {file.FileName}" });
+                    }
+                }
+
+                // Get connectionId from form data
+                string connectionId = jobRequest.connectionId ?? _httpContextAccessor.HttpContext?.Connection.Id
+                    ?? throw new InvalidOperationException("No valid connectionId provided.");
+
+                Console.WriteLine($"Received connectionId from client: {connectionId}");
+
+                // Upload files using the service and pass the client-provided connectionId
+                uploadedFileUrls = await _azureBlobservice.UploadFiles(jobRequest.Blueprint, _hubContext, connectionId);
+
+                var response = new UploadDocumentModel
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    Status = "Uploaded",
+                    FileUrls = uploadedFileUrls,
+                    FileNames = jobRequest.Blueprint.Select(f => f.FileName).ToList(),
+                    Message = $"Successfully uploaded {jobRequest.Blueprint.Count} file(s)"
+                };
+
+                return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to upload files", details = ex.Message });
+            }
         }
-            [HttpPut("{id}")]
+
+        [HttpPut("{id}")]
         public async Task<IActionResult> PutJob(int id, [FromBody] JobModel job)
         {
             Console.WriteLine(job.Id);
