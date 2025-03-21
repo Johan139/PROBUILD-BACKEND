@@ -1,4 +1,4 @@
-name: Build and Deploy to Azure App Service
+name: Build and Deploy to Azure Container Apps
 
 on:
   push:
@@ -44,10 +44,17 @@ jobs:
           push: true
           tags: probuild.azurecr.io/probuildai-backend:${{ github.sha }}
 
-      # Deploy to Azure App Service
-      - name: Deploy to Azure Web App
-        uses: azure/webapps-deploy@v2
+      # Deploy to Azure Container Apps
+      - name: Deploy to Azure Container Apps
+        uses: azure/container-apps-deploy-action@v1
         with:
-          app-name: probuildai-backend
-          images: probuild.azurecr.io/probuildai-backend:${{ github.sha }}
-          slot-name: production  # Optional: Remove if not using slots
+          appSourcePath: .  # Path to your app (Docker context)
+          acrName: probuild  # Your Azure Container Registry name
+          containerAppName: probuildai-backend
+          resourceGroup: rg-Probuild
+          imageToDeploy: probuild.azurecr.io/probuildai-backend:${{ github.sha }}
+          environmentVariables: |
+            SQL_USER=${{ secrets.SQL_USER }}
+            SQL_PASSWORD=${{ secrets.SQL_PASSWORD }}
+            AZURE_BLOB_KEY=${{ secrets.AZURE_BLOB_KEY }}
+            JWT_KEY=${{ secrets.JWT_KEY }}
