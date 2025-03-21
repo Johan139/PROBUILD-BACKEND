@@ -14,11 +14,15 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
+      # Debug: Print the secret value to verify
+      - name: Debug ACR login server
+        run: echo "AZURE_ACR_LOGIN_SERVER is ${{ secrets.AZURE_ACR_LOGIN_SERVER }}"
+
       # Log in to Azure Container Registry using Admin User credentials
       - name: Log in to ACR
         uses: docker/login-action@v3
         with:
-          registry: ${{ secrets.AZURE_ACR_LOGIN_SERVER }}
+          registry: probuild.azurecr.io  # Hardcode to avoid secret formatting issues
           username: ${{ secrets.AZURE_ACR_USERNAME }}
           password: ${{ secrets.AZURE_ACR_PASSWORD }}
 
