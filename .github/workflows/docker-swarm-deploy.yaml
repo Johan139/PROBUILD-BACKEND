@@ -43,8 +43,11 @@ jobs:
           context: .
           push: true
           tags: probuild.azurecr.io/probuildai-backend:${{ github.sha }}
+          # Add build arguments if needed (e.g., for environment-specific builds)
+          build-args: |
+            ASPNETCORE_ENVIRONMENT=Production
 
-      # Deploy to Azure Container Apps
+      # Deploy to Azure Container Apps with updated configuration
       - name: Deploy to Azure Container Apps
         uses: azure/container-apps-deploy-action@v1
         with:
@@ -58,3 +61,22 @@ jobs:
             SQL_PASSWORD=${{ secrets.SQL_PASSWORD }}
             AZURE_BLOB_KEY=${{ secrets.AZURE_BLOB_KEY }}
             JWT_KEY=${{ secrets.JWT_KEY }}
+            ASPNETCORE_URLS=http://+:8080  # Explicitly set the port to 8080
+            ASPNETCORE_ENVIRONMENT=Production  # Ensure the environment is set to Production
+          # Define the container configuration, including the startup probe
+          containerConfig: |
+            containers:
+            - name: probuildai-backend
+              image: probuild.azurecr.io/probuildai-backend:${{ github.sha }}
+              probes:
+              - type: startup
+                httpGet:
+                  path: /health
+                  port: 8080
+                initialDelaySeconds: 60
+                periodSeconds: 10
+                timeoutSeconds: 5
+                failureThreshold: 3
+              resources:
+                cpu: 4
+                memory: 8Gi
