@@ -54,19 +54,36 @@ jobs:
           echo "AZURE_BLOB_KEY: ${{ secrets.AZURE_BLOB_KEY }}"
           echo "JWT_KEY: ${{ secrets.JWT_KEY }}"
 
-      # Update environment variables using Azure CLI
-      - name: Update environment variables
+      # Update environment variables and probe using Azure CLI
+      - name: Update environment variables and probe
         run: |
           az containerapp update \
             --name probuildai-backend \
             --resource-group rg-Probuild \
             --set-env-vars \
-              "SQL_USER=${{ secrets.SQL_USER }}" \
-              "SQL_PASSWORD=${{ secrets.SQL_PASSWORD }}" \
-              "AZURE_BLOB_KEY=${{ secrets.AZURE_BLOB_KEY }}" \
-              "JWT_KEY=${{ secrets.JWT_KEY }}" \
-              "ASPNETCORE_URLS=http://+:8080" \
-              "ASPNETCORE_ENVIRONMENT=Production"
+              SQL_USER="${{ secrets.SQL_USER }}" \
+              SQL_PASSWORD="${{ secrets.SQL_PASSWORD }}" \
+              AZURE_BLOB_KEY="${{ secrets.AZURE_BLOB_KEY }}" \
+              JWT_KEY="${{ secrets.JWT_KEY }}" \
+              ASPNETCORE_URLS="http://+:8080" \
+              ASPNETCORE_ENVIRONMENT="Production" \
+            --revision-suffix "github-$(date +%s)" \
+            --set "properties.template.containers[0].probes[0].type=Startup" \
+            --set "properties.template.containers[0].probes[0].httpGet.path=/health" \
+            --set "properties.template.containers[0].probes[0].httpGet.port=8080" \
+            --set "properties.template.containers[0].probes[0].initialDelaySeconds=60" \
+            --set "properties.template.containers[0].probes[0].periodSeconds=10" \
+            --set "properties.template.containers[0].probes[0].timeoutSeconds=5" \
+            --set "properties.template.containers[0].probes[0].failureThreshold=3"
+
+      # Debug: Print the environment variables after update
+      - name: Debug environment variables after update
+        run: |
+          az containerapp show \
+            --name probuildai-backend \
+            --resource-group rg-Probuild \
+            --query "properties.template.containers[0].env" \
+            -o table
 
       # Deploy to Azure Container Apps
       - name: Deploy to Azure Container Apps
@@ -77,19 +94,3 @@ jobs:
           containerAppName: probuildai-backend
           resourceGroup: rg-Probuild
           imageToDeploy: probuild.azurecr.io/probuildai-backend:${{ github.sha }}
-          containerConfig: |
-            containers:
-            - name: probuildai-backend
-              image: probuild.azurecr.io/probuildai-backend:${{ github.sha }}
-              probes:
-              - type: startup
-                httpGet:
-                  path: /health
-                  port: 8080
-                initialDelaySeconds: 60
-                periodSeconds: 10
-                timeoutSeconds: 5
-                failureThreshold: 3
-              resources:
-                cpu: 4
-                memory: 8Gi
