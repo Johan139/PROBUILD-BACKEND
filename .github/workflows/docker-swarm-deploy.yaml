@@ -54,8 +54,8 @@ jobs:
           echo "AZURE_BLOB_KEY: ${{ secrets.AZURE_BLOB_KEY }}"
           echo "JWT_KEY: ${{ secrets.JWT_KEY }}"
 
-      # Update environment variables and probe using Azure CLI
-      - name: Update environment variables and probe
+      # Update environment variables using Azure CLI
+      - name: Update environment variables
         run: |
           az containerapp update \
             --name probuildai-backend \
@@ -67,7 +67,14 @@ jobs:
               JWT_KEY="${{ secrets.JWT_KEY }}" \
               ASPNETCORE_URLS="http://+:8080" \
               ASPNETCORE_ENVIRONMENT="Production" \
-            --revision-suffix "github-$(date +%s)" \
+            --revision-suffix "github-$(date +%s)"
+
+      # Update probe configuration using Azure CLI
+      - name: Update probe configuration
+        run: |
+          az containerapp update \
+            --name probuildai-backend \
+            --resource-group rg-Probuild \
             --set "properties.template.containers[0].probes[0].type=Startup" \
             --set "properties.template.containers[0].probes[0].httpGet.path=/health" \
             --set "properties.template.containers[0].probes[0].httpGet.port=8080" \
