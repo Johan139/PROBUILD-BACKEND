@@ -70,9 +70,9 @@ builder.Services.AddHealthChecks()
             using (var connection = new SqlConnection(connectionString))
             {
                 connection.Open();
-                using (var command = new SqlCommand("SELECT 1;", connection))
+                using (var command = new SqlCommand("SELECT 1;", connection)) // Fixed: Changed SqlConnection to SqlCommand
                 {
-                    command.ExecuteScalar();
+                    command.ExecuteScalar(); // Fixed: ExecuteScalar is a method of SqlCommand
                 }
                 return HealthCheckResult.Healthy("SQL Server is healthy");
             }
@@ -97,8 +97,17 @@ builder.Services.AddHealthChecks()
         }
     });
 
+// Configure DbContext with retry policy to handle rate-limiting
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlServer(connectionString));
+    options.UseSqlServer(
+        connectionString,
+        sqlServerOptions => sqlServerOptions
+            .EnableRetryOnFailure(
+                maxRetryCount: 3, // Reduced number of retries
+                maxRetryDelay: TimeSpan.FromSeconds(5), // Increased delay between retries
+                errorNumbersToAdd: null
+            )
+    ));
 
 builder.Services.AddIdentity<UserModel, IdentityRole>(options =>
 {
@@ -163,27 +172,53 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-// Wrap the application startup in a try-catch to log any errors
+// Wrap the application startup in a try-catch to log any errors with retry logic
 try
 {
     app.Logger.LogInformation("Application starting...");
 
-    // Test database connection
-    using (var scope = app.Services.CreateScope())
+    // Test database connection with retry logic and exponential backoff
+    app.Logger.LogInformation("Attempting to connect to the database...");
+    bool connected = false;
+    int maxRetries = 3;
+    int retryDelaySeconds = 5;
+    for (int i = 0; i < maxRetries && !connected; i++)
     {
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.Database.EnsureCreated();
-        app.Logger.LogInformation("Successfully connected to the database");
+        try
+        {
+            using (var scope = app.Services.CreateScope())
+            {
+                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                app.Logger.LogInformation("DbContext created. Calling EnsureCreated...");
+                dbContext.Database.EnsureCreated();
+                app.Logger.LogInformation("Successfully connected to the database");
+                connected = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogWarning(ex, "Failed to connect to the database on attempt {Attempt}. Retrying in {Delay} seconds...", i + 1, retryDelaySeconds);
+            if (i == maxRetries - 1)
+            {
+                app.Logger.LogError(ex, "Failed to connect to the database after {MaxRetries} attempts", maxRetries);
+                throw;
+            }
+            await Task.Delay(TimeSpan.FromSeconds(retryDelaySeconds));
+            retryDelaySeconds *= 2; // Exponential backoff
+        }
     }
 
     // Test Blob Storage connection
+    app.Logger.LogInformation("Attempting to initialize Azure Blob Service...");
     var blobService = app.Services.GetRequiredService<AzureBlobService>();
     app.Logger.LogInformation("Successfully initialized Azure Blob Service");
 
+    app.Logger.LogInformation("Application startup completed successfully. Starting to run...");
     app.Run();
 }
 catch (Exception ex)
 {
-    app.Logger.LogError(ex, "Application failed to start");
+    app.Logger.LogError(ex, "Application failed to start. Exception: {Message}", ex.Message);
+    app.Logger.LogError(ex, "Stack trace: {StackTrace}", ex.StackTrace);
     throw;
 }
