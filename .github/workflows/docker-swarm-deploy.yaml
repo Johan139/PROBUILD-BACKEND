@@ -43,11 +43,32 @@ jobs:
           context: .
           push: true
           tags: probuild.azurecr.io/probuildai-backend:${{ github.sha }}
-          # Add build arguments if needed (e.g., for environment-specific builds)
           build-args: |
             ASPNETCORE_ENVIRONMENT=Production
 
-      # Deploy to Azure Container Apps with updated configuration
+      # Debug: Print the environment variables (values will be masked)
+      - name: Debug environment variables
+        run: |
+          echo "SQL_USER: ${{ secrets.SQL_USER }}"
+          echo "SQL_PASSWORD: ${{ secrets.SQL_PASSWORD }}"
+          echo "AZURE_BLOB_KEY: ${{ secrets.AZURE_BLOB_KEY }}"
+          echo "JWT_KEY: ${{ secrets.JWT_KEY }}"
+
+      # Update environment variables using Azure CLI
+      - name: Update environment variables
+        run: |
+          az containerapp update \
+            --name probuildai-backend \
+            --resource-group rg-Probuild \
+            --set-env-vars \
+              "SQL_USER=${{ secrets.SQL_USER }}" \
+              "SQL_PASSWORD=${{ secrets.SQL_PASSWORD }}" \
+              "AZURE_BLOB_KEY=${{ secrets.AZURE_BLOB_KEY }}" \
+              "JWT_KEY=${{ secrets.JWT_KEY }}" \
+              "ASPNETCORE_URLS=http://+:8080" \
+              "ASPNETCORE_ENVIRONMENT=Production"
+
+      # Deploy to Azure Container Apps
       - name: Deploy to Azure Container Apps
         uses: azure/container-apps-deploy-action@v1
         with:
@@ -56,14 +77,6 @@ jobs:
           containerAppName: probuildai-backend
           resourceGroup: rg-Probuild
           imageToDeploy: probuild.azurecr.io/probuildai-backend:${{ github.sha }}
-          environmentVariables: |
-            SQL_USER=${{ secrets.SQL_USER }}
-            SQL_PASSWORD=${{ secrets.SQL_PASSWORD }}
-            AZURE_BLOB_KEY=${{ secrets.AZURE_BLOB_KEY }}
-            JWT_KEY=${{ secrets.JWT_KEY }}
-            ASPNETCORE_URLS=http://+:8080  # Explicitly set the port to 8080
-            ASPNETCORE_ENVIRONMENT=Production  # Ensure the environment is set to Production
-          # Define the container configuration, including the startup probe
           containerConfig: |
             containers:
             - name: probuildai-backend
