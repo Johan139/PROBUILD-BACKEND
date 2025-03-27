@@ -61,6 +61,8 @@ builder.WebHost.ConfigureKestrel(options =>
 var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
                        ?? builder.Configuration.GetConnectionString("DefaultConnection");
 
+var AzureBlobStorage = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY")
+                       ?? builder.Configuration.GetConnectionString("AzureBlobConnection");
 // Add health checks for database and Blob Storage
 builder.Services.AddHealthChecks()
     .AddCheck("SQLServer", () =>
@@ -86,7 +88,7 @@ builder.Services.AddHealthChecks()
     {
         try
         {
-            var blobConnectionString = builder.Configuration.GetConnectionString("AzureBlobConnection");
+            var blobConnectionString = builder.Configuration.GetConnectionString(AzureBlobStorage);
             var blobServiceClient = new BlobServiceClient(blobConnectionString);
             blobServiceClient.GetAccountInfo();
             return HealthCheckResult.Healthy("Azure Blob Storage is healthy");

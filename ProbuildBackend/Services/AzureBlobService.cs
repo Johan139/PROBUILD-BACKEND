@@ -19,7 +19,7 @@ namespace ProbuildBackend.Services
         public AzureBlobService(IConfiguration configuration, IHttpContextAccessor httpContextAccessor)
         {
             _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
-            var azureConnectionString = configuration["ConnectionStrings:AzureBlobConnection"];
+            var azureConnectionString = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY");
             if (string.IsNullOrEmpty(azureConnectionString))
             {
                 throw new ArgumentNullException(nameof(azureConnectionString), "Azure Blob Storage connection string is not configured");
