@@ -30,22 +30,22 @@ jobs:
         with:
           context: .
           push: true
-          tags: YOUR_ACR_NAME.azurecr.io/YOUR_APP_NAME:${{ github.sha }}
+          tags: probuild.azurecr.io/probuildai-backend:${{ github.sha }}
 
       - name: Confirm image push
         run: |
-          az acr repository show-tags --name YOUR_ACR_NAME --repository YOUR_APP_NAME --output table
+          az acr repository show-tags --name probuild --repository probuildai-backend --output table
 
       - name: Deploy to Azure Container Apps
         run: |
           az containerapp update \
-            --name YOUR_APP_NAME \
-            --resource-group YOUR_RESOURCE_GROUP \
-            --image YOUR_ACR_NAME.azurecr.io/YOUR_APP_NAME:${{ github.sha }} \
+            --name probuild \
+            --resource-group rg-Probuild \
+            --image probuild.azurecr.io/probuildai-backend:${{ github.sha }} \
             --set-env-vars \
               KEY1=${{ secrets.VALUE1 }} \
               KEY2=${{ secrets.VALUE2 }}
 
       - name: Restart Azure Container App
         run: |
-          az containerapp restart --name YOUR_APP_NAME --resource-group YOUR_RESOURCE_GROUP
+          az containerapp restart --name probuildai-backend --resource-group rg-Probuild
