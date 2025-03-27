@@ -177,9 +177,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-// Track database connection status
-bool databaseConnected = false;
-
 // Wrap the application startup in a try-catch to log any errors with retry logic
 try
 {
@@ -187,9 +184,10 @@ try
 
     // Test database connection with retry logic and exponential backoff
     app.Logger.LogInformation("Attempting to connect to the database...");
+    bool connected = false;
     int maxRetries = 3;
     int retryDelaySeconds = 5;
-    for (int i = 0; i < maxRetries; i++)
+    for (int i = 0; i < maxRetries && !connected; i++)
     {
         try
         {
@@ -200,24 +198,19 @@ try
                 dbContext.Database.EnsureCreated();
                 app.Logger.LogInformation("EnsureCreated completed successfully");
                 app.Logger.LogInformation("Successfully connected to the database");
-                databaseConnected = true;
-                break;
+                connected = true;
             }
         }
         catch (Exception ex)
         {
-            app.Logger.LogError(ex, "Failed to connect to the database on attempt {Attempt}. Error: {Message}", i + 1, ex.Message);
-            app.Logger.LogError(ex, "Stack trace: {StackTrace}", ex.StackTrace);
+            app.Logger.LogWarning(ex, "Failed to connect to the database on attempt {Attempt}. Retrying in {Delay} seconds...", i + 1, retryDelaySeconds);
             if (i == maxRetries - 1)
             {
-                app.Logger.LogError("Failed to connect to the database after {MaxRetries} attempts. Continuing startup without database connection...", maxRetries);
+                app.Logger.LogError(ex, "Failed to connect to the database after {MaxRetries} attempts", maxRetries);
+                throw;
             }
-            else
-            {
-                app.Logger.LogWarning("Retrying in {Delay} seconds...", retryDelaySeconds);
-                await Task.Delay(TimeSpan.FromSeconds(retryDelaySeconds));
-                retryDelaySeconds *= 2; // Exponential backoff
-            }
+            await Task.Delay(TimeSpan.FromSeconds(retryDelaySeconds));
+            retryDelaySeconds *= 2; // Exponential backoff
         }
     }
 
@@ -226,13 +219,7 @@ try
     var blobService = app.Services.GetRequiredService<AzureBlobService>();
     app.Logger.LogInformation("Successfully initialized Azure Blob Service");
 
-    // Update /health endpoint to reflect database status
-    if (!databaseConnected)
-    {
-        app.MapGet("/health", () => Results.Problem("Application started but database connection failed. Check logs for details."));
-    }
-
-    app.Logger.LogInformation("Application startup completed. Starting to run...");
+    app.Logger.LogInformation("Application startup completed successfully. Starting to run...");
     app.Run();
 }
 catch (Exception ex)
