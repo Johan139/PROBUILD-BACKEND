@@ -66,4 +66,10 @@ jobs:
               "DB_CONNECTION_STRING=${{ secrets.DB_CONNECTION_STRING }}" \
               "FORCE_NEW_REVISION=true" \
             --set template.containers[0].probes=null \
-            --target-port 8081
+            --set ingress.targetPort=8081
+
+      # Check logs to diagnose issues
+      - name: Check Container App Logs
+        run: |
+          az containerapp logs show --name probuildai-backend --resource-group rg-Probuild --follow --tail 100
+        continue-on-error: true
