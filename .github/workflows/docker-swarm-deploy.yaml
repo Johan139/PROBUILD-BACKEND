@@ -49,19 +49,24 @@ jobs:
           push: true
           tags: probuild.azurecr.io/probuildai-backend:${{ github.sha }}
 
-      # Deploy to Azure Container Apps
+      # Deploy to Azure Container Apps using the pre-built image
       - name: Deploy to Azure Container Apps
-        uses: azure/container-apps-deploy-action@v1
-        with:
-          appSourcePath: .
-          acrName: probuild
-          containerAppName: probuildai-backend
-          resourceGroup: rg-Probuild
-          imageToDeploy: probuild.azurecr.io/probuildai-backend:${{ github.sha }}
-          environmentVariables: SQL_USER=${{ secrets.SQL_USER }} SQL_PASSWORD=${{ secrets.SQL_PASSWORD }} AZURE_BLOB_KEY=${{ secrets.AZURE_BLOB_KEY }} JWT_KEY=${{ secrets.JWT_KEY }} ASPNETCORE_URLS=http://+:8080 ELASTIC_ENABLED=false DB_CONNECTION_STRING=${{ secrets.DB_CONNECTION_STRING }}
+        run: |
+          az containerapp update \
+            --name probuildai-backend \
+            --resource-group rg-Probuild \
+            --image probuild.azurecr.io/probuildai-backend:${{ github.sha }} \
+            --set-env-vars \
+              "SQL_USER=${{ secrets.SQL_USER }}" \
+              "SQL_PASSWORD=${{ secrets.SQL_PASSWORD }}" \
+              "AZURE_BLOB_KEY=${{ secrets.AZURE_BLOB_KEY }}" \
+              "JWT_KEY=${{ secrets.JWT_KEY }}" \
+              "ASPNETCORE_URLS=http://+:8080" \
+              "ELASTIC_ENABLED=false" \
+              "DB_CONNECTION_STRING=${{ secrets.DB_CONNECTION_STRING }}"
 
       # Check logs to diagnose degraded state
       - name: Check Container App Logs
         run: |
           az containerapp logs show --name probuildai-backend --resource-group rg-Probuild --follow
-        continue-on-error: true  # This ensures the workflow doesn't fail if logs can't be retrieved
+        continue-on-error: true
