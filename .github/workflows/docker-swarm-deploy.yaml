@@ -14,17 +14,13 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      # Debug: Print the Service Principal credentials and secrets
-      - name: Debug Service Principal credentials and secrets
+      # Verify secrets are set without exposing them
+      - name: Verify Secrets
         run: |
-          echo "AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}"
-          echo "AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}"
-          echo "AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}"
-          echo "SQL_USER: ${{ secrets.SQL_USER }}"
-          echo "SQL_PASSWORD: ${{ secrets.SQL_PASSWORD }}"
-          echo "AZURE_BLOB_KEY: ${{ secrets.AZURE_BLOB_KEY }}"
-          echo "JWT_KEY: ${{ secrets.JWT_KEY }}"
-          echo "DB_CONNECTION_STRING: ${{ secrets.DB_CONNECTION_STRING }}"
+          echo "Checking if secrets are set..."
+          [ -z "${{ secrets.AZURE_CLIENT_ID }}" ] && echo "AZURE_CLIENT_ID is empty!" || echo "AZURE_CLIENT_ID is set."
+          [ -z "${{ secrets.AZURE_CLIENT_SECRET }}" ] && echo "AZURE_CLIENT_SECRET is empty!" || echo "AZURE_CLIENT_SECRET is set."
+          [ -z "${{ secrets.AZURE_TENANT_ID }}" ] && echo "AZURE_TENANT_ID is empty!" || echo "AZURE_TENANT_ID is set."
 
       # Log in to Azure using Service Principal
       - name: Log in to Azure
@@ -47,7 +43,7 @@ jobs:
       # Log in to Azure Container Registry
       - name: Log in to ACR
         run: |
-          az acr login --name probuild
+          az acr login --name probuild.azurecr.io
 
       # Debug: Verify ACR login and image existence
       - name: Debug ACR
@@ -56,6 +52,11 @@ jobs:
           az acr repository list --name probuild --output table
           echo "Checking if image probuildai-backend:${{ github.sha }} exists..."
           az acr repository show --name probuild --repository probuildai-backend --image probuildai-backend:${{ github.sha }} --output json || echo "Image probuildai-backend:${{ github.sha }} not found"
+
+      # Pull Oryx CLI Image if missing
+      - name: Pull Oryx CLI Image
+        run: |
+          docker pull mcr.microsoft.com/oryx/cli:builder-debian-bullseye-20230926.1
 
       # Set up Docker Buildx
       - name: Set up Docker Buildx
@@ -83,4 +84,11 @@ jobs:
           containerAppName: probuildai-backend
           resourceGroup: rg-Probuild
           imageToDeploy: probuild.azurecr.io/probuildai-backend:${{ github.sha }}
-          environmentVariables: SQL_USER=${{ secrets.SQL_USER }} SQL_PASSWORD=${{ secrets.SQL_PASSWORD }} AZURE_BLOB_KEY=${{ secrets.AZURE_BLOB_KEY }} JWT_KEY=${{ secrets.JWT_KEY }} ASPNETCORE_URLS=http://+:8080 ELASTIC_ENABLED=false DB_CONNECTION_STRING=${{ secrets.DB_CONNECTION_STRING }}
+          environmentVariables: |
+            SQL_USER=${{ secrets.SQL_USER }}
+            SQL_PASSWORD=${{ secrets.SQL_PASSWORD }}
+            AZURE_BLOB_KEY=${{ secrets.AZURE_BLOB_KEY }}
+            JWT_KEY=${{ secrets.JWT_KEY }}
+            ASPNETCORE_URLS=http://+:8080
+            ELASTIC_ENABLED=false
+            DB_CONNECTION_STRING=${{ secrets.DB_CONNECTION_STRING }}
