@@ -14,12 +14,17 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      # Debug: Print the Service Principal credentials (values will be masked)
-      - name: Debug Service Principal credentials
+      # Debug: Print the Service Principal credentials and secrets (for debugging purposes)
+      - name: Debug Service Principal credentials and secrets
         run: |
           echo "AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}"
           echo "AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}"
           echo "AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}"
+          echo "SQL_USER: ${{ secrets.SQL_USER }}"
+          echo "SQL_PASSWORD: ${{ secrets.SQL_PASSWORD }}"
+          echo "AZURE_BLOB_KEY: ${{ secrets.AZURE_BLOB_KEY }}"
+          echo "JWT_KEY: ${{ secrets.JWT_KEY }}"
+          echo "DB_CONNECTION_STRING: ${{ secrets.DB_CONNECTION_STRING }}"
 
       # Log in to Azure using Service Principal
       - name: Log in to Azure
@@ -44,17 +49,31 @@ jobs:
           push: true
           tags: probuild.azurecr.io/probuildai-backend:${{ github.sha }}
 
-      # Deploy to Azure Container Apps
+      # Deploy to Azure Container Apps using the pre-built image
       - name: Deploy to Azure Container Apps
-        uses: azure/container-apps-deploy-action@v1
-        with:
-          appSourcePath: .  # Path to your app (Docker context)
-          acrName: probuild  # Your Azure Container Registry name
-          containerAppName: probuildai-backend
-          resourceGroup: rg-Probuild
-          imageToDeploy: probuild.azurecr.io/probuildai-backend:${{ github.sha }}
-          environmentVariables: |
-            SQL_USER=${{ secrets.SQL_USER }}
-            SQL_PASSWORD=${{ secrets.SQL_PASSWORD }}
-            AZURE_BLOB_KEY=${{ secrets.AZURE_BLOB_KEY }}
-            JWT_KEY=${{ secrets.JWT_KEY }}
+        run: |
+          az containerapp create \
+            --name probuildai-backend \
+            --resource-group rg-Probuild \
+            --environment managedEnvironment-rgProbuild-ae27 \
+            --image probuild.azurecr.io/probuildai-backend:${{ github.sha }} \
+            --cpu 0.5 \
+            --memory 1Gi \
+            --min-replicas 1 \
+            --max-replicas 1 \
+            --ingress external \
+            --target-port 8080 \
+            --set-env-vars \
+              "SQL_USER=${{ secrets.SQL_USER }}" \
+              "SQL_PASSWORD=${{ secrets.SQL_PASSWORD }}" \
+              "AZURE_BLOB_KEY=${{ secrets.AZURE_BLOB_KEY }}" \
+              "JWT_KEY=${{ secrets.JWT_KEY }}" \
+              "ASPNETCORE_URLS=http://+:8080" \
+              "ELASTIC_ENABLED=false" \
+              "DB_CONNECTION_STRING=${{ secrets.DB_CONNECTION_STRING }}"
+
+      # Check logs to diagnose degraded state
+      - name: Check Container App Logs
+        run: |
+          az containerapp logs show --name probuildai-backend --resource-group rg-Probuild --follow
+        continue-on-error: true
