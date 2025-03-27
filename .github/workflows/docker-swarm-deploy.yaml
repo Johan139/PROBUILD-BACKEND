@@ -20,7 +20,7 @@ jobs:
 
       - name: Log in to ACR
         run: |
-          az acr login --name YOUR_ACR_NAME
+          az acr login --name probuild
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
