@@ -14,12 +14,16 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      # Debug: Print the Service Principal credentials (values will be masked)
-      - name: Debug Service Principal credentials
+      # Debug: Print the Service Principal credentials and secrets
+      - name: Debug Service Principal credentials and secrets
         run: |
           echo "AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}"
           echo "AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}"
           echo "AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}"
+          echo "SQL_USER: ${{ secrets.SQL_USER }}"
+          echo "SQL_PASSWORD: ${{ secrets.SQL_PASSWORD }}"
+          echo "AZURE_BLOB_KEY: ${{ secrets.AZURE_BLOB_KEY }}"
+          echo "JWT_KEY: ${{ secrets.JWT_KEY }}"
 
       # Log in to Azure using Service Principal
       - name: Log in to Azure
@@ -48,13 +52,9 @@ jobs:
       - name: Deploy to Azure Container Apps
         uses: azure/container-apps-deploy-action@v1
         with:
-          appSourcePath: .  # Path to your app (Docker context)
-          acrName: probuild  # Your Azure Container Registry name
+          appSourcePath: .
+          acrName: probuild
           containerAppName: probuildai-backend
           resourceGroup: rg-Probuild
           imageToDeploy: probuild.azurecr.io/probuildai-backend:${{ github.sha }}
-          environmentVariables: |
-            SQL_USER=${{ secrets.SQL_USER }}
-            SQL_PASSWORD=${{ secrets.SQL_PASSWORD }}
-            AZURE_BLOB_KEY=${{ secrets.AZURE_BLOB_KEY }}
-            JWT_KEY=${{ secrets.JWT_KEY }}
+          environmentVariables: SQL_USER=${{ secrets.SQL_USER }} SQL_PASSWORD=${{ secrets.SQL_PASSWORD }} AZURE_BLOB_KEY=${{ secrets.AZURE_BLOB_KEY }} JWT_KEY=${{ secrets.JWT_KEY }} PORT=8080 ELASTIC_ENABLED=false
