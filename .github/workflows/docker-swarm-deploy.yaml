@@ -16,11 +16,11 @@ jobs:
       - name: Log in to Azure
         uses: azure/login@v1
         with:
-          creds: '{"clientId":"${{ secrets.AZURE_CLIENT_ID }}","clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}","tenantId":"${{ secrets.AZURE_TENANT_ID }}","subscriptionId":"0e6dc202-bcae-4b8b-b1de-a8f3a04341d6"}'
+          creds: '{"clientId":"${{ secrets.AZURE_CLIENT_ID }}","clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}","tenantId":"${{ secrets.AZURE_TENANT_ID }}","subscriptionId":"YOUR_SUBSCRIPTION_ID"}'
 
       - name: Log in to ACR
         run: |
-          az acr login --name probuild
+          az acr login --name YOUR_ACR_NAME
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -30,27 +30,22 @@ jobs:
         with:
           context: .
           push: true
-          tags: probuild.azurecr.io/probuildai-backend:${{ github.sha }}
+          tags: YOUR_ACR_NAME.azurecr.io/YOUR_APP_NAME:${{ github.sha }}
 
       - name: Confirm image push
         run: |
-          az acr repository show-tags --name probuild --repository probuildai-backend --output table
+          az acr repository show-tags --name YOUR_ACR_NAME --repository YOUR_APP_NAME --output table
 
       - name: Deploy to Azure Container Apps
         run: |
           az containerapp update \
-            --name probuildai-backend \
-            --resource-group rg-Probuild \
-            --set image=probuild.azurecr.io/probuildai-backend:${{ github.sha }} \
+            --name YOUR_APP_NAME \
+            --resource-group YOUR_RESOURCE_GROUP \
+            --image YOUR_ACR_NAME.azurecr.io/YOUR_APP_NAME:${{ github.sha }} \
             --set-env-vars \
-              SQL_USER=${{ secrets.SQL_USER }} \
-              SQL_PASSWORD=${{ secrets.SQL_PASSWORD }} \
-              AZURE_BLOB_KEY=${{ secrets.AZURE_BLOB_KEY }} \
-              JWT_KEY=${{ secrets.JWT_KEY }} \
-              ASPNETCORE_URLS=http://+:8080 \
-              ELASTIC_ENABLED=false \
-              DB_CONNECTION_STRING=${{ secrets.DB_CONNECTION_STRING }}
+              KEY1=${{ secrets.VALUE1 }} \
+              KEY2=${{ secrets.VALUE2 }}
 
       - name: Restart Azure Container App
         run: |
-          az containerapp restart --name probuildai-backend --resource-group rg-Probuild
+          az containerapp restart --name YOUR_APP_NAME --resource-group YOUR_RESOURCE_GROUP
