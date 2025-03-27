@@ -70,9 +70,9 @@ builder.Services.AddHealthChecks()
             using (var connection = new SqlConnection(connectionString))
             {
                 connection.Open();
-                using (var command = new SqlCommand("SELECT 1;", connection)) // Fixed: Changed SqlConnection to SqlCommand
+                using (var command = new SqlCommand("SELECT 1;", connection))
                 {
-                    command.ExecuteScalar(); // Fixed: ExecuteScalar is a method of SqlCommand
+                    command.ExecuteScalar();
                 }
                 return HealthCheckResult.Healthy("SQL Server is healthy");
             }
@@ -126,16 +126,16 @@ builder.Services.AddHttpContextAccessor(); // Required for AzureBlobService
 
 var app = builder.Build();
 
-// Log the URLs the application is listening on
-var listeningUrls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "Not set";
-app.Logger.LogInformation("Application is listening on: {Urls}", listeningUrls);
-
-// Add health endpoint before other middleware to ensure it's accessible
+// Map health endpoints before other middleware to ensure they are accessible
 app.MapGet("/health", () => Results.Ok("Healthy"));
 app.MapHealthChecks("/health/details");
 
 // Map SignalR hub
 app.MapHub<ProgressHub>("/progressHub");
+
+// Log the URLs the application is listening on
+var listeningUrls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "Not set";
+app.Logger.LogInformation("Application is listening on: {Urls}", listeningUrls);
 
 // Middleware pipeline
 if (app.Environment.IsDevelopment())
@@ -150,7 +150,12 @@ else
     app.UseHsts();
 }
 
-app.UseHttpsRedirection();
+// Bypass HTTPS redirection for /health endpoint to ensure the startup probe works
+app.UseWhen(context => !context.Request.Path.StartsWithSegments("/health"), appBuilder =>
+{
+    appBuilder.UseHttpsRedirection();
+});
+
 app.UseStaticFiles();
 
 var elasticEnabledString = Environment.GetEnvironmentVariable("ELASTIC_ENABLED");
@@ -167,7 +172,7 @@ if (elasticEnabled)
 
 app.UseWebSockets();
 app.UseRouting();
-app.UseCors("AllowAngularApp"); // Apply the named CORS policy
+app.UseCors("AllowAngularApp"); // Apply the named CORS policy after health endpoints
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
@@ -191,6 +196,7 @@ try
                 var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
                 app.Logger.LogInformation("DbContext created. Calling EnsureCreated...");
                 dbContext.Database.EnsureCreated();
+                app.Logger.LogInformation("EnsureCreated completed successfully");
                 app.Logger.LogInformation("Successfully connected to the database");
                 connected = true;
             }
