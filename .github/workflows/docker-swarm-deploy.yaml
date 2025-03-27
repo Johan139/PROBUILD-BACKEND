@@ -14,7 +14,7 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      # Debug: Print the Service Principal credentials and secrets (for debugging purposes)
+      # Debug: Print the Service Principal credentials and secrets
       - name: Debug Service Principal credentials and secrets
         run: |
           echo "AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}"
@@ -49,49 +49,21 @@ jobs:
           push: true
           tags: probuild.azurecr.io/probuildai-backend:${{ github.sha }}
 
-      # Deploy to Azure Container Apps using the pre-built image
+      # Deploy to Azure Container Apps
       - name: Deploy to Azure Container Apps
         run: |
-          # Check if the app already exists
-          if az containerapp show --name probuildai-backend --resource-group rg-Probuild > /dev/null 2>&1; then
-            echo "Container app exists, updating..."
-            az containerapp update \
-              --name probuildai-backend \
-              --resource-group rg-Probuild \
-              --image probuild.azurecr.io/probuildai-backend:${{ github.sha }} \
-              --set-env-vars \
-                "SQL_USER=${{ secrets.SQL_USER }}" \
-                "SQL_PASSWORD=${{ secrets.SQL_PASSWORD }}" \
-                "AZURE_BLOB_KEY=${{ secrets.AZURE_BLOB_KEY }}" \
-                "JWT_KEY=${{ secrets.JWT_KEY }}" \
-                "ASPNETCORE_URLS=http://+:8080" \
-                "ELASTIC_ENABLED=false" \
-                "DB_CONNECTION_STRING=${{ secrets.DB_CONNECTION_STRING }}"
-          else
-            echo "Container app does not exist, creating..."
-            az containerapp create \
-              --name probuildai-backend \
-              --resource-group rg-Probuild \
-              --environment managedEnvironment-rgProbuild-ae27 \
-              --image probuild.azurecr.io/probuildai-backend:${{ github.sha }} \
-              --cpu 0.5 \
-              --memory 1Gi \
-              --min-replicas 1 \
-              --max-replicas 1 \
-              --ingress external \
-              --target-port 8080 \
-              --set-env-vars \
-                "SQL_USER=${{ secrets.SQL_USER }}" \
-                "SQL_PASSWORD=${{ secrets.SQL_PASSWORD }}" \
-                "AZURE_BLOB_KEY=${{ secrets.AZURE_BLOB_KEY }}" \
-                "JWT_KEY=${{ secrets.JWT_KEY }}" \
-                "ASPNETCORE_URLS=http://+:8080" \
-                "ELASTIC_ENABLED=false" \
-                "DB_CONNECTION_STRING=${{ secrets.DB_CONNECTION_STRING }}"
-          fi
-
-      # Check logs to diagnose degraded state
-      - name: Check Container AppREW Logs
-        run: |
-          az containerapp logs show --name probuildai-backend --resource-group rg-Probuild --follow
-        continue-on-error: true
+          az containerapp update \
+            --name probuildai-backend \
+            --resource-group rg-Probuild \
+            --image probuild.azurecr.io/probuildai-backend:${{ github.sha }} \
+            --set-env-vars \
+              "SQL_USER=${{ secrets.SQL_USER }}" \
+              "SQL_PASSWORD=${{ secrets.SQL_PASSWORD }}" \
+              "AZURE_BLOB_KEY=${{ secrets.AZURE_BLOB_KEY }}" \
+              "JWT_KEY=${{ secrets.JWT_KEY }}" \
+              "ASPNETCORE_URLS=http://+:8081" \
+              "ELASTIC_ENABLED=false" \
+              "DB_CONNECTION_STRING=${{ secrets.DB_CONNECTION_STRING }}" \
+              "FORCE_NEW_REVISION=true" \
+            --set template.containers[0].probes=null \
+            --target-port 8081
