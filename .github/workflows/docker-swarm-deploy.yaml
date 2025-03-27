@@ -10,59 +10,21 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout the repository
       - name: Check out code
         uses: actions/checkout@v4
 
-      # Verify secrets are set without exposing them
-      - name: Verify Secrets
-        run: |
-          echo "Checking if secrets are set..."
-          [ -z "${{ secrets.AZURE_CLIENT_ID }}" ] && echo "AZURE_CLIENT_ID is empty!" || echo "AZURE_CLIENT_ID is set."
-          [ -z "${{ secrets.AZURE_CLIENT_SECRET }}" ] && echo "AZURE_CLIENT_SECRET is empty!" || echo "AZURE_CLIENT_SECRET is set."
-          [ -z "${{ secrets.AZURE_TENANT_ID }}" ] && echo "AZURE_TENANT_ID is empty!" || echo "AZURE_TENANT_ID is set."
-
-      # Log in to Azure using Service Principal
       - name: Log in to Azure
         uses: azure/login@v1
         with:
           creds: '{"clientId":"${{ secrets.AZURE_CLIENT_ID }}","clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}","tenantId":"${{ secrets.AZURE_TENANT_ID }}","subscriptionId":"0e6dc202-bcae-4b8b-b1de-a8f3a04341d6"}'
 
-      # Debug: Verify Azure login and resource existence
-      - name: Debug Azure resources
-        run: |
-          echo "Listing resource groups..."
-          az group list --output table
-          echo "Checking if resource group rg-Probuild exists..."
-          az group show --name rg-Probuild --output json || echo "Resource group rg-Probuild not found"
-          echo "Checking if container app probuildai-backend exists..."
-          az containerapp show --name probuildai-backend --resource-group rg-Probuild --output json || echo "Container app probuildai-backend not found"
-          echo "Checking if ACR probuild exists..."
-          az acr show --name probuild --output json || echo "ACR probuild not found"
-
-      # Log in to Azure Container Registry
       - name: Log in to ACR
         run: |
-          az acr login --name probuild.azurecr.io
+          az acr login --name probuild
 
-      # Debug: Verify ACR login and image existence
-      - name: Debug ACR
-        run: |
-          echo "Listing repositories in ACR probuild..."
-          az acr repository list --name probuild --output table
-          echo "Checking if image probuildai-backend:${{ github.sha }} exists..."
-          az acr repository show --name probuild --repository probuildai-backend --image probuildai-backend:${{ github.sha }} --output json || echo "Image probuildai-backend:${{ github.sha }} not found"
-
-      # Pull Oryx CLI Image if missing
-      - name: Pull Oryx CLI Image
-        run: |
-          docker pull mcr.microsoft.com/oryx/cli:builder-debian-bullseye-20230926.1
-
-      # Set up Docker Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Build and push Docker image to ACR
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -70,25 +32,25 @@ jobs:
           push: true
           tags: probuild.azurecr.io/probuildai-backend:${{ github.sha }}
 
-      # Debug: Confirm image was pushed
       - name: Confirm image push
         run: |
-          echo "Verifying image probuildai-backend:${{ github.sha }} in ACR..."
-          az acr repository show --name probuild --repository probuildai-backend --image probuildai-backend:${{ github.sha }} --output json || echo "Image probuildai-backend:${{ github.sha }} still not found after push"
+          az acr repository show-tags --name probuild --repository probuildai-backend --output table
 
-      # Deploy to Azure Container Apps
       - name: Deploy to Azure Container Apps
-        uses: azure/container-apps-deploy-action@v1
-        with:
-          acrName: probuild
-          containerAppName: probuildai-backend
-          resourceGroup: rg-Probuild
-          imageToDeploy: probuild.azurecr.io/probuildai-backend:${{ github.sha }}
-          environmentVariables: |
-            SQL_USER=${{ secrets.SQL_USER }},
-            SQL_PASSWORD=${{ secrets.SQL_PASSWORD }},
-            AZURE_BLOB_KEY=${{ secrets.AZURE_BLOB_KEY }},
-            JWT_KEY=${{ secrets.JWT_KEY }},
-            ASPNETCORE_URLS=http://+:8080,
-            ELASTIC_ENABLED=false,
-            DB_CONNECTION_STRING=${{ secrets.DB_CONNECTION_STRING }}
+        run: |
+          az containerapp update \
+            --name probuildai-backend \
+            --resource-group rg-Probuild \
+            --set image=probuild.azurecr.io/probuildai-backend:${{ github.sha }} \
+            --set-env-vars \
+              SQL_USER=${{ secrets.SQL_USER }} \
+              SQL_PASSWORD=${{ secrets.SQL_PASSWORD }} \
+              AZURE_BLOB_KEY=${{ secrets.AZURE_BLOB_KEY }} \
+              JWT_KEY=${{ secrets.JWT_KEY }} \
+              ASPNETCORE_URLS=http://+:8080 \
+              ELASTIC_ENABLED=false \
+              DB_CONNECTION_STRING=${{ secrets.DB_CONNECTION_STRING }}
+
+      - name: Restart Azure Container App
+        run: |
+          az containerapp restart --name probuildai-backend --resource-group rg-Probuild
