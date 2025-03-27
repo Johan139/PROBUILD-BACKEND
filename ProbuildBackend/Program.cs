@@ -7,9 +7,6 @@ using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Services;
-using Microsoft.Extensions.Diagnostics.HealthChecks; // For health checks
-using Microsoft.Data.SqlClient; // For custom SQL Server health check
-using Azure.Storage.Blobs; // For custom Azure Blob Storage health check
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -61,43 +58,8 @@ builder.WebHost.ConfigureKestrel(options =>
 var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
                        ?? builder.Configuration.GetConnectionString("DefaultConnection");
 
-var AzureBlobStorage = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY")
-                       ?? builder.Configuration.GetConnectionString("AzureBlobConnection");
-// Add health checks for database and Blob Storage
-builder.Services.AddHealthChecks()
-    .AddCheck("SQLServer", () =>
-    {
-        try
-        {
-            using (var connection = new SqlConnection(connectionString))
-            {
-                connection.Open();
-                using (var command = new SqlCommand("SELECT 1;", connection))
-                {
-                    command.ExecuteScalar();
-                }
-                return HealthCheckResult.Healthy("SQL Server is healthy");
-            }
-        }
-        catch (Exception ex)
-        {
-            return HealthCheckResult.Unhealthy($"SQL Server is unhealthy: {ex.Message}");
-        }
-    })
-    .AddCheck("AzureBlobStorage", () =>
-    {
-        try
-        {
-            var blobConnectionString = builder.Configuration.GetConnectionString(AzureBlobStorage);
-            var blobServiceClient = new BlobServiceClient(blobConnectionString);
-            blobServiceClient.GetAccountInfo();
-            return HealthCheckResult.Healthy("Azure Blob Storage is healthy");
-        }
-        catch (Exception ex)
-        {
-            return HealthCheckResult.Unhealthy($"Azure Blob Storage is unhealthy: {ex.Message}");
-        }
-    });
+var azureBlobStorage = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY")
+                      ?? builder.Configuration.GetConnectionString("AzureBlobConnection");
 
 // Configure DbContext with retry policy to handle rate-limiting
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -128,9 +90,8 @@ builder.Services.AddHttpContextAccessor(); // Required for AzureBlobService
 
 var app = builder.Build();
 
-// Map health endpoints before other middleware to ensure they are accessible
+// Map a simple health endpoint
 app.MapGet("/health", () => Results.Ok("Healthy"));
-app.MapHealthChecks("/health/details");
 
 // Map SignalR hub
 app.MapHub<ProgressHub>("/progressHub");
@@ -152,7 +113,7 @@ else
     app.UseHsts();
 }
 
-// Bypass HTTPS redirection for /health endpoint to ensure the startup probe works
+// Bypass HTTPS redirection for /health endpoint to ensure compatibility
 app.UseWhen(context => !context.Request.Path.StartsWithSegments("/health"), appBuilder =>
 {
     appBuilder.UseHttpsRedirection();
@@ -174,7 +135,7 @@ if (elasticEnabled)
 
 app.UseWebSockets();
 app.UseRouting();
-app.UseCors("AllowAngularApp"); // Apply the named CORS policy after health endpoints
+app.UseCors("AllowAngularApp"); // Apply the named CORS policy after health endpoint
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
