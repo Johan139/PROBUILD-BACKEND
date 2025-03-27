@@ -85,10 +85,10 @@ jobs:
           resourceGroup: rg-Probuild
           imageToDeploy: probuild.azurecr.io/probuildai-backend:${{ github.sha }}
           environmentVariables: |
-            SQL_USER=${{ secrets.SQL_USER }}
-            SQL_PASSWORD=${{ secrets.SQL_PASSWORD }}
-            AZURE_BLOB_KEY=${{ secrets.AZURE_BLOB_KEY }}
-            JWT_KEY=${{ secrets.JWT_KEY }}
-            ASPNETCORE_URLS=http://+:8080
-            ELASTIC_ENABLED=false
+            SQL_USER=${{ secrets.SQL_USER }},
+            SQL_PASSWORD=${{ secrets.SQL_PASSWORD }},
+            AZURE_BLOB_KEY=${{ secrets.AZURE_BLOB_KEY }},
+            JWT_KEY=${{ secrets.JWT_KEY }},
+            ASPNETCORE_URLS=http://+:8080,
+            ELASTIC_ENABLED=false,
             DB_CONNECTION_STRING=${{ secrets.DB_CONNECTION_STRING }}
