@@ -173,6 +173,13 @@ namespace ProbuildBackend.Controllers
             return NoContent();
         }
 
+        [HttpPost("DeleteTemporaryFiles")]
+        public async Task<IActionResult> DeleteTemporaryFiles([FromBody] DeleteTemporaryFilesRequest request)
+        {
+            await _azureBlobservice.DeleteTemporaryFiles(request.BlobUrls);
+            return Ok();
+        }
+
         [HttpGet("userId/{userId}")]
         public async Task<ActionResult<IEnumerable<Models.JobModel>>> GetJobsByUserId(string userId)
         {
@@ -205,5 +212,9 @@ namespace ProbuildBackend.Controllers
         {
             return _context.Jobs.Any(e => e.Id == id);
         }
+    }
+    public class DeleteTemporaryFilesRequest
+    {
+        public List<string> BlobUrls { get; set; }
     }
 }

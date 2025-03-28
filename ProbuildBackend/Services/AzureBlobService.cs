@@ -19,7 +19,8 @@ namespace ProbuildBackend.Services
         public AzureBlobService(IConfiguration configuration, IHttpContextAccessor httpContextAccessor)
         {
             _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
-            var azureConnectionString = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY");
+            var azureConnectionString = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY")
+                      ?? configuration["ConnectionStrings:AzureBlobConnection"];
             if (string.IsNullOrEmpty(azureConnectionString))
             {
                 throw new ArgumentNullException(nameof(azureConnectionString), "Azure Blob Storage connection string is not configured");
@@ -34,7 +35,28 @@ namespace ProbuildBackend.Services
         {
             await _containerClient.CreateIfNotExistsAsync(PublicAccessType.Blob);
         }
+        public async Task DeleteTemporaryFiles(List<string> blobUrls)
+        {
+            foreach (var blobUrl in blobUrls)
+            {
+                try
+                {
+                    var blobUri = new Uri(blobUrl);
+                    // Decode the blob name to match the actual name in Azure Blob Storage
+                    var blobName = Uri.UnescapeDataString(blobUri.AbsolutePath.TrimStart('/').Replace($"{_containerName}/", ""));
+                    Console.WriteLine($"Deleting blob: {blobName}");
 
+                    var blobClient = _containerClient.GetBlobClient(blobName);
+                    var response = await blobClient.DeleteIfExistsAsync();
+                    Console.WriteLine($"Blob {blobName} deleted: {response.Value}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error deleting blob {blobUrl}: {ex.Message}");
+                    throw;
+                }
+            }
+        }
         public async Task<List<string>> UploadFiles(List<IFormFile> files, IHubContext<ProgressHub> hubContext, string connectionId)
         {
             var uploadedUrls = new List<string>();
