@@ -17,7 +17,7 @@ namespace ProbuildBackend.Services
         public DocumentProcessorService(AzureBlobService azureBlobService, IConfiguration configuration)
         {
             _azureBlobService = azureBlobService ?? throw new ArgumentNullException(nameof(azureBlobService));
-            string apiKey = "" ?? throw new ArgumentNullException("OpenAI API key is missing");
+            string apiKey = "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\r\n" ?? throw new ArgumentNullException("OpenAI API key is missing");
             var openAIClient = new OpenAIClient(apiKey);
             _chatClient = openAIClient.GetChatClient("gpt-3.5-turbo"); // Specify the model here
 
