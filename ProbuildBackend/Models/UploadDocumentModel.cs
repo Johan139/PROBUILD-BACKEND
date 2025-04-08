@@ -1,4 +1,6 @@
-﻿namespace ProbuildBackend.Models
+﻿using ProbuildBackend.Services;
+
+namespace ProbuildBackend.Models
 {
     public class UploadDocumentModel
     {
@@ -7,5 +9,6 @@
         public List<string> FileUrls { get; set; }
         public List<string> FileNames { get; set; }
         public string Message { get; set; }
+        public List<BomWithCosts> BillOfMaterials { get; set; } // Add this
     }
 }

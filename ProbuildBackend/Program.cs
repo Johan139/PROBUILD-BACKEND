@@ -79,7 +79,7 @@ builder.Services.AddIdentity<UserModel, IdentityRole>(options =>
 })
 .AddEntityFrameworkStores<ApplicationDbContext>()
 .AddDefaultTokenProviders();
-
+builder.Services.AddScoped<DocumentProcessorService>();
 builder.Services.AddTransient<IEmailSender, EmailSender>();
 builder.Services.AddSingleton<AzureBlobService>();
 builder.Services.AddEndpointsApiExplorer();

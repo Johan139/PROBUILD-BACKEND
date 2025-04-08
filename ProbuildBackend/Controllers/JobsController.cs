@@ -1,4 +1,6 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Azure.Storage.Blobs.Models;
+using Azure.Storage.Blobs;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Middleware;
@@ -7,6 +9,8 @@ using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Services;
 using System.Net;
 using static Google.Apis.Requests.BatchRequest;
+using System.IO.Compression;
+using System.Globalization;
 
 namespace ProbuildBackend.Controllers
 {
@@ -18,12 +22,14 @@ namespace ProbuildBackend.Controllers
         private readonly IHubContext<ProgressHub> _hubContext; // Inject IHubContext
         private readonly AzureBlobService _azureBlobservice;
         private readonly IHttpContextAccessor _httpContextAccessor;
-        public JobsController(ApplicationDbContext context, AzureBlobService azureBlobservice, IHubContext<ProgressHub> hubContext, IHttpContextAccessor httpContextAccessor)
+        private readonly DocumentProcessorService _documentProcessorService;
+        public JobsController(ApplicationDbContext context, AzureBlobService azureBlobservice, IHubContext<ProgressHub> hubContext, IHttpContextAccessor httpContextAccessor, DocumentProcessorService documentProcessorService)
         {
             _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
             _context = context;
             _azureBlobservice = azureBlobservice;
             _hubContext = hubContext;
+            _documentProcessorService = documentProcessorService; // Add this
         }
 
         [HttpGet]
@@ -44,43 +50,193 @@ namespace ProbuildBackend.Controllers
 
             return job;
         }
+        [HttpGet("download/{documentId}")]
+        public async Task<IActionResult> DownloadBlob(int documentId)
+        {
+            try
+            {
+                // Look up the document by ID
+                var document = await _context.JobDocuments
+                    .FirstOrDefaultAsync(doc => doc.Id == documentId);
+
+                if (document == null)
+                {
+                    return NotFound("Document not found.");
+                }
+
+                // Add authorization check here (e.g., verify the user has access to the job)
+
+                var (contentStream, contentType, originalFileName) = await _azureBlobservice.GetBlobContentAsync(document.BlobUrl);
+
+                if (contentType == "application/gzip")
+                {
+                    using var decompressedStream = new MemoryStream();
+                    using (var gzipStream = new GZipStream(contentStream, CompressionMode.Decompress))
+                    {
+                        await gzipStream.CopyToAsync(decompressedStream);
+                    }
+                    decompressedStream.Position = 0;
+                    string decompressedContentType = GetContentTypeFromFileName(originalFileName);
+                    return File(decompressedStream, decompressedContentType, originalFileName);
+                }
+
+                return File(contentStream, contentType, originalFileName);
+            }
+            catch (FileNotFoundException ex)
+            {
+                return NotFound(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An error occurred while fetching the blob: {ex.Message}");
+            }
+        }
+        [HttpGet("documents/{id}")]
+        public async Task<ActionResult<IEnumerable<object>>> GetJobDocuments(int id)
+        {
+            var documents = await _context.JobDocuments
+                .Where(doc => doc.JobId == id)
+                .ToListAsync();
+
+            if (documents == null || !documents.Any())
+            {
+                return NotFound();
+            }
+
+            var documentDetails = new List<object>();
+            foreach (var doc in documents)
+            {
+                try
+                {
+                    var properties = await _azureBlobservice.GetBlobContentAsync(doc.BlobUrl);
+                    documentDetails.Add(new
+                    {
+                        doc.Id,
+                        doc.JobId,
+                        doc.FileName,
+                        Size = properties.Content.Length
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error fetching properties for blob {doc.BlobUrl}: {ex.Message}");
+                    // Add the document with a size of 0 to indicate an error
+                    documentDetails.Add(new
+                    {
+                        doc.Id,
+                        doc.JobId,
+                        doc.FileName,
+                        Size = 0L
+                    });
+                }
+            }
+
+            return Ok(documentDetails);
+        }
+
+        private string GetContentTypeFromFileName(string fileName)
+        {
+            var extension = Path.GetExtension(fileName).ToLower();
+            return extension switch
+            {
+                ".pdf" => "application/pdf",
+                ".png" => "image/png",
+                ".jpg" => "image/jpeg",
+                ".jpeg" => "image/jpeg",
+                _ => "application/octet-stream"
+            };
+        }
 
         [HttpPost]
         [RequestSizeLimit(200 * 1024 * 1024)]
-        public async Task<IActionResult> PostJob([FromForm] JobDto jobrequest)
+        public async Task<IActionResult> PostJob([FromForm] JobDto jobRequest)
         {
-            var job = new JobModel
+            var strategy = _context.Database.CreateExecutionStrategy();
+            return await strategy.ExecuteAsync(async () =>
             {
-                ProjectName = jobrequest.ProjectName,
-                JobType = jobrequest.JobType,
-                Qty = jobrequest.Qty,
-                DesiredStartDate = jobrequest.DesiredStartDate,
-                WallStructure = jobrequest.WallStructure,
-                WallStructureSubtask = jobrequest.WallStructureSubtask,
-                WallInsulation = jobrequest.WallInsulation,
-                WallInsulationSubtask = jobrequest.WallInsulationSubtask,
-                RoofStructure = jobrequest.RoofStructure,
-                RoofStructureSubtask = jobrequest.RoofStructureSubtask,
-                RoofTypeSubtask = jobrequest.RoofTypeSubtask,
-                RoofInsulation = jobrequest.RoofInsulation,
-                Foundation = jobrequest.Foundation,
-                FoundationSubtask = jobrequest.FoundationSubtask,
-                Finishes = jobrequest.Finishes,
-                Address = jobrequest.Address,
-                FinishesSubtask = jobrequest.FinishesSubtask,
-                ElectricalSupplyNeeds = jobrequest.ElectricalSupplyNeeds,
-                ElectricalSupplyNeedsSubtask = jobrequest.ElectricalSupplyNeedsSubtask,
-                Stories = jobrequest.Stories,
-                BuildingSize = jobrequest.BuildingSize,
-                OperatingArea = jobrequest.OperatingArea,
-                UserId = jobrequest.UserId,
-                Status = jobrequest.Status
-            };
+                using var transaction = await _context.Database.BeginTransactionAsync();
+                try
+                {
+                    // Step 1: Save the job first
+                    var job = new JobModel
+                    {
+                        ProjectName = jobRequest.ProjectName,
+                        JobType = jobRequest.JobType,
+                        Qty = jobRequest.Qty,
+                        DesiredStartDate = jobRequest.DesiredStartDate,
+                        WallStructure = jobRequest.WallStructure,
+                        WallStructureSubtask = jobRequest.WallStructureSubtask,
+                        WallInsulation = jobRequest.WallInsulation,
+                        WallInsulationSubtask = jobRequest.WallInsulationSubtask,
+                        RoofStructure = jobRequest.RoofStructure,
+                        RoofStructureSubtask = jobRequest.RoofStructureSubtask,
+                        RoofTypeSubtask = jobRequest.RoofTypeSubtask,
+                        RoofInsulation = jobRequest.RoofInsulation,
+                        Foundation = jobRequest.Foundation,
+                        FoundationSubtask = jobRequest.FoundationSubtask,
+                        Finishes = jobRequest.Finishes,
+                        FinishesSubtask = jobRequest.FinishesSubtask,
+                        ElectricalSupplyNeeds = jobRequest.ElectricalSupplyNeeds,
+                        ElectricalSupplyNeedsSubtask = jobRequest.ElectricalSupplyNeedsSubtask,
+                        Stories = jobRequest.Stories,
+                        BuildingSize = jobRequest.BuildingSize,
+                        OperatingArea = jobRequest.OperatingArea,
+                        UserId = jobRequest.UserId,
+                        Status = jobRequest.Status
+                    };
 
-            _context.Jobs.Add(job);
-            await _context.SaveChangesAsync();
+                    _context.Jobs.Add(job);
+                    await _context.SaveChangesAsync();
 
-            return Ok(job);
+                    // Step 2: Save the address with JobId
+                    if (!string.IsNullOrEmpty(jobRequest.Address))
+                    {
+                        decimal lat = Convert.ToDecimal(jobRequest.Latitude, CultureInfo.InvariantCulture);
+                        decimal lon = Convert.ToDecimal(jobRequest.Longitude, CultureInfo.InvariantCulture);
+                        var address = new AddressModel
+                        {
+                            FormattedAddress = jobRequest.Address,
+                            StreetNumber = jobRequest.StreetNumber,
+                            StreetName = jobRequest.StreetName,
+                            City = jobRequest.City,
+                            State = jobRequest.State,
+                            PostalCode = jobRequest.PostalCode,
+                            Country = jobRequest.Country,
+                            Latitude = lat,
+                            Longitude = lon,
+                            GooglePlaceId = jobRequest.GooglePlaceId,
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow,
+                            JobId = job.Id
+                        };
+
+                        _context.JobAddresses.Add(address);
+                        await _context.SaveChangesAsync();
+                    }
+
+                    // Step 3: Link uploaded documents
+                    if (!string.IsNullOrEmpty(jobRequest.SessionId))
+                    {
+                        var documents = await _context.JobDocuments
+                            .Where(doc => doc.SessionId == jobRequest.SessionId && doc.JobId == null)
+                            .ToListAsync();
+
+                        foreach (var doc in documents)
+                        {
+                            doc.JobId = job.Id;
+                        }
+                        await _context.SaveChangesAsync();
+                    }
+
+                    await transaction.CommitAsync();
+                    return Ok(job);
+                }
+                catch (Exception ex)
+                {
+                    await transaction.RollbackAsync();
+                    return StatusCode(500, new { error = "Failed to create job", details = ex.Message });
+                }
+            });
         }
 
         [HttpPost("UploadImage")]
@@ -123,8 +279,39 @@ namespace ProbuildBackend.Controllers
 
                 Console.WriteLine($"Received connectionId from client: {connectionId}");
 
-                // Upload files using the service and pass the client-provided connectionId
+                // Upload files to Azure Blob Storage
                 uploadedFileUrls = await _azureBlobservice.UploadFiles(jobRequest.Blueprint, _hubContext, connectionId);
+
+                // Save document metadata to the JobDocuments table
+                foreach (var (file, url) in jobRequest.Blueprint.Zip(uploadedFileUrls, (f, u) => (f, u)))
+                {
+                    // Extract filename from the URL (should already have "(1)" if upload worked)
+                    string blobFileName = Path.GetFileName(new Uri(url).LocalPath); // e.g., "c09444bf-9180-4179-a76a-d3be18043b8a_Trophy Club Approved Plans 072324 (1).pdf"
+
+                    // Log to verify
+                    Console.WriteLine($"Original file.FileName: {file.FileName}");
+                    Console.WriteLine($"Blob URL from Azure: {url}");
+                    Console.WriteLine($"Extracted Blob FileName: {blobFileName}");
+
+                    var jobDocument = new JobDocumentModel
+                    {
+                        JobId = null,
+                        FileName = blobFileName,
+                        BlobUrl = url,
+                        SessionId = jobRequest.sessionId,
+                        UploadedAt = DateTime.Now
+                    };
+                    _context.JobDocuments.Add(jobDocument);
+                }
+                await _context.SaveChangesAsync();
+
+                // Process documents with OpenAI to generate BOM
+                var bomResults = new List<BomWithCosts>();
+                //foreach (var url in uploadedFileUrls)
+                //{
+                //    var bomWithCosts = await _documentProcessorService.ProcessDocumentAsync(url);
+                //    bomResults.Add(bomWithCosts);
+                //}
 
                 var response = new UploadDocumentModel
                 {
@@ -132,7 +319,8 @@ namespace ProbuildBackend.Controllers
                     Status = "Uploaded",
                     FileUrls = uploadedFileUrls,
                     FileNames = jobRequest.Blueprint.Select(f => f.FileName).ToList(),
-                    Message = $"Successfully uploaded {jobRequest.Blueprint.Count} file(s)"
+                    Message = $"Successfully uploaded {jobRequest.Blueprint.Count} file(s)",
+                    BillOfMaterials = bomResults // Add BOM to response
                 };
 
                 return Ok(response);
@@ -183,6 +371,10 @@ namespace ProbuildBackend.Controllers
         [HttpGet("userId/{userId}")]
         public async Task<ActionResult<IEnumerable<Models.JobModel>>> GetJobsByUserId(string userId)
         {
+            try
+            {
+
+         
             var jobs = await _context.Jobs.Where(job => job.UserId == userId).ToListAsync();
 
             if (jobs == null || !jobs.Any())
@@ -191,6 +383,12 @@ namespace ProbuildBackend.Controllers
             }
 
             return Ok(jobs);
+            }
+            catch (Exception ex)
+            {
+
+                throw;
+            }
         }
 
         [HttpDelete("{id}")]
