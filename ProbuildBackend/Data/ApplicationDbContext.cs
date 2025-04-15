@@ -13,6 +13,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<BidModel> Bids { get; set; }
     public DbSet<NotificationModel> Notifications { get; set; }
 
+    public DbSet<DocumentProcessingResult> DocumentProcessingResults { get; set; }
     public DbSet<AddressModel> JobAddresses { get; set; }
     public DbSet<JobDocumentModel> JobDocuments { get; set; }
     protected override void OnModelCreating(ModelBuilder modelBuilder)

@@ -1,6 +1,7 @@
 using Azure.Storage;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
+using iText.Commons.Utils;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Configuration;
@@ -173,6 +174,7 @@ namespace ProbuildBackend.Services
                 // Step 4: Download the blob content
                 BlobDownloadInfo download = await blobClient.DownloadAsync();
 
+               
                 // Step 5: Get metadata to determine the original file name and content type
                 var properties = await blobClient.GetPropertiesAsync();
                 var metadata = properties.Value.Metadata;

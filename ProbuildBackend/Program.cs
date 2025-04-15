@@ -1,9 +1,12 @@
 using Elastic.Apm.NetCoreAll;
+using Hangfire;
+using Hangfire.MemoryStorage;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Services;
@@ -87,7 +90,13 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<WebSocketManager>();
 builder.Services.AddSignalR();
 builder.Services.AddHttpContextAccessor(); // Required for AzureBlobService
-
+builder.Services.AddHangfire(config => config
+    .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+    .UseSimpleAssemblyNameTypeSerializer()
+    .UseRecommendedSerializerSettings()
+    .UseMemoryStorage()); // Replace with UseSqlServerStorage in production
+builder.Services.AddScoped<IEmailService, EmailService>(); // Add this line
+builder.Services.AddHangfireServer();
 var app = builder.Build();
 
 // Map a simple health endpoint

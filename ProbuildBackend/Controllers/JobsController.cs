@@ -11,6 +11,7 @@ using System.Net;
 using static Google.Apis.Requests.BatchRequest;
 using System.IO.Compression;
 using System.Globalization;
+using Hangfire;
 
 namespace ProbuildBackend.Controllers
 {
@@ -19,17 +20,23 @@ namespace ProbuildBackend.Controllers
     public class JobsController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
-        private readonly IHubContext<ProgressHub> _hubContext; // Inject IHubContext
+        private readonly IHubContext<ProgressHub> _hubContext;
         private readonly AzureBlobService _azureBlobservice;
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly DocumentProcessorService _documentProcessorService;
-        public JobsController(ApplicationDbContext context, AzureBlobService azureBlobservice, IHubContext<ProgressHub> hubContext, IHttpContextAccessor httpContextAccessor, DocumentProcessorService documentProcessorService)
+
+        public JobsController(
+            ApplicationDbContext context,
+            AzureBlobService azureBlobservice,
+            IHubContext<ProgressHub> hubContext,
+            IHttpContextAccessor httpContextAccessor,
+            DocumentProcessorService documentProcessorService)
         {
             _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
             _context = context;
             _azureBlobservice = azureBlobservice;
             _hubContext = hubContext;
-            _documentProcessorService = documentProcessorService; // Add this
+            _documentProcessorService = documentProcessorService;
         }
 
         [HttpGet]
@@ -50,12 +57,12 @@ namespace ProbuildBackend.Controllers
 
             return job;
         }
+
         [HttpGet("download/{documentId}")]
         public async Task<IActionResult> DownloadBlob(int documentId)
         {
             try
             {
-                // Look up the document by ID
                 var document = await _context.JobDocuments
                     .FirstOrDefaultAsync(doc => doc.Id == documentId);
 
@@ -63,8 +70,6 @@ namespace ProbuildBackend.Controllers
                 {
                     return NotFound("Document not found.");
                 }
-
-                // Add authorization check here (e.g., verify the user has access to the job)
 
                 var (contentStream, contentType, originalFileName) = await _azureBlobservice.GetBlobContentAsync(document.BlobUrl);
 
@@ -91,6 +96,7 @@ namespace ProbuildBackend.Controllers
                 return StatusCode(500, $"An error occurred while fetching the blob: {ex.Message}");
             }
         }
+
         [HttpGet("documents/{id}")]
         public async Task<ActionResult<IEnumerable<object>>> GetJobDocuments(int id)
         {
@@ -120,7 +126,6 @@ namespace ProbuildBackend.Controllers
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Error fetching properties for blob {doc.BlobUrl}: {ex.Message}");
-                    // Add the document with a size of 0 to indicate an error
                     documentDetails.Add(new
                     {
                         doc.Id,
@@ -132,6 +137,79 @@ namespace ProbuildBackend.Controllers
             }
 
             return Ok(documentDetails);
+        }
+
+        [HttpGet("processing-results/{jobId}")]
+        public async Task<ActionResult<IEnumerable<DocumentProcessingResult>>> GetProcessingResults(int jobId)
+        {
+            try
+            {
+                var results = await _context.DocumentProcessingResults
+                    .Where(r => r.JobId == jobId)
+                    .Include(r => r.Document)
+                    .ToListAsync();
+
+                if (results == null || !results.Any())
+                {
+                    return StatusCode(500, new { error = "AI is still processing the document." });
+                }
+
+                return Ok(results);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to fetch processing results", details = ex.Message });
+            }
+        }
+
+        [HttpGet("processing-status/{jobId}")]
+        public async Task<IActionResult> GetProcessingStatus(int jobId)
+        {
+            try
+            {
+                var job = await _context.Jobs.FindAsync(jobId);
+                if (job == null)
+                {
+                    return NotFound($"Job with ID {jobId} not found.");
+                }
+
+                var documents = await _context.JobDocuments
+                    .Where(doc => doc.JobId == jobId)
+                    .ToListAsync();
+
+                if (documents == null || !documents.Any())
+                {
+                    return NotFound($"No documents found for JobId {jobId}.");
+                }
+
+                var processingResults = await _context.DocumentProcessingResults
+                    .Where(r => r.JobId == jobId)
+                    .ToListAsync();
+
+                bool isProcessingComplete = documents.Count == processingResults.Count;
+
+                if (!isProcessingComplete)
+                {
+                    return Ok(new { IsProcessingComplete = false, Message = "AI is still processing the documents." });
+                }
+
+                if (job.Status == "PROCESSED")
+                {
+                    return Ok(new { IsProcessingComplete = true, Message = "AI processing is complete." });
+                }
+                else if (job.Status == "FAILED")
+                {
+                    return Ok(new { IsProcessingComplete = false, Message = "AI processing failed." });
+                }
+                else
+                {
+                    return Ok(new { IsProcessingComplete = false, Message = "AI processing is incomplete or in an unexpected state." });
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to check processing status", details = ex.Message });
+            }
         }
 
         private string GetContentTypeFromFileName(string fileName)
@@ -157,7 +235,6 @@ namespace ProbuildBackend.Controllers
                 using var transaction = await _context.Database.BeginTransactionAsync();
                 try
                 {
-                    // Step 1: Save the job first
                     var job = new JobModel
                     {
                         ProjectName = jobRequest.ProjectName,
@@ -188,7 +265,6 @@ namespace ProbuildBackend.Controllers
                     _context.Jobs.Add(job);
                     await _context.SaveChangesAsync();
 
-                    // Step 2: Save the address with JobId
                     if (!string.IsNullOrEmpty(jobRequest.Address))
                     {
                         decimal lat = Convert.ToDecimal(jobRequest.Latitude, CultureInfo.InvariantCulture);
@@ -214,7 +290,7 @@ namespace ProbuildBackend.Controllers
                         await _context.SaveChangesAsync();
                     }
 
-                    // Step 3: Link uploaded documents
+                    List<string> documentUrls = new List<string>();
                     if (!string.IsNullOrEmpty(jobRequest.SessionId))
                     {
                         var documents = await _context.JobDocuments
@@ -224,11 +300,19 @@ namespace ProbuildBackend.Controllers
                         foreach (var doc in documents)
                         {
                             doc.JobId = job.Id;
+                            documentUrls.Add(doc.BlobUrl);
                         }
                         await _context.SaveChangesAsync();
                     }
 
+                    if (documentUrls.Any())
+                    {
+                        string connectionId = _httpContextAccessor.HttpContext?.Connection.Id ?? string.Empty;
+                        BackgroundJob.Enqueue(() => _documentProcessorService.ProcessDocumentsForJobAsync(job.Id, documentUrls, connectionId));
+                    }
+
                     await transaction.CommitAsync();
+
                     return Ok(job);
                 }
                 catch (Exception ex)
@@ -240,7 +324,7 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("UploadImage")]
-        [RequestSizeLimit(200 * 1024 * 1024)] // 200MB
+        [RequestSizeLimit(200 * 1024 * 1024)]
         public async Task<IActionResult> UploadImage([FromForm] UploadDocumentDTO jobRequest)
         {
             try
@@ -255,7 +339,6 @@ namespace ProbuildBackend.Controllers
                     return BadRequest(new { error = "No blueprint files provided" });
                 }
 
-                // Validate files
                 var allowedExtensions = new[] { ".pdf", ".png", ".jpg", ".jpeg" };
                 var uploadedFileUrls = new List<string>();
 
@@ -273,22 +356,17 @@ namespace ProbuildBackend.Controllers
                     }
                 }
 
-                // Get connectionId from form data
                 string connectionId = jobRequest.connectionId ?? _httpContextAccessor.HttpContext?.Connection.Id
                     ?? throw new InvalidOperationException("No valid connectionId provided.");
 
                 Console.WriteLine($"Received connectionId from client: {connectionId}");
 
-                // Upload files to Azure Blob Storage
                 uploadedFileUrls = await _azureBlobservice.UploadFiles(jobRequest.Blueprint, _hubContext, connectionId);
 
-                // Save document metadata to the JobDocuments table
                 foreach (var (file, url) in jobRequest.Blueprint.Zip(uploadedFileUrls, (f, u) => (f, u)))
                 {
-                    // Extract filename from the URL (should already have "(1)" if upload worked)
-                    string blobFileName = Path.GetFileName(new Uri(url).LocalPath); // e.g., "c09444bf-9180-4179-a76a-d3be18043b8a_Trophy Club Approved Plans 072324 (1).pdf"
+                    string blobFileName = Path.GetFileName(new Uri(url).LocalPath);
 
-                    // Log to verify
                     Console.WriteLine($"Original file.FileName: {file.FileName}");
                     Console.WriteLine($"Blob URL from Azure: {url}");
                     Console.WriteLine($"Extracted Blob FileName: {blobFileName}");
@@ -305,13 +383,7 @@ namespace ProbuildBackend.Controllers
                 }
                 await _context.SaveChangesAsync();
 
-                // Process documents with OpenAI to generate BOM
                 var bomResults = new List<BomWithCosts>();
-                //foreach (var url in uploadedFileUrls)
-                //{
-                //    var bomWithCosts = await _documentProcessorService.ProcessDocumentAsync(url);
-                //    bomResults.Add(bomWithCosts);
-                //}
 
                 var response = new UploadDocumentModel
                 {
@@ -320,7 +392,7 @@ namespace ProbuildBackend.Controllers
                     FileUrls = uploadedFileUrls,
                     FileNames = jobRequest.Blueprint.Select(f => f.FileName).ToList(),
                     Message = $"Successfully uploaded {jobRequest.Blueprint.Count} file(s)",
-                    BillOfMaterials = bomResults // Add BOM to response
+                    BillOfMaterials = bomResults
                 };
 
                 return Ok(response);
@@ -328,6 +400,31 @@ namespace ProbuildBackend.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, new { error = "Failed to upload files", details = ex.Message });
+            }
+        }
+
+        public async Task ProcessDocumentAndGenerateBomAsync(string blobUrl, string connectionId)
+        {
+            try
+            {
+                string documentText = await _documentProcessorService.ExtractTextFromBlob(blobUrl);
+                var bom = await _documentProcessorService.GenerateBomFromText(documentText);
+                var bomWithCosts = _documentProcessorService.CalculateCosts(bom);
+
+                await _hubContext.Clients.Client(connectionId).SendAsync("BomGenerated", new
+                {
+                    BlobUrl = blobUrl,
+                    Bom = bomWithCosts
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error processing document {blobUrl}: {ex.Message}");
+                await _hubContext.Clients.Client(connectionId).SendAsync("BomGenerationFailed", new
+                {
+                    BlobUrl = blobUrl,
+                    Error = ex.Message
+                });
             }
         }
 
@@ -373,20 +470,17 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
+                var jobs = await _context.Jobs.Where(job => job.UserId == userId).ToListAsync();
 
-         
-            var jobs = await _context.Jobs.Where(job => job.UserId == userId).ToListAsync();
+                if (jobs == null || !jobs.Any())
+                {
+                    return NotFound();
+                }
 
-            if (jobs == null || !jobs.Any())
-            {
-                return NotFound();
-            }
-
-            return Ok(jobs);
+                return Ok(jobs);
             }
             catch (Exception ex)
             {
-
                 throw;
             }
         }
@@ -411,6 +505,7 @@ namespace ProbuildBackend.Controllers
             return _context.Jobs.Any(e => e.Id == id);
         }
     }
+
     public class DeleteTemporaryFilesRequest
     {
         public List<string> BlobUrls { get; set; }
