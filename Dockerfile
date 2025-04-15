@@ -9,17 +9,18 @@ RUN dotnet publish -c Release -o out
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 
-# Install dependencies for PdfiumViewer (and System.Drawing.Common)
+# Install required native dependencies
 RUN apt-get update && \
-    apt-get install -y \
+    apt-get install -y --no-install-recommends \
         libgdiplus \
         libc6-dev \
         libx11-dev \
         libxext6 \
         libxrender1 && \
-    ln -s libgdiplus.so /usr/lib/libgdiplus.so
+    rm -rf /var/lib/apt/lists/* && \
+    ln -s /usr/lib/libgdiplus.so /usr/lib/libgdiplus.so.0 || true
 
-# Set Pdfium native lib path
+# Set environment for Pdfium native libs
 ENV LD_LIBRARY_PATH=/app/runtimes/linux-x64/native
 
 COPY --from=build /app/out ./
