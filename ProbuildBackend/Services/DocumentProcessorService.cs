@@ -1,18 +1,26 @@
 ﻿using System.Text.Json;
 using OpenAI;
 using OpenAI.Chat;
-using System.Text;
-using System.IO;
-using PdfiumViewer;
-using System.Drawing.Imaging;
 using System.Drawing;
 using System.Collections.Concurrent;
 using Microsoft.AspNetCore.SignalR;
 using ProbuildBackend.Models;
 using Microsoft.EntityFrameworkCore;
-using MongoDB.Bson;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Interface;
+using iText.Kernel.Pdf.Canvas.Parser;
+using iText.Kernel.Pdf;
+using iText.Kernel.Pdf.Canvas.Parser.Data;
+using iText.Kernel.Pdf.Canvas.Parser.Listener;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Processing;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Formats.Png;
+using Image = SixLabors.ImageSharp.Image;
+using Point = SixLabors.ImageSharp.Point;
+using Rectangle = SixLabors.ImageSharp.Rectangle;
+using Size = SixLabors.ImageSharp.Size;
+
 
 namespace ProbuildBackend.Services
 {
@@ -297,21 +305,48 @@ namespace ProbuildBackend.Services
             var pageImages = new List<(int, byte[])>();
             try
             {
-                using var pdfDocument = PdfDocument.Load(contentStream);
-                for (int pageIndex = 0; pageIndex < pdfDocument.PageCount; pageIndex++)
-                {
-                    var pageSize = pdfDocument.PageSizes[pageIndex];
-                    int width = Math.Max((int)(pageSize.Width * _settings.Dpi / 72), 1);
-                    int height = Math.Max((int)(pageSize.Height * _settings.Dpi / 72), 1);
+                using var pdfReader = new PdfReader(contentStream);
+                using var pdfDocument = new PdfDocument(pdfReader);
 
-                    using var image = pdfDocument.Render(pageIndex, width, height, _settings.Dpi, _settings.Dpi, PdfRenderFlags.Annotations);
+                for (int pageIndex = 0; pageIndex < pdfDocument.GetNumberOfPages(); pageIndex++)
+                {
+                    var page = pdfDocument.GetPage(pageIndex + 1); // iText7 pages are 1-based
+                    var pageSize = page.GetPageSize();
+                    int width = Math.Max((int)(pageSize.GetWidth() * _settings.Dpi / 72), 1);
+                    int height = Math.Max((int)(pageSize.GetHeight() * _settings.Dpi / 72), 1);
+
+                    // Create a blank image with ImageSharp
+                    using var image = new Image<Rgba32>(width, height);
+
+                    // Fill the image with a white background
+                    image.Mutate(ctx => ctx.BackgroundColor(SixLabors.ImageSharp.Color.White));
+
+                    // Render the PDF page to an image using PdfCanvasProcessor
+                    var strategy = new ImageRenderListener(image);
+                    var processor = new PdfCanvasProcessor(strategy);
+                    processor.ProcessPageContent(page);
+
+                    // Resize the image using ImageSharp
+                    int maxWidth = _settings.MaxImageWidth;
+                    int maxHeight = _settings.MaxImageHeight;
+                    image.Mutate(x =>
+                    {
+                        x.Resize(new ResizeOptions
+                        {
+                            Size = new Size(maxWidth, maxHeight),
+                            Mode = ResizeMode.Max
+                        });
+                    });
+
+                    // Save the image to a memory stream as PNG
                     using var memoryStream = new MemoryStream();
-                    var resizedImage = ResizeImage(image, _settings.MaxImageWidth, _settings.MaxImageHeight);
-                    resizedImage.Save(memoryStream, ImageFormat.Png);
+                    await image.SaveAsync(memoryStream, new PngEncoder());
                     pageImages.Add((pageIndex, memoryStream.ToArray()));
                 }
+
                 if (!pageImages.Any())
                     throw new InvalidOperationException($"No images were generated from PDF at {blobUrl}.");
+
                 return pageImages;
             }
             catch (Exception ex)
@@ -551,31 +586,39 @@ namespace ProbuildBackend.Services
                 return new MaterialsEstimate { Materials = new List<MaterialEstimateItem>() };
             }
         }
-        private Bitmap ResizeImage(Image image, int maxWidth, int maxHeight)
+        private Image<Rgba32> ResizeImage(Image image, int maxWidth, int maxHeight)
         {
+            // Calculate the scaling ratio to fit within maxWidth and maxHeight
             var ratioX = (double)maxWidth / image.Width;
-            var ratioY = (float)maxHeight / image.Height;
+            var ratioY = (double)maxHeight / image.Height;
             var ratio = Math.Min(ratioX, ratioY);
 
             var newWidth = (int)(image.Width * ratio);
             var newHeight = (int)(image.Height * ratio);
 
-            var destRect = new Rectangle(0, 0, newWidth, newHeight);
-            var destImage = new Bitmap(newWidth, newHeight);
+            // Ensure the new dimensions are at least 1 to avoid invalid image size
+            newWidth = Math.Max(1, newWidth);
+            newHeight = Math.Max(1, newHeight);
 
-            destImage.SetResolution(_settings.Dpi, _settings.Dpi);
-
-            using (var graphics = Graphics.FromImage(destImage))
+            // Resize the image using ImageSharp
+            image.Mutate(x =>
             {
-                graphics.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
-                graphics.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighSpeed;
-                graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Low;
-                graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.None;
-                graphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighSpeed;
-                graphics.DrawImage(image, destRect, 0, 0, image.Width, image.Height, GraphicsUnit.Pixel);
+                x.Resize(new ResizeOptions
+                {
+                    Size = new Size(newWidth, newHeight),
+                    Mode = ResizeMode.Stretch, // Maintain aspect ratio within bounds
+                    Sampler = KnownResamplers.NearestNeighbor // Equivalent to low interpolation
+                });
+            });
+
+            // Set DPI (metadata, as ImageSharp doesn't have direct SetResolution like System.Drawing)
+            if (image.Metadata.HorizontalResolution != _settings.Dpi || image.Metadata.VerticalResolution != _settings.Dpi)
+            {
+                image.Metadata.HorizontalResolution = _settings.Dpi;
+                image.Metadata.VerticalResolution = _settings.Dpi;
             }
 
-            return destImage;
+            return (Image<Rgba32>)image;
         }
 
         public async Task<BillOfMaterials> GenerateBomFromText(string documentText)
@@ -693,5 +736,39 @@ namespace ProbuildBackend.Services
         public string Item { get; set; }
         public decimal TotalQuantity { get; set; }
         public string Unit { get; set; }
+    }
+
+    // Helper class to render PDF content to ImageSharp image
+    public class ImageRenderListener : IEventListener
+    {
+        private readonly Image<Rgba32> _image;
+
+        public ImageRenderListener(Image<Rgba32> image)
+        {
+            _image = image;
+        }
+
+        public void EventOccurred(IEventData data, EventType type)
+        {
+            if (data is ImageRenderInfo imageData)
+            {
+                var pdfImage = imageData.GetImage();
+                var imageBytes = pdfImage.GetImageBytes();
+                using var img = Image.Load<Rgba32>(imageBytes);
+
+                // Get image position and transformation
+                var matrix = imageData.GetImageCtm();
+                float x = matrix.Get(4); // Translation X
+                float y = matrix.Get(5); // Translation Y
+
+                // Adjust Y-coordinate for ImageSharp (PDF origin is bottom-left, ImageSharp is top-left)
+                _image.Mutate(ctx => ctx.DrawImage(img, new Point((int)x, _image.Height - (int)y - img.Height), 1.0f));
+            }
+        }
+
+        public ICollection<EventType> GetSupportedEvents()
+        {
+            return new List<EventType> { EventType.RENDER_IMAGE };
+        }
     }
 }
