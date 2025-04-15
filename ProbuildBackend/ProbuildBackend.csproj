@@ -37,10 +37,10 @@
     <PackageReference Include="SendGrid" Version="9.29.3" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.0.1" />
-  <None Update="runtimes/linux-x64/native/libpdfium.so">
-    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-  </None>
+<None Update="runtimes/linux-x64/native/libpdfium.so">
+  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+  <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+</None>
   </ItemGroup>
 
 </Project>
