@@ -38,7 +38,9 @@ namespace ProbuildBackend.Services
             _hubContext = hubContext ?? throw new ArgumentNullException(nameof(hubContext));
             _emailService = emailService ?? throw new ArgumentNullException(nameof(emailService));
 
-            string apiKey = Environment.GetEnvironmentVariable("ChatGPTAPI") ?? configuration["ChatGPTAPI:APIKey"];
+            string apiKey = Environment.GetEnvironmentVariable("GPTAPIKEY")
+                      ?? configuration["ChatGPTAPI:APIKey"]; 
+               
             var openAIClient = new OpenAIClient(apiKey);
             var openAIClient3 = new OpenAIClient(apiKey);
             _chatClient = openAIClient.GetChatClient("gpt-3.5-turbo");
