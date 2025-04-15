@@ -272,6 +272,11 @@ namespace ProbuildBackend.Services
         {
             try
             {
+
+                Console.WriteLine($"LD_LIBRARY_PATH: {Environment.GetEnvironmentVariable("LD_LIBRARY_PATH")}");
+                Console.WriteLine($"libpdfium.so exists: {File.Exists("/app/runtimes/linux-x64/native/libpdfium.so")}");
+                Console.WriteLine($"pdfium.dll symlink exists: {File.Exists("/app/runtimes/linux-x64/native/pdfium.dll")}");
+
                 // Step 1: Convert PDF pages to images
                 var pageImages = await ConvertPdfToImagesAsync(blobUrl, contentStream);
 
