@@ -25,7 +25,7 @@ jobs:
           echo "AZURE_BLOB_KEY: ${{ secrets.AZURE_BLOB_KEY }}"
           echo "JWT_KEY: ${{ secrets.JWT_KEY }}"
           echo "DB_CONNECTION_STRING: ${{ secrets.DB_CONNECTION_STRING }}"
-          echo "GPTAPIKey: ${{ secrets.GPTAPIKey }}"
+          echo "GPTAPIKEY: ${{ secrets.GPTAPIKey }}"
       # Log in to Azure using Service Principal
       - name: Log in to Azure
         uses: azure/login@v1
@@ -63,7 +63,7 @@ jobs:
               "JWT_KEY=${{ secrets.JWT_KEY }}" \
               "ASPNETCORE_URLS=http://+:8081" \
               "ELASTIC_ENABLED=false" \
-              "GPTAPIKey=${{ secrets.GPTAPIKEY }}" \
+              "GPTAPIKEY=${{ secrets.GPTAPIKEY }}" \
                "DB_CONNECTION_STRING=${{ secrets.DB_CONNECTION_STRING }}" \
               "FORCE_NEW_REVISION=true" \
             --set template.containers[0].probes=null \
