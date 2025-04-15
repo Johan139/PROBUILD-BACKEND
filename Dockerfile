@@ -25,8 +25,8 @@ ENV LD_LIBRARY_PATH=/app/runtimes/linux-x64/native:$LD_LIBRARY_PATH
 
 # Copy the published output
 COPY --from=build /app/out ./
-# Explicitly copy the runtimes folder to ensure libpdfium.so is included
-COPY --from=build /app/ProbuildBackend/runtimes/ ./runtimes/
+# Copy the runtimes folder from the published output (not the original source)
+COPY --from=build /app/out/runtimes/ ./runtimes/
 
 # Create a symbolic link to handle potential name mismatch
 RUN ln -sf /app/runtimes/linux-x64/native/libpdfium.so /app/runtimes/linux-x64/native/pdfium.dll
