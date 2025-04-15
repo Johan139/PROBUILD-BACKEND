@@ -63,7 +63,7 @@ jobs:
               "JWT_KEY=${{ secrets.JWT_KEY }}" \
               "ASPNETCORE_URLS=http://+:8081" \
               "ELASTIC_ENABLED=false" \
-              "GPTAPIKEY=${{ secrets.GPTAPIKEY }}" \
+              "GPTAPIKey=${{ secrets.GPTAPIKEY }}" \
                "DB_CONNECTION_STRING=${{ secrets.DB_CONNECTION_STRING }}" \
               "FORCE_NEW_REVISION=true" \
             --set template.containers[0].probes=null \
