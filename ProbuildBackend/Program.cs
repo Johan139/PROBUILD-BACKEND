@@ -96,6 +96,7 @@ builder.Services.AddHangfire(config => config
     .UseRecommendedSerializerSettings()
     .UseMemoryStorage()); // Replace with UseSqlServerStorage in production
 builder.Services.AddScoped<IEmailService, EmailService>(); // Add this line
+builder.Services.AddScoped<IEmailSender, EmailSender>(); // Add this line
 builder.Services.AddHangfireServer();
 var app = builder.Build();
 

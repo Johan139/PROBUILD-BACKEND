@@ -19,7 +19,7 @@ namespace ProbuildBackend.Services
         {
             var apiKey = Environment.GetEnvironmentVariable("SENDGRID_KEY") ?? _configuration["SendGrid:ApiKey"];
             var sendgridEmail = Environment.GetEnvironmentVariable("SENDGRID_EMAIL") ?? _configuration["SendGrid:Email"];
-            var toEmail = Environment.GetEnvironmentVariable("SENDGRID_SEND_EMAIL") ?? _configuration["SendGrid:SendEmail"];
+            var toEmail = email;
             if (string.IsNullOrEmpty(apiKey))
             {
                 throw new ArgumentNullException(nameof(apiKey), "SendGrid API Key is not configured.");

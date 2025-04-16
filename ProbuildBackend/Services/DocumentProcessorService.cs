@@ -20,6 +20,7 @@ using Image = SixLabors.ImageSharp.Image;
 using Point = SixLabors.ImageSharp.Point;
 using Rectangle = SixLabors.ImageSharp.Rectangle;
 using Size = SixLabors.ImageSharp.Size;
+using Microsoft.AspNetCore.Identity.UI.Services;
 
 
 namespace ProbuildBackend.Services
@@ -33,13 +34,15 @@ namespace ProbuildBackend.Services
         private readonly OcrSettings _settings;
         private readonly ApplicationDbContext _context; // Add database context
         private readonly IHubContext<ProgressHub> _hubContext; // Add SignalR hub context
-        private readonly IEmailService _emailService; // Add this
+        private readonly IEmailSender _emailService; // Add this
+        private List<string> FullResponseList = new List<string>();
+        public List<string> AIText = new List<string>();
         public DocumentProcessorService(
             AzureBlobService azureBlobService,
             IConfiguration configuration,
             ApplicationDbContext context,
             IHubContext<ProgressHub> hubContext,
-        IEmailService emailService)
+        IEmailSender emailService)
         {
             _azureBlobService = azureBlobService ?? throw new ArgumentNullException(nameof(azureBlobService));
             _context = context ?? throw new ArgumentNullException(nameof(context));
@@ -72,9 +75,9 @@ namespace ProbuildBackend.Services
             };
         }
 
-        public async Task<(BomWithCosts BomWithCosts, MaterialsEstimate MaterialsEstimate, string FullResponse)> ProcessDocumentAsync(string blobUrl)
+        public async Task<(BomWithCosts BomWithCosts, MaterialsEstimate MaterialsEstimate, List<string> FullResponse)> ProcessDocumentAsync(string blobUrl)
         {
-            string documentText = await ExtractTextFromBlob(blobUrl); // This is the full response
+            List<string> documentText = await ExtractTextFromBlob(blobUrl); // This is the full response
            // var bom = await GenerateBomFromText(documentText);
             //var bomWithCosts = CalculateCosts(bom);
             var materialsEstimate = await ExtractMaterialsEstimateFromText(documentText);
@@ -103,7 +106,7 @@ namespace ProbuildBackend.Services
                 {
                     Console.WriteLine($"User with ID {job.UserId} not found. Cannot send email.");
                 }
-
+                bool AIProcessed = false;
                 // Process each document and save its results
                 foreach (var url in documentUrls)
                 {
@@ -120,29 +123,47 @@ namespace ProbuildBackend.Services
                     // Process the document
                     var (bomWithCosts, materialsEstimate, fullResponse) = await ProcessDocumentAsync(url);
 
+                    FullResponseList = fullResponse;
+                    AIProcessed = true;
+
+                   // Environment.Exit(0);
+                   // Add to the lists for consolidation
+                    bomResults.Add(bomWithCosts);
+                    materialsEstimates.Add(materialsEstimate);
+                }
+
+                // Send an email notification
+                if (AIProcessed)
+                {
+                    string RefineText = string.Empty;
+
+                    foreach (var item in FullResponseList)
+                    {
+                        RefineText += " " + item;
+                    }
+
+                    string refinedText = await RefineTextWithAiAsync(RefineText, "");
+
                     // Save the results to the DocumentProcessingResults table
                     var processingResult = new DocumentProcessingResult
                     {
                         JobId = jobId,
-                        DocumentId = document.Id,
-                        BomJson = JsonSerializer.Serialize(bomWithCosts),
-                        MaterialsEstimateJson = JsonSerializer.Serialize(materialsEstimate),
-                        FullResponse = fullResponse, // Save the full response
+                        DocumentId = 0,
+                        BomJson = JsonSerializer.Serialize(""),
+                        MaterialsEstimateJson = JsonSerializer.Serialize(""),
+                        FullResponse = refinedText, // Save the full response
                         CreatedAt = DateTime.UtcNow
                     };
 
                     _context.DocumentProcessingResults.Add(processingResult);
                     await _context.SaveChangesAsync();
 
-                    // Send an email notification
                     if (user != null)
                     {
-                        var subject = $"AI Processing Complete for Document {document.Id} in Job {jobId}";
+                        var subject = $"AI Processing Complete for Job {jobId}";
                         var body = $@"<h2>AI Processing Complete</h2>
                               <p>The AI has finished processing a document for your job.</p>
                               <p><strong>Job ID:</strong> {jobId}</p>
-                              <p><strong>Document ID:</strong> {document.Id}</p>
-                              <p><strong>File Name:</strong> {document.FileName}</p>
                               <p><strong>Full Response Preview:</strong></p>
                               <p>Check the application for full details.</p>";
 
@@ -152,20 +173,15 @@ namespace ProbuildBackend.Services
                         }
                         catch (Exception ex)
                         {
-                            Console.WriteLine($"Failed to send email for DocumentId {document.Id}: {ex.Message}");
+                            //Console.WriteLine($"Failed to send email for DocumentId {document.Id}: {ex.Message}");
                             // Log the error, but don't fail the entire job
                         }
                     }
-                   // Environment.Exit(0);
-                    // Add to the lists for consolidation
-                    bomResults.Add(bomWithCosts);
-                    materialsEstimates.Add(materialsEstimate);
                 }
-
                 // Consolidate the BOM results
-               // var consolidatedBom = ConsolidateBomResults(bomResults);
+                // var consolidatedBom = ConsolidateBomResults(bomResults);
 
-          
+
 
                 // Notify the user via SignalR
                 if (!string.IsNullOrEmpty(connectionId))
@@ -243,7 +259,7 @@ namespace ProbuildBackend.Services
             return consolidatedBom;
         }
 
-        public async Task<string> ExtractTextFromBlob(string blobUrl)
+        public async Task<List<string>> ExtractTextFromBlob(string blobUrl)
         {
             try
             {
@@ -261,14 +277,14 @@ namespace ProbuildBackend.Services
                 {
                     throw new InvalidOperationException($"No text could be extracted from PDF at {blobUrl}.");
                 }
-
+                AIText.Add(extractedText);
                 Console.WriteLine($"Extracted {extractedText.Length} characters from PDF at {blobUrl}.");
 
                 // Refine the extracted text using the OpenAI API
-                string refinedText = await RefineTextWithAiAsync(extractedText, blobUrl);
-                Console.WriteLine($"Refined text to {refinedText.Length} characters for PDF at {blobUrl}.");
+             
+                Console.WriteLine($"Refined text to {AIText.Count} characters for PDF at {blobUrl}.");
 
-                return refinedText;
+                return AIText;
             }
             catch (Exception ex)
             {
@@ -281,9 +297,9 @@ namespace ProbuildBackend.Services
             try
             {
 
-                Console.WriteLine($"LD_LIBRARY_PATH: {Environment.GetEnvironmentVariable("LD_LIBRARY_PATH")}");
-                Console.WriteLine($"libpdfium.so exists: {File.Exists("/app/runtimes/linux-x64/native/libpdfium.so")}");
-                Console.WriteLine($"pdfium.dll symlink exists: {File.Exists("/app/runtimes/linux-x64/native/pdfium.dll")}");
+                //Console.WriteLine($"LD_LIBRARY_PATH: {Environment.GetEnvironmentVariable("LD_LIBRARY_PATH")}");
+                //Console.WriteLine($"libpdfium.so exists: {File.Exists("/app/runtimes/linux-x64/native/libpdfium.so")}");
+                //Console.WriteLine($"pdfium.dll symlink exists: {File.Exists("/app/runtimes/linux-x64/native/pdfium.dll")}");
 
                 // Step 1: Convert PDF pages to images
                 var pageImages = await ConvertPdfToImagesAsync(blobUrl, contentStream);
@@ -488,33 +504,35 @@ namespace ProbuildBackend.Services
             try
             {
                 var messages = new List<ChatMessage>
-                {
-                    new SystemChatMessage(@"
-                        You are a senior construction documentation expert tasked with refining raw construction analysis from a multi-page plan document into a cohesive, professional report. Your output must be highly detailed, technically precise, and comprehensive, matching the depth of a human expert’s analysis.
+{
+    new SystemChatMessage(@"
+        You are a senior construction documentation expert tasked with refining raw construction analysis from a multi-page plan document into a cohesive, professional report. Your output must be highly detailed, technically precise, and comprehensive, matching the depth of a human expert’s analysis.
 
-                        Your goals are:
-                        1. **Merge Redundant Data**: Consolidate repeated material entries or sections across multiple pages into a single, unified set. For example, combine all 'framing lumber' mentions into one total with a clear justification.
-                        2. **Resolve Inconsistencies**: Standardize units (e.g., board feet for lumber, square feet for drywall), terminology (e.g., 'roofing shingles' vs. 'roofing material'), and formatting. Correct any contradictory data (e.g., varying square footage) with logical assumptions.
-                        3. **Improve Structure**: Organize the report into clear, logical sections: 'Building Description,' 'Layout & Design,' 'Materials List,' 'Cost Estimate,' and 'Other Notes.' Use markdown headers (##) and subheaders (###) for readability.
-                        4. **Enhance Clarity**: Present all data in well-labeled markdown with detailed descriptions, bullet points for layout features, and tables for materials and costs. Ensure the report is actionable for construction teams and planners.
-                        5. **Generate Final Bill of Materials**: At the end, provide a single, consolidated materials estimate in this exact markdown table format:
+        Your goals are:
+        1. **Merge Redundant Data**: Consolidate repeated material entries or sections across multiple pages into a single, unified set. For example, combine all 'framing lumber' mentions into one total with a clear justification.
+        2. **Resolve Inconsistencies**: Standardize units (e.g., board feet for lumber, square feet for drywall), terminology (e.g., 'roofing shingles' vs. 'roofing material'), and formatting. Correct any contradictory data (e.g., varying square footage) with logical assumptions.
+        3. **Improve Structure**: Organize the report into clear, logical sections: 'Building Description,' 'Layout & Design,' and 'Construction Timeline by Task Category.' Use markdown headers (##) and subheaders (###) for readability. The 'Construction Timeline by Task Category' section must dynamically determine numbered categories based on the Bill of Materials, with each BOM item mapped as a main task with its appropriate MasterFormat division or section code (e.g., '# 1. Foundation Concrete (03 30 00)'). Under each main task, list inferred subtasks with specific MasterFormat section codes (e.g., 'Pouring concrete (03 31 00)') without bullets or hyphens, using bolded titles (e.g., **Pouring concrete**). Include **Duration**, **Start Date**, and **End Date** for each main task, and for each subtask, include **Duration**, **Start Date**, and **End Date** within a dedicated block under the bolded subtask title, separated by a horizontal rule (`---`) after each subtask to clearly mark the end. Include notes where applicable (e.g., 'Final fixture install happens after finishes').
+        4. **Enhance Clarity**: Present all data in well-labeled markdown with detailed descriptions, bullet points for layout features, and tables for materials where needed. Ensure the report is actionable for construction teams and planners, with subtasks visually distinct using bolded titles and separators, avoiding bullets or hyphens.
+        5. **Generate Final Bill of Materials**: At the end, provide a single, consolidated materials estimate categorized under the 'Construction Timeline by Task Category' sections using MasterFormat codes. List materials and quantities with justifications in notes.
+        6. **Provide MasterFormat Codes**: Include accurate MasterFormat division or section codes and titles for each main task (mapped from the BOM) and inferred subtasks, referencing the authoritative source at https://crmservice.csinet.org/widgets/masterformat/numbersandtitles.aspx. If a specific task or subtask lacks a direct code, use the closest appropriate section and note the assumption.
+        7. **Categorize by Tasks**: Map each item in the Bill of Materials as a main task under a dynamically generated category number, and infer relevant subtasks based on the material and its typical construction processes.
+        8. **Group Tasks Together**: Ensure all subtasks within each main task are listed together with estimated durations and dates sequenced logically from April 16, 2025.
 
-                           | Item | Total Quantity | Unit | Notes |
+        Additional Instructions:
+        - **Depth**: Provide exhaustive details, such as specific room counts (e.g., 3–4 bedrooms, 2–3 bathrooms), unique architectural features (e.g., gabled roofs, open floor plans), and material specifics (e.g., double-pane windows, asphalt shingles).
+        - **Assumptions**: If data is incomplete or lacks a breakdown, make reasonable assumptions (e.g., assume 2,750 sqft if size varies, infer subtasks like 'excavation' or 'drywall installation' based on materials) and explain them in the report. If a task or subtask lacks a specific MasterFormat code, assume the nearest relevant section and document the assumption.
+        - **Methodology**: Briefly outline how you consolidated data (e.g., averaging quantities, prioritizing higher estimates for structural items) and inferred main tasks and subtasks from the Bill of Materials (e.g., using industry standards) in a subsection under the Construction Timeline.
+        - **Technical Precision**: Use industry-standard units and terms, avoiding vague descriptions. For example, specify 'cubic yards' for concrete, not 'amount.'
+        - **Timeline**: Base durations on typical construction schedules for a 2,500–3,000 sqft single-family home, adjusted based on the Bill of Materials quantities, with **Start Date** and **End Date** sequenced logically from April 16, 2025. Subtask durations should sum to the main task duration where applicable.
+        - **Dynamic Task and Subtask Inference**: Determine the number and titles of main tasks directly from the Bill of Materials items (e.g., 'Foundation Concrete' as a task). Infer related subtasks (e.g., 'Pouring concrete', 'Formwork') based on the material and its construction process. Assign appropriate MasterFormat codes to both main tasks and subtasks.
+        - **MasterFormat Reference**: Use the MasterFormat codes and titles from https://crmservice.csinet.org/widgets/masterformat/numbersandtitles.aspx to categorize tasks and materials accurately, placing codes in parentheses next to main task titles and subtask descriptions.
+        - **Subtask Formatting**: Format each subtask with a bolded title (e.g., **Pouring concrete**) without bullets or hyphens, followed by a dedicated block with indented details (Duration, Start Date, End Date), and end each subtask block with a horizontal rule (`---`) to clearly separate subtasks.
 
-                           - For each item, estimate quantities based on a typical 2,500–3,000 sqft single-family home unless specific data suggests otherwise.
-                           - Include a broad range of materials (e.g., concrete, lumber, drywall, roofing, insulation, windows, doors, plumbing, electrical, etc.).
-                           - Justify quantities with assumptions (e.g., 'based on average residential standards') in the Notes column.
+        Return the full, final report in markdown format only. Do not include commentary, metadata, or explanations outside the report itself. Ensure the output is as detailed as a human expert’s analysis, with no omissions of key construction elements.
+    "),
 
-                        Additional Instructions:
-                        - **Depth**: Provide exhaustive details, such as specific room counts (e.g., 3–4 bedrooms, 2–3 bathrooms), unique architectural features (e.g., gabled roofs, open floor plans), and material specifics (e.g., double-pane windows, asphalt shingles).
-                        - **Assumptions**: If data is incomplete, make reasonable assumptions (e.g., assume 2,750 sqft if size varies) and explain them in the report.
-                        - **Methodology**: Briefly outline how you consolidated data (e.g., averaging quantities, prioritizing higher estimates for structural items) in a subsection under the BOM.
-                        - **Technical Precision**: Use industry-standard units and terms, avoiding vague descriptions. For example, specify 'cubic yards' for concrete, not 'amount.'
-
-                        Return the full, final report in markdown format only. Do not include commentary, metadata, or explanations outside the report itself. Ensure the output is as detailed as a human expert’s analysis, with no omissions of key construction elements."),
-
-                    new UserChatMessage("Below is the raw extracted text from a multi-page building plan PDF. Please refine and consolidate it into a single, cohesive markdown report:\n```\n" + extractedText + "\n```")
-                };
+    new UserChatMessage("Here is the extract:\n```\n" + extractedText + "\n```")
+};
 
                 var chatOptions = new ChatCompletionOptions
                 {
@@ -535,16 +553,17 @@ namespace ProbuildBackend.Services
             }
         }
 
-        private async Task<MaterialsEstimate> ExtractMaterialsEstimateFromText(string refinedText)
+        private async Task<MaterialsEstimate> ExtractMaterialsEstimateFromText(List<string> refinedText)
         {
             try
             {
-                var lines = refinedText.Split('\n');
+                //var lines = refinedText.Split('\n');
                 var estimateLines = new List<string>();
                 bool inEstimateSection = false;
 
-                foreach (var line in lines)
+                foreach (var line in refinedText)
                 {
+
                     // Look for the materials list section (match variations of the header)
                     if (line.Trim().StartsWith("## Materials List") || line.Trim().StartsWith("# Materials List") ||
                         line.Trim().StartsWith("## Materials Estimate") || line.Trim().StartsWith("# Materials Estimate") || line.Trim().StartsWith("## **Materials List**"))
