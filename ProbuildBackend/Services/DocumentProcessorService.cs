@@ -173,7 +173,7 @@ namespace ProbuildBackend.Services
                         }
                         catch (Exception ex)
                         {
-                            //Console.WriteLine($"Failed to send email for DocumentId {document.Id}: {ex.Message}");
+                            Console.WriteLine($"Failed to send email: {ex.Message}");
                             // Log the error, but don't fail the entire job
                         }
                     }
