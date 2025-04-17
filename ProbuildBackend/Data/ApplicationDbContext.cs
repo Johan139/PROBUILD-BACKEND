@@ -12,6 +12,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<JobModel> Jobs { get; set; }
     public DbSet<BidModel> Bids { get; set; }
     public DbSet<NotificationModel> Notifications { get; set; }
+    public DbSet<JobAssignmentModel> JobAssignments { get; set; }
 
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -34,20 +35,17 @@ public class ApplicationDbContext : DbContext
             .HasForeignKey(p => p.SubContractorWallStructureId)
             .OnDelete(DeleteBehavior.Restrict);
 
-
         modelBuilder.Entity<ProjectModel>()
             .HasOne(p => p.SubContractorWallInsulation)
             .WithMany()
             .HasForeignKey(p => p.SubContractorWallInsulationId)
             .OnDelete(DeleteBehavior.Restrict);
 
-
         modelBuilder.Entity<ProjectModel>()
             .HasOne(p => p.SubContractorRoofStructure)
             .WithMany()
             .HasForeignKey(p => p.SubContractorRoofStructureId)
             .OnDelete(DeleteBehavior.Restrict);
-
 
         modelBuilder.Entity<ProjectModel>()
             .HasOne(p => p.SubContractorRoofType)
@@ -61,13 +59,11 @@ public class ApplicationDbContext : DbContext
             .HasForeignKey(p => p.SubContractorRoofInsulationId)
             .OnDelete(DeleteBehavior.Restrict);
 
-
         modelBuilder.Entity<ProjectModel>()
             .HasOne(p => p.SubContractorFoundation)
             .WithMany()
             .HasForeignKey(p => p.SubContractorFoundationId)
             .OnDelete(DeleteBehavior.Restrict);
-
 
         modelBuilder.Entity<ProjectModel>()
             .HasOne(p => p.SubContractorFinishes)
@@ -75,24 +71,21 @@ public class ApplicationDbContext : DbContext
             .HasForeignKey(p => p.SubContractorFinishesId)
             .OnDelete(DeleteBehavior.Restrict);
 
-
         modelBuilder.Entity<ProjectModel>()
             .HasOne(p => p.SubContractorElectricalSupplyNeeds)
             .WithMany()
             .HasForeignKey(p => p.SubContractorElectricalSupplyNeedsId)
             .OnDelete(DeleteBehavior.Restrict);
 
-
         modelBuilder.Entity<BidModel>()
-               .HasOne(b => b.Job)
-               .WithMany(p => p.Bids)
-               .HasForeignKey(b => b.JobId);
+            .HasOne(b => b.Job)
+            .WithMany(p => p.Bids)
+            .HasForeignKey(b => b.JobId);
 
         modelBuilder.Entity<BidModel>()
             .HasOne(b => b.User)
             .WithMany(u => u.Bids)
             .HasForeignKey(b => b.UserId);
-
 
         modelBuilder.Entity<NotificationModel>()
             .HasOne(n => n.Project)
@@ -109,6 +102,26 @@ public class ApplicationDbContext : DbContext
             .WithMany()
             .HasForeignKey(j => j.UserId)
             .IsRequired();
+
+        modelBuilder.Entity<JobAssignmentModel>()
+            .HasKey(ja => new { ja.UserId, ja.JobId });
+
+        modelBuilder.Entity<JobAssignmentModel>()
+            .HasOne(ja => ja.User)
+            .WithMany()
+            .HasForeignKey(ja => ja.UserId)
+            .IsRequired();
+
+        modelBuilder.Entity<JobAssignmentModel>()
+            .HasOne(ja => ja.Job)
+            .WithMany()
+            .HasForeignKey(ja => ja.JobId)
+            .IsRequired();
+
+        modelBuilder.Entity<JobAssignmentModel>()
+            .Property(ja => ja.JobRole)
+            .HasMaxLength(450);
+
 
         base.OnModelCreating(modelBuilder);
     }

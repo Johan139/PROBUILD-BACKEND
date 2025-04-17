@@ -4,6 +4,7 @@ using ProbuildBackend.Models;
 namespace ProbuildBackend.Models {
 public class UserModel : IdentityUser
     {
+        public string? Id { get; set; }
         public string? FirstName { get; set; }
         public string? LastName { get; set; }
         public string? PhoneNumber { get; set; }
@@ -11,6 +12,7 @@ public class UserModel : IdentityUser
         public string? CompanyName { get; set; }
         public string? CompanyRegNo { get; set; }
         public string? VatNo { get; set; }
+        public string? Email { get; set; }
         public string? ConstructionType { get; set; }
         public string? NrEmployees { get; set; }
         public string? YearsOfOperation { get; set; }
