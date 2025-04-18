@@ -93,21 +93,27 @@ namespace ProbuildBackend.Controllers
                 assignedJob.Stories = job.Stories;
                 assignedJob.BuildingSize = job.BuildingSize;
                 assignedJob.Status = job.Status;
-
+                assignedJob.JobUser = new List<JobUser>();
                 foreach (var User in jobAssignmentRow)
                 {
                     var user = await _context.Users.Where(u => u.Id == User.UserId).FirstOrDefaultAsync();
                     if (user == null)
+                    {
+                        assignedJob.JobUser = new List<JobUser>();
+                        JobUser emptyJobUser = new JobUser();
+                        assignedJob.JobUser.Add(emptyJobUser);
                         continue;
+                    }
 
-                    assignedJob.JobUser = new List<JobUser>();
-                    JobUser jobUser = new JobUser();
-                    jobUser.Id = user.Id;
-                    jobUser.FirstName = user.FirstName;
-                    jobUser.LastName = user.LastName;
-                    jobUser.PhoneNumber = user.PhoneNumber;
-                    jobUser.JobRole = User.JobRole;
-                    jobUser.UserType = user.UserType;
+                    JobUser jobUser = new JobUser
+                    {
+                        Id = user.Id,
+                        FirstName = user.FirstName,
+                        LastName = user.LastName,
+                        PhoneNumber = user.PhoneNumber,
+                        JobRole = User.JobRole,
+                        UserType = user.UserType
+                    };
                     assignedJob.JobUser.Add(jobUser);
                 }
 
@@ -117,9 +123,9 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPut]
-        public async Task<IActionResult> DeleteJobAssignment(JobAssignmentDto jobAssignment)
+        public async Task<IActionResult> DeleteJobAssignment(JobAssignment jobAssignment)
         {
-            var jobAssignmentRow = await _context.JobAssignments.Where(u => u.JobId == jobAssignment.Id && u.UserId == jobAssignment.JobUser[0].Id).FirstOrDefaultAsync();
+            var jobAssignmentRow = await _context.JobAssignments.Where(u => u.JobId == jobAssignment.JobId && u.UserId == jobAssignment.UserId).FirstOrDefaultAsync();
             if (jobAssignmentRow == null)
                 return NotFound();
 
@@ -127,6 +133,29 @@ namespace ProbuildBackend.Controllers
             await _context.SaveChangesAsync();
 
             return Ok(jobAssignment);
+        }
+
+        [HttpGet("GetUsers")]
+        public async Task<ActionResult<IEnumerable<JobUser[]>>> GetAvailableUser(string id)
+        {
+            var users = await _context.Users.ToListAsync();
+            if (users == null)
+                return NotFound("No accounts found.");
+
+            List<JobUser> linkedUserList = new List<JobUser>();
+
+            foreach (var user in users)
+            {
+                JobUser jobUser = new JobUser();
+                jobUser.Id = user.Id;
+                jobUser.PhoneNumber = user.PhoneNumber;
+                jobUser.LastName = user.LastName;
+                jobUser.FirstName = user.FirstName;
+                jobUser.UserType = user.UserType;
+
+                linkedUserList.Add(jobUser);
+            }
+            return Ok(linkedUserList);
         }
 
         public IActionResult Index()
