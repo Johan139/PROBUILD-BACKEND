@@ -20,7 +20,7 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost]
-        public async Task<IActionResult> PostJobAssignment(JobAssignment assignmentData)
+        public async Task<IActionResult> PostJobAssignment([FromForm] JobAssignment assignmentData)
         {
             JobAssignmentDto assignedJob = new JobAssignmentDto();
             var jobAssignment = new JobAssignmentModel
@@ -123,7 +123,7 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPut]
-        public async Task<IActionResult> DeleteJobAssignment(JobAssignment jobAssignment)
+        public async Task<IActionResult> DeleteJobAssignment([FromForm] JobAssignment jobAssignment)
         {
             var jobAssignmentRow = await _context.JobAssignments.Where(u => u.JobId == jobAssignment.JobId && u.UserId == jobAssignment.UserId).FirstOrDefaultAsync();
             if (jobAssignmentRow == null)
