@@ -12,6 +12,11 @@ using static Google.Apis.Requests.BatchRequest;
 using System.IO.Compression;
 using System.Globalization;
 using Hangfire;
+using Org.BouncyCastle.Asn1.X509;
+using Microsoft.AspNetCore.Mvc.TagHelpers;
+using Elastic.Apm.Api;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.UI.Services;
 
 namespace ProbuildBackend.Controllers
 {
@@ -24,19 +29,21 @@ namespace ProbuildBackend.Controllers
         private readonly AzureBlobService _azureBlobservice;
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly DocumentProcessorService _documentProcessorService;
-
+        private readonly IEmailSender _emailService; // Add this
         public JobsController(
             ApplicationDbContext context,
             AzureBlobService azureBlobservice,
             IHubContext<ProgressHub> hubContext,
             IHttpContextAccessor httpContextAccessor,
-            DocumentProcessorService documentProcessorService)
+            DocumentProcessorService documentProcessorService,
+            IEmailSender emailService)
         {
             _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
             _context = context;
             _azureBlobservice = azureBlobservice;
             _hubContext = hubContext;
             _documentProcessorService = documentProcessorService;
+            _emailService = emailService ?? throw new ArgumentNullException(nameof(emailService));
         }
 
         [HttpGet]
@@ -310,6 +317,8 @@ namespace ProbuildBackend.Controllers
                         BackgroundJob.Enqueue(() => _documentProcessorService.ProcessDocumentsForJobAsync(job.Id, documentUrls, connectionId));
                     }
 
+
+
                     await transaction.CommitAsync();
 
                     return Ok(job);
@@ -402,6 +411,145 @@ namespace ProbuildBackend.Controllers
             }
         }
 
+        [HttpPost("UploadNoteImage")]
+        [RequestSizeLimit(200 * 1024 * 1024)]
+        public async Task<IActionResult> UploadNoteImage([FromForm] UploadDocumentDTO jobRequest)
+        {
+            try
+            {
+                if (jobRequest == null)
+                {
+                    return BadRequest(new { error = "Invalid job request" });
+                }
+
+                if (jobRequest.Blueprint == null || !jobRequest.Blueprint.Any())
+                {
+                    return BadRequest(new { error = "No blueprint files provided" });
+                }
+
+                var allowedExtensions = new[] { ".pdf", ".png", ".jpg", ".jpeg" };
+                var uploadedFileUrls = new List<string>();
+
+                foreach (var file in jobRequest.Blueprint)
+                {
+                    if (file.Length == 0)
+                    {
+                        return BadRequest(new { error = $"Empty file detected: {file.FileName}" });
+                    }
+
+                    var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+                    if (!allowedExtensions.Contains(extension))
+                    {
+                        return BadRequest(new { error = $"Invalid file type: {file.FileName}" });
+                    }
+                }
+
+                string connectionId = jobRequest.connectionId ?? _httpContextAccessor.HttpContext?.Connection.Id
+                    ?? throw new InvalidOperationException("No valid connectionId provided.");
+
+                Console.WriteLine($"Received connectionId from client: {connectionId}");
+
+                uploadedFileUrls = await _azureBlobservice.UploadFiles(jobRequest.Blueprint, _hubContext, connectionId);
+
+                foreach (var (file, url) in jobRequest.Blueprint.Zip(uploadedFileUrls, (f, u) => (f, u)))
+                {
+                    string blobFileName = Path.GetFileName(new Uri(url).LocalPath);
+
+                    Console.WriteLine($"Original file.FileName: {file.FileName}");
+                    Console.WriteLine($"Blob URL from Azure: {url}");
+                    Console.WriteLine($"Extracted Blob FileName: {blobFileName}");
+
+                    var NoteDocument = new SubtaskNoteDocumentModel
+                    {
+                        NoteId = null,
+                        FileName = blobFileName,
+                        BlobUrl = url,
+                        sessionId = jobRequest.sessionId,
+                        UploadedAt = DateTime.Now
+                    };
+                    _context.SubtaskNoteDocument.Add(NoteDocument);
+                }
+                await _context.SaveChangesAsync();
+
+                var response = new UploadDocumentModel
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    Status = "Uploaded",
+                    FileUrls = uploadedFileUrls,
+                    FileNames = jobRequest.Blueprint.Select(f => f.FileName).ToList(),
+                    Message = $"Successfully uploaded {jobRequest.Blueprint.Count} file(s)",
+                    BillOfMaterials = null
+                };
+
+                return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to upload files", details = ex.Message });
+            }
+        }
+
+        [HttpPost("subtask")]
+        public async Task<IActionResult> SaveSubtasks([FromBody] List<JobSubtasksModel> subtasks)
+        {
+            try
+            {
+
+        
+            foreach (var subtask in subtasks)
+            {
+                if (subtask.Id > 0)
+                {
+                    // UPDATE
+                    var existing = await _context.JobSubtasks.FindAsync(subtask.Id);
+                    if (existing != null)
+                    {
+                        existing.Task = subtask.Task;
+                        existing.Days = subtask.Days;
+                        existing.StartDate = subtask.StartDate;
+                        existing.EndDate = subtask.EndDate;
+                        existing.Status = subtask.Status;
+                        existing.GroupTitle = subtask.GroupTitle;
+                        existing.Deleted = subtask.Deleted;
+
+                    }
+                }
+                else
+                {
+                    // INSERT
+                    _context.JobSubtasks.Add(subtask);
+                }
+            }
+
+            await _context.SaveChangesAsync();
+            return Ok("Subtasks processed");
+            }
+            catch (Exception ex)
+            {
+
+                throw;
+            }
+        }
+        [HttpGet("subtasks/{jobId}")]
+        public async Task<IActionResult> GetSubtasksForJob(int jobId)
+        {
+            try
+            {
+            var subtasks = await _context.JobSubtasks
+                .Where(st => st.JobId == jobId && st.Deleted == false)
+                .ToListAsync();
+
+            if (!subtasks.Any())
+                return NotFound("No subtasks found.");
+
+            return Ok(subtasks);
+            }
+            catch (Exception ex)
+            {
+
+                throw;
+            }
+        }
         public async Task ProcessDocumentAndGenerateBomAsync(string blobUrl, string connectionId)
         {
             //try
@@ -484,6 +632,123 @@ namespace ProbuildBackend.Controllers
             }
         }
 
+        [HttpGet("GetNotesByUserId/{userId}")]
+        public async Task<ActionResult<IEnumerable<object>>> GetNotesByUserId(string userId)
+        {
+            try
+            {
+                var assignedNotes = await _context.SubtaskNoteUser
+                    .Where(link => link.UserId == userId)
+                    .Select(link => link.SubtaskNoteId)
+                    .ToListAsync();
+
+                if (!assignedNotes.Any())
+                    return NotFound("No notes assigned to this user.");
+
+
+
+                var notes = await (
+                 from note in _context.SubtaskNote
+                 join job in _context.Jobs on note.JobId equals job.Id
+                 where assignedNotes.Contains(note.Id)
+                 select new
+                 {
+                     note.Id,
+                     note.JobId,
+                     job.ProjectName,             // ✅ Included from joined table
+                     note.JobSubtaskId,
+                     note.NoteText,
+                     note.CreatedByUserId,
+                     note.CreatedAt,
+                     note.ModifiedAt
+                 }
+             ).ToListAsync();
+
+                return Ok(notes);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to fetch user-assigned notes", details = ex.Message });
+            }
+        }
+
+        [HttpPost("SaveSubtaskNote")]
+        public async Task<IActionResult> SaveSubtaskNote([FromForm] SubtaskNoteDTO request)
+        {
+
+            List<string> useridEmail = new List<string>();
+            if (string.IsNullOrWhiteSpace(request.NoteText) || string.IsNullOrWhiteSpace(request.CreatedByUserId))
+                return BadRequest("Note text and user ID are required.");
+
+            var note = new SubtaskNoteModel
+            {
+                JobId = request.JobId,
+                JobSubtaskId = request.JobSubtaskId,
+                NoteText = request.NoteText,
+                CreatedByUserId = request.CreatedByUserId,
+                CreatedAt = DateTime.UtcNow,
+                ModifiedAt = DateTime.UtcNow
+            };
+
+            _context.SubtaskNote.Add(note);
+            await _context.SaveChangesAsync();
+
+            if (!string.IsNullOrWhiteSpace(request.SessionId))
+            {
+                var tempFiles = await _context.SubtaskNoteDocument
+                    .Where(d => d.sessionId == request.SessionId && d.NoteId == null)
+                    .ToListAsync();
+
+                foreach (var file in tempFiles)
+                {
+                    file.NoteId = note.Id;
+                }
+
+                await _context.SaveChangesAsync();
+            }
+            var Jobs = await _context.Jobs
+            .Where(d => d.Id == note.JobId)
+            .ToListAsync();
+            foreach (var item in Jobs)
+            {
+
+            var usernote = new SubtaskNoteUserModel
+                {
+                    SubtaskNoteId = note.Id,
+                    UserId = item.UserId    
+                };
+                useridEmail.Add(item.UserId);
+                _context.SubtaskNoteUser.Add(usernote);
+            }
+            
+            await _context.SaveChangesAsync();
+            foreach (var item in useridEmail)
+            {
+                var userEmail = await _context.Users
+                .Where(d => d.Id == item)
+                .ToListAsync();
+
+                var subject = $"New task requires an action";
+                var body = $@"<p>A note has been placed for a subtask which requires action. Please check dashboard.</p>";
+
+                try
+                {
+                    await _emailService.SendEmailAsync(userEmail[0].Email, subject, body);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to send email: {ex.Message}");
+                    // Log the error, but don't fail the entire job
+                }
+            }
+
+
+            return Ok(new
+            {
+                message = "Note and any uploaded files saved successfully.",
+                noteId = note.Id
+            });
+        }
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteJob(int id)
         {

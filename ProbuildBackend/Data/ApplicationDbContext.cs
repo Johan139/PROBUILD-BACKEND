@@ -13,7 +13,11 @@ public class ApplicationDbContext : DbContext
     public DbSet<BidModel> Bids { get; set; }
     public DbSet<NotificationModel> Notifications { get; set; }
     public DbSet<JobAssignmentModel> JobAssignments { get; set; }
+    public DbSet<SubtaskNoteDocumentModel> SubtaskNoteDocument { get; set; }
+    public DbSet<SubtaskNoteModel> SubtaskNote { get; set; }
+    public DbSet<SubtaskNoteUserModel> SubtaskNoteUser { get; set; }
 
+    public DbSet<JobSubtasksModel> JobSubtasks { get; set; }
     public DbSet<DocumentProcessingResult> DocumentProcessingResults { get; set; }
     public DbSet<AddressModel> JobAddresses { get; set; }
     public DbSet<JobDocumentModel> JobDocuments { get; set; }

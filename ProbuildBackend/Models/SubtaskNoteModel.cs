@@ -1,0 +1,21 @@
+﻿using System;
+
+namespace ProbuildBackend.Models
+{
+    public class SubtaskNoteModel
+    {
+        public int Id { get; set; }
+
+        public int JobId { get; set; }
+
+        public int JobSubtaskId { get; set; }
+
+        public string NoteText { get; set; }
+
+        public string CreatedByUserId { get; set; } // assuming user IDs are stored as strings (e.g., GUIDs)
+
+        public DateTime CreatedAt { get; set; }
+
+        public DateTime? ModifiedAt { get; set; } // Nullable for when the note hasn't been edited
+    }
+}

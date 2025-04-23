@@ -28,7 +28,7 @@ namespace ProbuildBackend.Services
             var from = new EmailAddress(sendgridEmail, "ProBuild");
             var to = new EmailAddress(toEmail);
             var msg = MailHelper.CreateSingleEmail(from, to, subject, "", htmlMessage);
-            await client.SendEmailAsync(msg);
+           var test = await client.SendEmailAsync(msg);
         }
     }
 }
