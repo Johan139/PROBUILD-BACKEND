@@ -17,6 +17,7 @@ using Microsoft.AspNetCore.Mvc.TagHelpers;
 using Elastic.Apm.Api;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
+using static iText.StyledXmlParser.Jsoup.Select.Evaluator;
 
 namespace ProbuildBackend.Controllers
 {
@@ -670,6 +671,77 @@ namespace ProbuildBackend.Controllers
             {
                 return StatusCode(500, new { error = "Failed to fetch user-assigned notes", details = ex.Message });
             }
+        }
+        [HttpPost("UpdateNoteStatus")]
+        public async Task<IActionResult> UpdateNoteStatus([FromForm] SubtaskNoteModel noteUpdate)
+        {
+            try
+            {
+
+         
+            var note = await _context.SubtaskNote.FindAsync(noteUpdate.Id);
+            if (note == null) return NotFound();
+
+            note.Approved = noteUpdate.Approved;
+            note.Rejected = noteUpdate.Rejected;
+            note.ModifiedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                if ((bool)noteUpdate.Approved)
+                {
+                    var subtask = await _context.JobSubtasks.FindAsync(noteUpdate.JobSubtaskId);
+                    subtask.Status = "Completed";
+                }
+
+                await _context.SaveChangesAsync();
+                return Ok(note);
+            }
+            catch (Exception ex)
+            {
+
+                throw;
+            }
+        }
+
+        [HttpGet("GetNoteDocuments/{noteId}")]
+        public async Task<IActionResult> GetNoteDocuments(int noteId)
+        {
+            var documents = await _context.SubtaskNoteDocument
+                .Where(doc => doc.NoteId == noteId)
+                .ToListAsync();
+
+            if (documents == null || !documents.Any())
+            {
+                return NotFound();
+            }
+
+            var documentDetails = new List<object>();
+            foreach (var doc in documents)
+            {
+                try
+                {
+                    var properties = await _azureBlobservice.GetBlobContentAsync(doc.BlobUrl);
+                    documentDetails.Add(new
+                    {
+                        doc.Id,
+                        doc.NoteId,
+                        doc.FileName,
+                        Size = properties.Content.Length
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error fetching properties for blob {doc.BlobUrl}: {ex.Message}");
+                    documentDetails.Add(new
+                    {
+                        doc.Id,
+                        doc.NoteId,
+                        doc.FileName,
+                        Size = 0L
+                    });
+                }
+            }
+
+            return Ok(documentDetails);
         }
 
         [HttpPost("SaveSubtaskNote")]
