@@ -3,6 +3,8 @@
     public class SubtaskNoteDocumentModel
     {
         public int Id { get; set; }
+
+        public int SubTaskId { get; set; }
         public int? NoteId { get; set; }
         public string FileName { get; set; }
         public string BlobUrl { get; set; }
