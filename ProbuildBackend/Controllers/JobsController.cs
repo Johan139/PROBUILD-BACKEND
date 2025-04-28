@@ -310,7 +310,7 @@ namespace ProbuildBackend.Controllers
 
                     _context.Jobs.Add(job);
                     await _context.SaveChangesAsync();
-
+                    
                     if (!string.IsNullOrEmpty(jobRequest.Address))
                     {
                         decimal lat = Convert.ToDecimal(jobRequest.Latitude, CultureInfo.InvariantCulture);
@@ -615,7 +615,7 @@ namespace ProbuildBackend.Controllers
             //}
         }
 
-        [HttpPut("{id}")]
+        [HttpPost("{id}")]
         public async Task<IActionResult> PutJob(int id, [FromBody] JobModel job)
         {
             Console.WriteLine(job.Id);
