@@ -17,5 +17,8 @@ namespace ProbuildBackend.Models
         public DateTime CreatedAt { get; set; }
 
         public DateTime? ModifiedAt { get; set; } // Nullable for when the note hasn't been edited
+
+        public bool? Approved { get; set; }
+        public bool? Rejected { get; set; }
     }
 }

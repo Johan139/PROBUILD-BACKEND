@@ -17,6 +17,7 @@ using Microsoft.AspNetCore.Mvc.TagHelpers;
 using Elastic.Apm.Api;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
+using static iText.StyledXmlParser.Jsoup.Select.Evaluator;
 
 namespace ProbuildBackend.Controllers
 {
@@ -71,6 +72,45 @@ namespace ProbuildBackend.Controllers
             try
             {
                 var document = await _context.JobDocuments
+                    .FirstOrDefaultAsync(doc => doc.Id == documentId);
+
+                if (document == null)
+                {
+                    return NotFound("Document not found.");
+                }
+
+                var (contentStream, contentType, originalFileName) = await _azureBlobservice.GetBlobContentAsync(document.BlobUrl);
+
+                if (contentType == "application/gzip")
+                {
+                    using var decompressedStream = new MemoryStream();
+                    using (var gzipStream = new GZipStream(contentStream, CompressionMode.Decompress))
+                    {
+                        await gzipStream.CopyToAsync(decompressedStream);
+                    }
+                    decompressedStream.Position = 0;
+                    string decompressedContentType = GetContentTypeFromFileName(originalFileName);
+                    return File(decompressedStream, decompressedContentType, originalFileName);
+                }
+
+                return File(contentStream, contentType, originalFileName);
+            }
+            catch (FileNotFoundException ex)
+            {
+                return NotFound(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An error occurred while fetching the blob: {ex.Message}");
+            }
+        }
+
+        [HttpGet("downloadNote/{documentId}")]
+        public async Task<IActionResult> DownloadNoteBlob(int documentId)
+        {
+            try
+            {
+                var document = await _context.SubtaskNoteDocument
                     .FirstOrDefaultAsync(doc => doc.Id == documentId);
 
                 if (document == null)
@@ -648,28 +688,165 @@ namespace ProbuildBackend.Controllers
 
 
                 var notes = await (
-                 from note in _context.SubtaskNote
-                 join job in _context.Jobs on note.JobId equals job.Id
-                 where assignedNotes.Contains(note.Id)
-                 select new
-                 {
-                     note.Id,
-                     note.JobId,
-                     job.ProjectName,             // ✅ Included from joined table
-                     note.JobSubtaskId,
-                     note.NoteText,
-                     note.CreatedByUserId,
-                     note.CreatedAt,
-                     note.ModifiedAt
-                 }
-             ).ToListAsync();
+     from note in _context.SubtaskNote
+     join job in _context.Jobs on note.JobId equals job.Id
+     where assignedNotes.Contains(note.Id)
+     select new
+     {
+         note.Id,
+         note.JobId,
+         job.ProjectName,
+         note.JobSubtaskId,
+         note.NoteText,
+         note.CreatedByUserId,
+         note.CreatedAt,
+         note.ModifiedAt
+     }
+ ).ToListAsync();
 
-                return Ok(notes);
+                // Group notes by JobId and JobSubtaskId
+                var groupedNotes = notes
+                    .GroupBy(n => new { n.JobId, n.JobSubtaskId })
+                    .Select(g => new
+                    {
+                        JobId = g.Key.JobId,
+                        JobSubtaskId = g.Key.JobSubtaskId,
+                        ProjectName = g.First().ProjectName,
+                        CreatedAt = g.Min(x => x.CreatedAt), // or .Max if you prefer latest
+                        Notes = g.Select(x => new
+                        {
+                            x.Id,
+                            x.NoteText,
+                            x.CreatedByUserId,
+                            x.CreatedAt,
+                            x.ModifiedAt
+                        }).ToList()
+                    })
+                    .ToList();
+
+                return Ok(groupedNotes);
             }
             catch (Exception ex)
             {
                 return StatusCode(500, new { error = "Failed to fetch user-assigned notes", details = ex.Message });
             }
+        }
+        [HttpPost("UpdateNoteStatus")]
+        public async Task<IActionResult> UpdateNoteStatus([FromForm] SubtaskNoteModel noteUpdate)
+        {
+            try
+            {
+
+         
+            var note = await _context.SubtaskNote.Where(m => m.JobSubtaskId == noteUpdate.JobSubtaskId && (m.Approved != true && m.Rejected != true)).ToListAsync();
+            if (note == null) return NotFound();
+                foreach (var item in note)
+                {
+                    item.Approved = noteUpdate.Approved;
+                    item.Rejected = noteUpdate.Rejected;
+                    item.ModifiedAt = DateTime.UtcNow;
+                }
+                await _context.SaveChangesAsync();
+                if ((bool)noteUpdate.Approved)
+                {
+                    var subtask = await _context.JobSubtasks.FindAsync(noteUpdate.JobSubtaskId);
+                    subtask.Status = "Completed";
+
+                    var noteResponse = new SubtaskNoteModel
+                    {
+                        JobId = noteUpdate.JobId,
+                        JobSubtaskId = noteUpdate.JobSubtaskId,
+                        NoteText = noteUpdate.NoteText,
+                        CreatedByUserId = noteUpdate.CreatedByUserId,
+                        Approved = true,
+                        CreatedAt = DateTime.UtcNow,
+                        ModifiedAt = DateTime.UtcNow
+                    };
+                    _context.SubtaskNote.Add(noteResponse);
+                    await _context.SaveChangesAsync();
+                    var usernote = new SubtaskNoteUserModel
+                    {
+                        SubtaskNoteId = noteResponse.Id,
+                        UserId = noteUpdate.CreatedByUserId
+                    };
+                    _context.SubtaskNoteUser.Add(usernote);
+                    await _context.SaveChangesAsync();
+
+                }
+                else
+                {
+
+                    var noteResponse = new SubtaskNoteModel
+                    {
+                        JobId = noteUpdate.JobId,
+                        JobSubtaskId = noteUpdate.JobSubtaskId,
+                        NoteText = noteUpdate.NoteText,
+                        CreatedByUserId = noteUpdate.CreatedByUserId,
+                        Approved = true,
+                        CreatedAt = DateTime.UtcNow,
+                        ModifiedAt = DateTime.UtcNow
+                    };
+                    _context.SubtaskNote.Add(noteResponse);
+                    await _context.SaveChangesAsync();
+                    var usernote = new SubtaskNoteUserModel
+                    {
+                        SubtaskNoteId = noteResponse.Id,
+                        UserId = noteUpdate.CreatedByUserId
+                    };
+                    _context.SubtaskNoteUser.Add(usernote);
+                    await _context.SaveChangesAsync();
+
+                }
+
+                    return Ok(note);
+            }
+            catch (Exception ex)
+            {
+
+                throw;
+            }
+        }
+
+        [HttpGet("GetNoteDocuments/{noteId}")]
+        public async Task<IActionResult> GetNoteDocuments(int noteId)
+        {
+            var documents = await _context.SubtaskNoteDocument
+                .Where(doc => doc.SubTaskId == noteId)
+                .ToListAsync();
+
+            if (documents == null || !documents.Any())
+            {
+                return NotFound();
+            }
+
+            var documentDetails = new List<object>();
+            foreach (var doc in documents)
+            {
+                try
+                {
+                    var properties = await _azureBlobservice.GetBlobContentAsync(doc.BlobUrl);
+                    documentDetails.Add(new
+                    {
+                        doc.Id,
+                        doc.NoteId,
+                        doc.FileName,
+                        Size = properties.Content.Length
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error fetching properties for blob {doc.BlobUrl}: {ex.Message}");
+                    documentDetails.Add(new
+                    {
+                        doc.Id,
+                        doc.NoteId,
+                        doc.FileName,
+                        Size = 0L
+                    });
+                }
+            }
+
+            return Ok(documentDetails);
         }
 
         [HttpPost("SaveSubtaskNote")]
@@ -702,6 +879,7 @@ namespace ProbuildBackend.Controllers
                 foreach (var file in tempFiles)
                 {
                     file.NoteId = note.Id;
+                    file.SubTaskId = note.JobSubtaskId;
                 }
 
                 await _context.SaveChangesAsync();
