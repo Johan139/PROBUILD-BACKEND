@@ -87,6 +87,7 @@ builder.Services.AddScoped<DocumentProcessorService>();
 builder.Services.AddTransient<IEmailSender, EmailSender>();
 builder.Services.AddSingleton<AzureBlobService>();
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddHttpClient();
 builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<WebSocketManager>();
 builder.Services.AddSignalR();

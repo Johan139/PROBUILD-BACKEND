@@ -136,8 +136,6 @@ namespace ProbuildBackend.Services
         {
             try
             {
-
-
                 var uri = new Uri(blobUrl);
                 var blobName = uri.Segments.Last();
                 var blobContainerClient = _blobClient.GetBlobContainerClient(_containerName);
@@ -174,7 +172,6 @@ namespace ProbuildBackend.Services
                 // Step 4: Download the blob content
                 BlobDownloadInfo download = await blobClient.DownloadAsync();
 
-               
                 // Step 5: Get metadata to determine the original file name and content type
                 var properties = await blobClient.GetPropertiesAsync();
                 var metadata = properties.Value.Metadata;

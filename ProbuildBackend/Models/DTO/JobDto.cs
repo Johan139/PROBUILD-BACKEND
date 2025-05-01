@@ -2,6 +2,8 @@
 {
     public class JobDto
     {
+
+        public int JobId { get; set; }
         public string? ProjectName { get; set; }
         public string? JobType { get; set; }
         public int Qty { get; set; }

@@ -19,6 +19,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using static iText.StyledXmlParser.Jsoup.Select.Evaluator;
 
+
 namespace ProbuildBackend.Controllers
 {
     [Route("api/[controller]")]
@@ -31,13 +32,18 @@ namespace ProbuildBackend.Controllers
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly DocumentProcessorService _documentProcessorService;
         private readonly IEmailSender _emailService; // Add this
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IConfiguration _config;
+
         public JobsController(
             ApplicationDbContext context,
             AzureBlobService azureBlobservice,
             IHubContext<ProgressHub> hubContext,
             IHttpContextAccessor httpContextAccessor,
             DocumentProcessorService documentProcessorService,
-            IEmailSender emailService)
+            IEmailSender emailService,
+            IHttpClientFactory httpClientFactory,
+            IConfiguration config)
         {
             _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
             _context = context;
@@ -45,6 +51,8 @@ namespace ProbuildBackend.Controllers
             _hubContext = hubContext;
             _documentProcessorService = documentProcessorService;
             _emailService = emailService ?? throw new ArgumentNullException(nameof(emailService));
+            _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
+            _config = config ?? throw new ArgumentNullException(nameof(config));
         }
 
         [HttpGet]
@@ -54,16 +62,69 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpGet("Id/{id}")]
-        public async Task<ActionResult<Models.JobModel>> GetJob(int id)
+        public async Task<ActionResult<JobDto>> GetJob(int id)
         {
-            var job = await _context.Jobs.FindAsync(id);
-
-            if (job == null)
+            try
             {
-                return NotFound();
-            }
+                var job = await _context.Jobs.FindAsync(id);
 
-            return job;
+                if (job == null)
+                {
+                    return NotFound();
+                }
+
+                var address = await _context.JobAddresses.FirstOrDefaultAsync(a => a.JobId == id);
+
+                var jobDto = new JobDto
+                {
+                    JobId = job.Id,
+                    ProjectName = job.ProjectName,
+                    JobType = job.JobType,
+                    Qty = job.Qty,
+                    DesiredStartDate = job.DesiredStartDate,
+                    WallStructure = job.WallStructure,
+                    WallStructureSubtask = job.WallStructureSubtask,
+                    WallInsulation = job.WallInsulation,
+                    WallInsulationSubtask = job.WallInsulationSubtask,
+                    RoofStructure = job.RoofStructure,
+                    RoofStructureSubtask = job.RoofStructureSubtask,
+                    RoofTypeSubtask = job.RoofTypeSubtask,
+                    RoofInsulation = job.RoofInsulation,
+                    RoofInsulationSubtask = job.RoofInsulationSubtask,
+                    Foundation = job.Foundation,
+                    FoundationSubtask = job.FoundationSubtask,
+                    Finishes = job.Finishes,
+                    FinishesSubtask = job.FinishesSubtask,
+                    ElectricalSupplyNeeds = job.ElectricalSupplyNeeds,
+                    ElectricalSupplyNeedsSubtask = job.ElectricalSupplyNeedsSubtask,
+                    Status = job.Status,
+                    OperatingArea = job.OperatingArea,
+                    UserId = job.UserId,
+                    //SessionId = job.SessionId,
+                    Stories = job.Stories,
+                    BuildingSize = job.BuildingSize,
+                    // The following fields come from the address entity
+                    Address = address?.FormattedAddress,
+                    StreetNumber = address?.StreetNumber ?? "",
+                    StreetName = address?.StreetName ?? "",
+                    City = address?.City ?? "",
+                    State = address?.State ?? "",
+                    PostalCode = address?.PostalCode ?? "",
+                    Country = address?.Country ?? "",
+                    Latitude = address?.Latitude.ToString(),
+                    Longitude = address?.Longitude.ToString(),
+                    GooglePlaceId = address?.GooglePlaceId ?? "",
+                    // The following are optional form values if needed
+                    Blueprint = null, // or populate if coming from elsewhere
+                    TemporaryFileUrls = null // or populate if applicable
+                };
+
+                return Ok(jobDto);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, "An error occurred while retrieving the job.");
+            }
         }
 
         [HttpGet("download/{documentId}")]
@@ -945,6 +1006,28 @@ namespace ProbuildBackend.Controllers
         private bool JobExists(int id)
         {
             return _context.Jobs.Any(e => e.Id == id);
+        }
+
+        [HttpGet("weather-forecast")]
+        public async Task<IActionResult> GetWeatherForecast(string lat, string lon)
+        {
+            try
+            {
+                double latitude = double.Parse(lat);
+                double longitude = double.Parse(lon);   
+           
+            var client = _httpClientFactory.CreateClient();
+            var apiKey = _config["GoogleMapsAPI:APIKey"];
+            var url = $"https://weather.googleapis.com/v1/forecast/days:lookup?key={apiKey}&location.latitude={latitude.ToString(CultureInfo.InvariantCulture)}&location.longitude={longitude.ToString(CultureInfo.InvariantCulture)}&unitsSystem=METRIC&days=10";
+            var response = await client.GetAsync(url);
+            var content = await response.Content.ReadAsStringAsync();
+            return Content(content, "application/json");
+            }
+            catch (Exception)
+            {
+
+                throw;
+            }
         }
     }
 
