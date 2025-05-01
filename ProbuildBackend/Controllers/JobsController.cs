@@ -1017,7 +1017,8 @@ namespace ProbuildBackend.Controllers
                 double longitude = double.Parse(lon);   
            
             var client = _httpClientFactory.CreateClient();
-            var apiKey = _config["GoogleMapsAPI:APIKey"];
+            var apiKey = Environment.GetEnvironmentVariable("MapsAPI")
+                      ?? _config["GoogleMapsAPI:APIKey"];
             var url = $"https://weather.googleapis.com/v1/forecast/days:lookup?key={apiKey}&location.latitude={latitude.ToString(CultureInfo.InvariantCulture)}&location.longitude={longitude.ToString(CultureInfo.InvariantCulture)}&unitsSystem=METRIC&days=10";
             var response = await client.GetAsync(url);
             var content = await response.Content.ReadAsStringAsync();
