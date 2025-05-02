@@ -23,6 +23,11 @@ public class ApplicationDbContext : DbContext
     public DbSet<DocumentProcessingResult> DocumentProcessingResults { get; set; }
     public DbSet<AddressModel> JobAddresses { get; set; }
     public DbSet<JobDocumentModel> JobDocuments { get; set; }
+
+    public DbSet<Quote> Quotes { get; set; }
+    public DbSet<QuoteRow> QuoteRows { get; set; }
+    public DbSet<QuoteExtraCost> QuoteExtraCosts { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {   
         modelBuilder.Entity<ProjectModel>()
@@ -183,6 +188,11 @@ public class ApplicationDbContext : DbContext
             .Property(ja => ja.JobRole)
             .HasMaxLength(450);
 
+        modelBuilder.Entity<Quote>()
+            .HasMany(q => q.ExtraCosts)
+            .WithOne(ec => ec.Quote)
+            .HasForeignKey(ec => ec.QuoteId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         base.OnModelCreating(modelBuilder);
     }
