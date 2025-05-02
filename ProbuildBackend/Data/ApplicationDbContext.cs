@@ -14,6 +14,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<NotificationModel> Notifications { get; set; }
     public DbSet<JobAssignmentModel> JobAssignments { get; set; }
     public DbSet<SubtaskNoteDocumentModel> SubtaskNoteDocument { get; set; }
+    public DbSet<ProfileDocuments> ProfileDocuments { get; set; }
+    public DbSet<UserAddressModel> UserAddress { get; set; }
     public DbSet<SubtaskNoteModel> SubtaskNote { get; set; }
     public DbSet<SubtaskNoteUserModel> SubtaskNoteUser { get; set; }
 
@@ -140,7 +142,27 @@ public class ApplicationDbContext : DbContext
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
             entity.Property(e => e.JobId).HasColumnName("JobId").IsRequired();
         });
-
+        modelBuilder.Entity<UserAddressModel>(entity =>
+        {
+            entity.ToTable("UserAddress");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Latitude).HasColumnType("decimal(10,8)").IsRequired(false);
+            entity.Property(e => e.Longitude).HasColumnType("decimal(11,8)").IsRequired(false);
+            // Explicitly map properties to snake_case column names
+            entity.Property(e => e.StreetNumber).HasColumnName("street_number");
+            entity.Property(e => e.StreetName).HasColumnName("street_name");
+            entity.Property(e => e.City).HasColumnName("city");
+            entity.Property(e => e.State).HasColumnName("state");
+            entity.Property(e => e.PostalCode).HasColumnName("postal_code");
+            entity.Property(e => e.Country).HasColumnName("country");
+            entity.Property(e => e.Latitude).HasColumnName("latitude");
+            entity.Property(e => e.Longitude).HasColumnName("longitude");
+            entity.Property(e => e.FormattedAddress).HasColumnName("formatted_address").HasMaxLength(255).IsRequired(false);
+            entity.Property(e => e.GooglePlaceId).HasColumnName("google_place_id").HasMaxLength(100).IsRequired(false);
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+            entity.Property(e => e.UserId).HasColumnName("UserId").IsRequired();
+        });
 
         modelBuilder.Entity<JobAssignmentModel>()
             .HasKey(ja => new { ja.UserId, ja.JobId });
