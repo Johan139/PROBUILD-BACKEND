@@ -24,10 +24,9 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowAngularApp", policy =>
     {
         policy.WithOrigins(
-  "http://localhost:4200",
-  "https://probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io",
-  "https://app.probuildai.com" // No slash!
-)
+            "http://localhost:4200", // For local development
+            "https://probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io", "https://app.probuildai.com/" // For production
+        )
         .AllowAnyHeader()
         .AllowAnyMethod()
         .AllowCredentials(); // Required for SignalR with credentials

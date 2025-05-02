@@ -94,7 +94,7 @@ namespace ProbuildBackend.Controllers
             return Ok(users);
         }
 
-        [HttpPut("Update")]
+        [HttpPost("Update")]
         public async Task<IActionResult> Update(RegisterDto model)
         {
             if (ModelState.IsValid)
