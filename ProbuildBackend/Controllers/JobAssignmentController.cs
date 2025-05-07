@@ -122,7 +122,7 @@ namespace ProbuildBackend.Controllers
             return assignedJobList;
         }
 
-        [HttpPut("DeleteAssignment")]
+        [HttpPost("DeleteAssignment")]
         public async Task<IActionResult> DeleteJobAssignment([FromBody] JobAssignment jobAssignment)
         {
             var jobAssignmentRow = await _context.JobAssignments.Where(u => u.JobId == jobAssignment.JobId && u.UserId == jobAssignment.UserId).FirstOrDefaultAsync();
