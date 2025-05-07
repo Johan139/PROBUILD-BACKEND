@@ -116,8 +116,6 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-
-       
             var subscriptions = await _context.Subscriptions.ToListAsync();
             return Ok(subscriptions);
             }

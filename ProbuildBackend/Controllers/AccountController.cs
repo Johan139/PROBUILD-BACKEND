@@ -100,8 +100,9 @@ namespace ProbuildBackend.Controllers
                 throw;
             }
         }
+
         [HttpGet("has-active-subscription/{userId}")]
-        public async Task<IActionResult> HasActiveSubscription(string userId)
+        public async Task<ActionResult> HasActiveSubscription(string userId)
         {
             var hasActive = await _context.PaymentRecords
                 .AnyAsync(p => p.UserId == userId && p.Status == "Success" && p.PaidAt > DateTime.UtcNow.AddMonths(-1));
