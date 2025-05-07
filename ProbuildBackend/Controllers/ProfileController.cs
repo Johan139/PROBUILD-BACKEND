@@ -97,10 +97,16 @@ namespace ProbuildBackend.Controllers
         [HttpPost("Update")]
         public async Task<IActionResult> Update(RegisterDto model)
         {
-            if (ModelState.IsValid)
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            try
             {
-                var user = await _context.Users.Where(a => a.Id == model.Id).FirstOrDefaultAsync();
-                user.Id = model.Id;
+                var user = await _context.Users.FirstOrDefaultAsync(a => a.Id == model.Id);
+                if (user == null)
+                    return NotFound("User not found.");
+
+                // Update user fields
                 user.UserName = model.Email;
                 user.Email = model.Email;
                 user.FirstName = model.FirstName;
@@ -127,55 +133,50 @@ namespace ProbuildBackend.Controllers
                 user.City = model.City;
                 user.SubscriptionPackage = model.SubscriptionPackage;
 
-                try
+                // Add address (can be done before save)
+                var address = new UserAddressModel
                 {
-                    var result = _context.SaveChangesAsync();
+                    StreetNumber = model.StreetNumber,
+                    StreetName = model.StreetName,
+                    City = model.City,
+                    State = model.State,
+                    PostalCode = model.PostalCode,
+                    Country = model.Country,
+                    Latitude = model.Latitude,
+                    Longitude = model.Longitude,
+                    FormattedAddress = model.FormattedAddress,
+                    GooglePlaceId = model.GooglePlaceId,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                    UserId = user.Id
+                };
+                _context.UserAddress.Add(address);
 
+                // Update documents
+                if (!string.IsNullOrEmpty(model.SessionId))
+                {
+                    var documents = await _context.ProfileDocuments
+                        .Where(doc => doc.sessionId == model.SessionId && string.IsNullOrEmpty(doc.UserId))
+                        .ToListAsync();
 
-                    var address = new UserAddressModel
+                    foreach (var doc in documents)
                     {
-                        StreetNumber = model.StreetNumber,
-                        StreetName = model.StreetName,
-                        City = model.City,
-                        State = model.State,
-                        PostalCode = model.PostalCode,
-                        Country = model.Country,
-                        Latitude = model.Latitude,
-                        Longitude = model.Longitude,
-                        FormattedAddress = model.FormattedAddress,
-                        GooglePlaceId = model.GooglePlaceId,
-                        CreatedAt = DateTime.UtcNow,
-                        UpdatedAt = DateTime.UtcNow,
-                        UserId = user.Id // This is now valid
-                    };
-
-                    _context.UserAddress.Add(address);
-                    await _context.SaveChangesAsync(); // Save the address second
-
-                    List<string> documentUrls = new List<string>();
-                    if (!string.IsNullOrEmpty(model.SessionId))
-                    {
-                        var documents = await _context.ProfileDocuments
-                            .Where(doc => doc.sessionId == model.SessionId && string.IsNullOrEmpty(doc.UserId))
-                            .ToListAsync();
-
-                        foreach (var doc in documents)
-                        {
-                            doc.UserId =model.Id;
-                            documentUrls.Add(doc.BlobUrl);
-                        }
-                        await _context.SaveChangesAsync();
+                        doc.UserId = model.Id;
                     }
+                }
 
-                    Console.WriteLine($"Profile ({user.Id}) updated successfully.");
-                    return Ok(new { message = "Profile updated successfully." });
-                }
-                catch (Exception ex) {
-                    return BadRequest(ex);
-                }
+                // Now commit all changes once
+                await _context.SaveChangesAsync();
+
+                Console.WriteLine($"Profile ({user.Id}) updated successfully.");
+                return Ok(new { message = "Profile updated successfully." });
             }
-            return BadRequest(ModelState);
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
         }
+
 
         [HttpPost("UploadImage")]
         [RequestSizeLimit(200 * 1024 * 1024)]

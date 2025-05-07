@@ -33,10 +33,15 @@ namespace ProbuildBackend.Controllers
         [HttpPost("register")]
         public async Task<IActionResult> Register(RegisterDto model)
         {
+            try
+            {
+
+
             if (ModelState.IsValid)
             {
                 var user = new UserModel
                 {
+                    Id = Guid.NewGuid().ToString(),
                     UserName = model.Email,
                     Email = model.Email,
                     FirstName = model.FirstName,
@@ -76,16 +81,34 @@ namespace ProbuildBackend.Controllers
                     await _emailSender.SendEmailAsync(model.Email, "Confirm your email",
                         $"Please confirm this account for {user.UserName} by <a href='{callbackUrl}'>clicking here</a>.");
 
-                    return Ok(new { message = "Registration successful, please verify your email." });
-                }
+                        return Ok(new
+                        {
+                            message = "Registration successful, please verify your email.",
+                            userId = user.Id
+                        });
+                    }
                 else
                 {
                     return BadRequest(result.Errors);
                 }
             }
             return BadRequest(ModelState);
+            }
+            catch (Exception ex)
+            {
+
+                throw;
+            }
         }
 
+        [HttpGet("has-active-subscription/{userId}")]
+        public async Task<ActionResult> HasActiveSubscription(string userId)
+        {
+            var hasActive = await _context.PaymentRecords
+                .AnyAsync(p => p.UserId == userId && p.Status == "Success" && p.PaidAt > DateTime.UtcNow.AddMonths(-1));
+
+            return Ok(new { hasActive });
+        }
 
         // GET api/users/byrole/{userType}
         [HttpGet("byrole/{userType}")]
