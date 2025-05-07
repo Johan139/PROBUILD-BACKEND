@@ -374,8 +374,8 @@ namespace ProbuildBackend.Controllers
                     
                     if (!string.IsNullOrEmpty(jobRequest.Address))
                     {
-                        decimal lat = Convert.ToDecimal(jobRequest.Latitude, CultureInfo.InvariantCulture);
-                        decimal lon = Convert.ToDecimal(jobRequest.Longitude, CultureInfo.InvariantCulture);
+                        decimal lat = Math.Round(Convert.ToDecimal(jobRequest.Latitude, CultureInfo.InvariantCulture), 6);
+                        decimal lon = Math.Round(Convert.ToDecimal(jobRequest.Longitude, CultureInfo.InvariantCulture), 6);
                         var address = new AddressModel
                         {
                             FormattedAddress = jobRequest.Address,
@@ -418,11 +418,11 @@ namespace ProbuildBackend.Controllers
                         BackgroundJob.Enqueue(() => _documentProcessorService.ProcessDocumentsForJobAsync(job.Id, documentUrls, connectionId));
                     }
 
-
+                    
 
                     await transaction.CommitAsync();
 
-                    return Ok(job);
+                    return Ok(jobRequest);
                 }
                 catch (Exception ex)
                 {
@@ -641,9 +641,9 @@ namespace ProbuildBackend.Controllers
                 .ToListAsync();
 
             if (!subtasks.Any())
-                return NotFound("No subtasks found.");
+                    return Ok(new List<JobSubtasksModel>());
 
-            return Ok(subtasks);
+                return Ok(subtasks);
             }
             catch (Exception ex)
             {
@@ -765,25 +765,26 @@ namespace ProbuildBackend.Controllers
      }
  ).ToListAsync();
 
-                // Group notes by JobId and JobSubtaskId
-                var groupedNotes = notes
-                    .GroupBy(n => new { n.JobId, n.JobSubtaskId })
-                    .Select(g => new
-                    {
-                        JobId = g.Key.JobId,
-                        JobSubtaskId = g.Key.JobSubtaskId,
-                        ProjectName = g.First().ProjectName,
-                        CreatedAt = g.Min(x => x.CreatedAt), // or .Max if you prefer latest
-                        Notes = g.Select(x => new
-                        {
-                            x.Id,
-                            x.NoteText,
-                            x.CreatedByUserId,
-                            x.CreatedAt,
-                            x.ModifiedAt
-                        }).ToList()
-                    })
-                    .ToList();
+                var groupedNotes = (from note in notes
+                                                join subtask in _context.JobSubtasks
+                                                on note.JobSubtaskId equals subtask.Id
+                                                group new { note, subtask } by new { note.JobId, note.JobSubtaskId } into g
+                                                select new
+                                                {
+                                                    JobId = g.Key.JobId,
+                                                    JobSubtaskId = g.Key.JobSubtaskId,
+                                                    ProjectName = g.First().note.ProjectName,
+                                                    CreatedAt = g.Min(x => x.note.CreatedAt),
+                                                    SubtaskName = g.First().subtask.Task,
+                                                    Notes = g.Select(x => new
+                                                    {
+                                                        x.note.Id,
+                                                        x.note.NoteText,
+                                                        x.note.CreatedByUserId,
+                                                        x.note.CreatedAt,
+                                                        x.note.ModifiedAt
+                                                    }).ToList()
+                                                }).ToList();
 
                 return Ok(groupedNotes);
             }
@@ -1013,10 +1014,12 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                double latitude = double.Parse(lat);
-                double longitude = double.Parse(lon);   
-           
-            var client = _httpClientFactory.CreateClient();
+                lat = lat.Replace(',', '.');
+                decimal latitude = decimal.Parse(lat, CultureInfo.InvariantCulture);
+                lon = lon.Replace(',', '.');
+                decimal longitude = decimal.Parse(lon, CultureInfo.InvariantCulture);
+
+                var client = _httpClientFactory.CreateClient();
             var apiKey = Environment.GetEnvironmentVariable("MapsAPI")
                       ?? _config["GoogleMapsAPI:APIKey"];
             var url = $"https://weather.googleapis.com/v1/forecast/days:lookup?key={apiKey}&location.latitude={latitude.ToString(CultureInfo.InvariantCulture)}&location.longitude={longitude.ToString(CultureInfo.InvariantCulture)}&unitsSystem=METRIC&days=10";
