@@ -56,8 +56,8 @@ namespace ProbuildBackend.Controllers
             { "amount", request.Amount.ToString() }
         },
 
-                SuccessUrl = $"https://probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io/payment-success?source={request.Source}",
-                CancelUrl = "https://probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io/payment-cancel",
+                SuccessUrl = $"https://app.probuildai.com/payment-success?source={request.Source}",
+                CancelUrl = "https://app.probuildai.com/payment-cancel",
             };
 
             var service = new SessionService();
