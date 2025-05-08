@@ -33,6 +33,7 @@ namespace ProbuildBackend.Models
         public decimal Total { get; set; }
         public DateTime CreatedDate { get; set; }
         public string CreatedBy { get; set; } = string.Empty;
+        public string CreatedID { get; set; } = string.Empty;
         public List<QuoteRow> Rows { get; set; } = new List<QuoteRow>();
         public List<QuoteExtraCost> ExtraCosts { get; set; } = new List<QuoteExtraCost>();
     }

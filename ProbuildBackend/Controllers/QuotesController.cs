@@ -20,7 +20,7 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var quotes = await _context.Quotes.Where(a => a.CreatedBy == id).ToListAsync();
+                var quotes = await _context.Quotes.Where(a => a.CreatedID == id).ToListAsync();
                 return Ok(quotes);
             }
             catch (Exception ex)
@@ -78,7 +78,55 @@ namespace ProbuildBackend.Controllers
             {
                 return BadRequest(e);
             }
-            
+        }
+
+        [HttpPost("UpdateQuote/{id}")]
+        public async Task<ActionResult<Quote>> UpdateQuote(string id, Quote quote)
+        {
+            if (quote == null || quote.Id != id)
+            {
+                return BadRequest("Invalid quote data or ID mismatch.");
+            }
+
+            var existingQuote = await _context.Quotes
+                .Include(q => q.Rows)
+                .Include(q => q.ExtraCosts)
+                .FirstOrDefaultAsync(q => q.Id == id);
+
+            if (existingQuote == null)
+            {
+                return NotFound();
+            }
+
+            // Update quote properties
+            _context.Entry(existingQuote).CurrentValues.SetValues(quote);
+
+            // Update rows
+            existingQuote.Rows.Clear();
+            foreach (var row in quote.Rows ?? new List<QuoteRow>())
+            {
+                row.QuoteId = id;
+                existingQuote.Rows.Add(row);
+            }
+
+            // Update extra costs
+            existingQuote.ExtraCosts.Clear();
+            foreach (var extraCost in quote.ExtraCosts ?? new List<QuoteExtraCost>())
+            {
+                extraCost.QuoteId = id;
+                existingQuote.ExtraCosts.Add(extraCost);
+            }
+
+            try
+            {
+                await _context.SaveChangesAsync();
+                return Ok(existingQuote);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error updating quote: {ex.Message}\nStackTrace: {ex.StackTrace}");
+                return StatusCode(500, $"Internal server error: {ex.Message}");
+            }
         }
     }
 }
