@@ -17,6 +17,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<ProfileDocuments> ProfileDocuments { get; set; }
     public DbSet<UserAddressModel> UserAddress { get; set; }
     public DbSet<PaymentRecord> PaymentRecords { get; set; }
+    public DbSet<UserTermsAgreementModel> UserTermsAgreement { get; set; }
     public DbSet<SubtaskNoteModel> SubtaskNote { get; set; }
     public DbSet<SubtaskNoteUserModel> SubtaskNoteUser { get; set; }
     public DbSet<StripeModel> Subscriptions { get; set; }

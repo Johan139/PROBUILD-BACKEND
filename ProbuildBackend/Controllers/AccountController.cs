@@ -69,6 +69,14 @@ namespace ProbuildBackend.Controllers
                     SubscriptionPackage = model.SubscriptionPackage
                 };
 
+                    var userAgree = new UserTermsAgreementModel
+                    {
+                        UserId = user.Id,
+                        DateAgreed = DateTime.UtcNow
+                    };
+                    _context.UserTermsAgreement.Add(userAgree);
+                    _context.SaveChanges();
+
                 var result = await _userManager.CreateAsync(user, model.Password);
                 if (result.Succeeded)
                 {
@@ -189,6 +197,8 @@ namespace ProbuildBackend.Controllers
 
             return Unauthorized();
         }
+
+
 
         private string GenerateJwtToken(UserModel user)
         {
