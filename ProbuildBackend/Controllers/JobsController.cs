@@ -18,6 +18,7 @@ using Elastic.Apm.Api;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using static iText.StyledXmlParser.Jsoup.Select.Evaluator;
+using static ProbuildBackend.Services.DocumentProcessorService;
 
 
 namespace ProbuildBackend.Controllers
@@ -254,7 +255,7 @@ namespace ProbuildBackend.Controllers
             {
                 var results = await _context.DocumentProcessingResults
                     .Where(r => r.JobId == jobId)
-                    .ToListAsync();
+                    .ToListAsync(); 
 
                 if (results == null || !results.Any())
                 {
@@ -412,15 +413,15 @@ namespace ProbuildBackend.Controllers
                         await _context.SaveChangesAsync();
                     }
 
+                    await transaction.CommitAsync();
+
                     if (documentUrls.Any())
                     {
                         string connectionId = _httpContextAccessor.HttpContext?.Connection.Id ?? string.Empty;
                         BackgroundJob.Enqueue(() => _documentProcessorService.ProcessDocumentsForJobAsync(job.Id, documentUrls, connectionId));
                     }
 
-                    
 
-                    await transaction.CommitAsync();
 
                     return Ok(jobRequest);
                 }

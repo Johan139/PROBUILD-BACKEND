@@ -70,7 +70,7 @@ namespace ProbuildBackend.Controllers
         public async Task<IActionResult> StripeWebhook()    
         {
             var json = await new StreamReader(HttpContext.Request.Body).ReadToEndAsync();
-
+            DateTime validDate = DateTime.MinValue;
             try
             {
                 var stripeEvent = EventUtility.ConstructEvent(
@@ -86,17 +86,24 @@ namespace ProbuildBackend.Controllers
                     var customerEmail = session.CustomerEmail;
                     var packageName = session.Metadata["package"];
                     var userId = session.Metadata["userId"]; // Add this to metadata on session creation
-
-                    var payment = new PaymentRecord
+              if(packageName.Contains("Annual"))
                     {
-                        UserId = userId,
-                        Package = packageName,
-                        StripeSessionId = session.Id,
-                        Status = "Success",
-                        PaidAt = DateTime.UtcNow,
-                        ValidUntil = DateTime.UtcNow.AddMonths(1),
-                        Amount = Convert.ToDecimal(session.AmountTotal) / 100.0m
-                    };
+                        validDate = DateTime.UtcNow.AddMonths(12);
+                    }
+              else
+                    {
+                        validDate = DateTime.UtcNow.AddMonths(1);
+                    }
+                        var payment = new PaymentRecord
+                        {
+                            UserId = userId,
+                            Package = packageName,
+                            StripeSessionId = session.Id,
+                            Status = "Success",
+                            PaidAt = DateTime.UtcNow,
+                            ValidUntil = validDate,
+                            Amount = Convert.ToDecimal(session.AmountTotal) / 100.0m
+                        };
 
                     _context.PaymentRecords.Add(payment);
                     await _context.SaveChangesAsync();

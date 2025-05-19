@@ -1,4 +1,5 @@
 ﻿using ProbuildBackend.Services;
+using static ProbuildBackend.Services.DocumentProcessorService;
 
 namespace ProbuildBackend.Models
 {

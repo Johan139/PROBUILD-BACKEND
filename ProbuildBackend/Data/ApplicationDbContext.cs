@@ -1,12 +1,15 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Models;
 
-public class ApplicationDbContext : DbContext
+public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
 {
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
         : base(options)
     {
     }
+
+    public DbSet<DataProtectionKey> DataProtectionKeys { get; set; }
     public DbSet<UserModel> Users { get; set; }
     public DbSet<ProjectModel> Projects { get; set; }
     public DbSet<JobModel> Jobs { get; set; }
@@ -15,6 +18,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<JobAssignmentModel> JobAssignments { get; set; }
     public DbSet<SubtaskNoteDocumentModel> SubtaskNoteDocument { get; set; }
     public DbSet<ProfileDocuments> ProfileDocuments { get; set; }
+
+    public DbSet<DocumentProcessingLogModel> DocumentProcessingLog { get; set; }
     public DbSet<UserAddressModel> UserAddress { get; set; }
     public DbSet<PaymentRecord> PaymentRecords { get; set; }
     public DbSet<UserTermsAgreementModel> UserTermsAgreement { get; set; }

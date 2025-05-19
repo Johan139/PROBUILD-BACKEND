@@ -1,15 +1,22 @@
-using Elastic.Apm.NetCoreAll;
+﻿using Elastic.Apm.NetCoreAll;
 using Hangfire;
 using Hangfire.MemoryStorage;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption.ConfigurationModel;
+using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption;
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
+using ProbuildBackend.Options;
 using ProbuildBackend.Services;
+using System.Net.Http.Headers;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -33,6 +40,15 @@ builder.Services.AddCors(options =>
     });
 });
 
+
+
+
+
+// Configure the token provider for password reset
+builder.Services.Configure<DataProtectionTokenProviderOptions>(options =>
+{
+    options.TokenLifespan = TimeSpan.FromHours(24); // Set expiration to 24 hours
+});
 // Add services to the container
 builder.Services.AddControllers(options =>
 {
@@ -57,13 +73,24 @@ builder.WebHost.ConfigureKestrel(options =>
     options.Limits.MaxRequestBodySize = 200 * 1024 * 1024; // 200MB
     options.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(5); // 5-minute timeout
 });
+builder.Services.AddDataProtection()
+    .SetApplicationName("ProbuildAI")
+    .PersistKeysToDbContext<ApplicationDbContext>()
+    .SetDefaultKeyLifetime(TimeSpan.FromDays(90)) // Optional: lengthen key lifetime
+    .UseCryptographicAlgorithms(new AuthenticatedEncryptorConfiguration
+    {
+        EncryptionAlgorithm = EncryptionAlgorithm.AES_256_CBC,
+        ValidationAlgorithm = ValidationAlgorithm.HMACSHA256
+    });
+
+
 
 var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
                        ?? builder.Configuration.GetConnectionString("DefaultConnection");
 
 var azureBlobStorage = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY")
                       ?? builder.Configuration.GetConnectionString("AzureBlobConnection");
-
+var configuration = builder.Configuration;
 // Configure DbContext with retry policy to handle rate-limiting
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(
@@ -79,9 +106,16 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 builder.Services.AddIdentity<UserModel, IdentityRole>(options =>
 {
     options.SignIn.RequireConfirmedEmail = true;
+    options.Tokens.PasswordResetTokenProvider = TokenOptions.DefaultProvider;
 })
 .AddEntityFrameworkStores<ApplicationDbContext>()
 .AddDefaultTokenProviders();
+
+builder.Services.Configure<DataProtectionTokenProviderOptions>(options =>
+{
+    options.TokenLifespan = TimeSpan.FromHours(24);
+});
+
 builder.Services.AddScoped<DocumentProcessorService>();
 builder.Services.AddTransient<IEmailSender, EmailSender>();
 builder.Services.AddSingleton<AzureBlobService>();
@@ -98,8 +132,55 @@ builder.Services.AddHangfire(config => config
     .UseMemoryStorage()); // Replace with UseSqlServerStorage in production
 builder.Services.AddScoped<IEmailService, EmailService>(); // Add this line
 builder.Services.AddScoped<IEmailSender, EmailSender>(); // Add this line
+builder.Services.AddScoped<IAiService, AiService>(); // Add this line
+//builder.Services.AddScoped<IBomConsolidator, BomConsolidator>(); // Add this line
+builder.Services.AddScoped<IPdfImageConverter, PdfImageConverter>(); // Add this line
+builder.Services.AddScoped<ITextExtractor, OcrTextExtractor>(); // Add this line
+builder.Services.Configure<OcrSettings>(configuration.GetSection("OcrSettings"));
+builder.Services.AddScoped(sp => sp.GetRequiredService<IOptions<OcrSettings>>().Value);
+
+
+builder.Services.AddHttpClient("OpenAI", client =>
+{
+    client.BaseAddress = new Uri("https://api.openai.com/v1/");
+    client.DefaultRequestHeaders.Authorization =
+        new AuthenticationHeaderValue("Bearer", Environment.GetEnvironmentVariable("GPTAPIKEY")
+          ?? configuration["ChatGPTAPI:APIKey"]);
+
+
+    client.DefaultRequestHeaders.Add("OpenAI-Beta", "assistants=v2");
+});
+
+
 builder.Services.AddHangfireServer();
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+
+    var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+    // Ensure database is created
+    context.Database.EnsureCreated();
+
+    // Initialize data protection keys if none exist
+    var keyManager = scope.ServiceProvider.GetRequiredService<IKeyManager>();
+    var keys = keyManager.GetAllKeys();
+
+    if (!keys.Any())
+    {
+        app.Logger.LogInformation("No data protection keys found. Creating new key...");
+        // This will trigger key creation
+        var dataProtector = scope.ServiceProvider.GetRequiredService<IDataProtectionProvider>()
+            .CreateProtector("Microsoft.AspNetCore.Identity.UserManager<UserModel>");
+        var testData = dataProtector.Protect("test");
+        app.Logger.LogInformation("Data protection key created successfully");
+    }
+    else
+    {
+        app.Logger.LogInformation($"Found {keys.Count()} data protection key(s)");
+    }
+}
 
 // Map a simple health endpoint
 app.MapGet("/health", () => Results.Ok("Healthy"));
@@ -192,6 +273,24 @@ try
     app.Logger.LogInformation("Attempting to initialize Azure Blob Service...");
     var blobService = app.Services.GetRequiredService<AzureBlobService>();
     app.Logger.LogInformation("Successfully initialized Azure Blob Service");
+
+    using (var scope = app.Services.CreateScope())
+    {
+        var keyManager = scope.ServiceProvider.GetRequiredService<IKeyManager>();
+        var keys = keyManager.GetAllKeys();
+
+        app.Logger.LogInformation("🔐 Data Protection Keys loaded at startup:");
+        foreach (var key in keys)
+        {
+            app.Logger.LogInformation($"🔑 KeyId: {key.KeyId} | Created: {key.CreationDate} | Expires: {key.ExpirationDate}");
+        }
+
+        var keyXmls = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().DataProtectionKeys.ToList();
+        foreach (var keyRow in keyXmls)
+        {
+            app.Logger.LogInformation($"🧱 DB Row KeyId: {keyRow.FriendlyName}");
+        }
+    }
 
     app.Logger.LogInformation("Application startup completed successfully. Starting to run...");
     app.Run();

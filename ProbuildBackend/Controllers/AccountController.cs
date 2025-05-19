@@ -10,6 +10,11 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Elastic.Apm.Api;
+using System.Web;
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
+using System.Net;
+using Google.Apis.Auth.OAuth2.Requests;
+using Microsoft.AspNetCore.DataProtection;
 
 namespace ProbuildBackend.Controllers
 {
@@ -21,13 +26,18 @@ namespace ProbuildBackend.Controllers
         private readonly IEmailSender _emailSender;
         private readonly IConfiguration _configuration;
         private readonly ApplicationDbContext _context;
+        private readonly IServiceProvider _serviceProvider;
+        private readonly IDataProtectionProvider _dataProtectionProvider;
 
-        public AccountController(UserManager<UserModel> userManager, IEmailSender emailSender, IConfiguration configuration, ApplicationDbContext context)
+        public AccountController(UserManager<UserModel> userManager, IDataProtectionProvider dataProtectionProvider, IEmailSender emailSender, IConfiguration configuration, ApplicationDbContext context,
+    IServiceProvider serviceProvider)
         {
             _userManager = userManager;
             _emailSender = emailSender;
             _configuration = configuration;
             _context = context;
+            _serviceProvider = serviceProvider; // Initialize the field
+            _dataProtectionProvider = dataProtectionProvider;
         }
 
         [HttpPost("register")]
@@ -113,7 +123,7 @@ namespace ProbuildBackend.Controllers
         public async Task<ActionResult> HasActiveSubscription(string userId)
         {
             var hasActive = await _context.PaymentRecords
-                .AnyAsync(p => p.UserId == userId && p.Status == "Success" && p.PaidAt > DateTime.UtcNow.AddMonths(-1));
+                .AnyAsync(p => p.UserId == userId && p.Status == "Success" && p.ValidUntil > DateTime.Now);
 
             return Ok(new { hasActive });
         }
@@ -188,6 +198,10 @@ namespace ProbuildBackend.Controllers
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginDto model)
         {
+            try
+            {
+
+     
             var user = await _userManager.FindByEmailAsync(model.Email);
             if (user != null && await _userManager.CheckPasswordAsync(user, model.Password) && user.EmailConfirmed == true)// add email comfirmation check
             {
@@ -196,6 +210,12 @@ namespace ProbuildBackend.Controllers
             }
 
             return Unauthorized();
+            }
+            catch (Exception ex)
+            {
+
+                throw;
+            }
         }
 
 
@@ -222,54 +242,123 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("forgotpassword")]
-        public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordModel model)
+        public async Task<IActionResult> ForgotPassword(ForgotPasswordModel model)
         {
-            if (string.IsNullOrEmpty(model.Email))
-            {
-                return BadRequest(new { message = "Email is required" });
-            }
+            var user = await _context.Users
+                .AsNoTracking()
+                .Select(u => new UserModel
+                {
+                    Id = u.Id,
+                    UserName = u.UserName,
+                    Email = u.Email,
+                    SecurityStamp = u.SecurityStamp
+                })
+                .FirstOrDefaultAsync(u => u.Email == model.Email);
 
-            var user = await _userManager.FindByEmailAsync(model.Email);
-            if (user == null)
-            {
-                return BadRequest(new { message = "User not found" });
-            }
 
-            var token = await _userManager.GeneratePasswordResetTokenAsync(user);
-            var callbackUrl = Url.Action(
-                "ResetPassword",
-                "Account",
-                new { token = token, email = user.Email },
-                protocol: HttpContext.Request.Scheme);
 
-            // Send an email to the user with the reset link
+            var protector = _dataProtectionProvider.CreateProtector($"{user.Id}:Default:ResetPassword");
+            var token = protector.Protect("ResetToken:" + Guid.NewGuid().ToString());
+            var frontendBaseUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["URL:FrontendBaseUrl"]; ;
+            var callbackUrl = $"{frontendBaseUrl}/reset-password?userId={Uri.EscapeDataString(user.Id)}&token={Uri.EscapeDataString(token)}";
+
             await _emailSender.SendEmailAsync(model.Email, "Reset Password",
-                $"Please reset your password by using reset token : {token}");
+                $"Please reset your password by <a href='{callbackUrl}'>clicking here</a>.");
 
-            return Ok(new { message = "Password reset email sent." });
+            return Ok();
+        }
+        public class ResetPasswordDto
+        {
+            public string email { get; set; }
+            public string Token { get; set; }
+            public string Password { get; set; }
         }
 
         [HttpPost("resetpassword")]
         public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto model)
         {
-            if (string.IsNullOrEmpty(model.Email) || string.IsNullOrEmpty(model.Token) || string.IsNullOrEmpty(model.Password))
+            // Fetch the existing user with all properties to preserve current values
+            var existingUser = await _context.Users
+                .AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Email == model.email);
+
+            if (existingUser == null)
+                return BadRequest("User not found");
+
+            // Create a new instance with selected properties and merge with existing values
+            var user = new UserModel
             {
-                return BadRequest(new { message = "All fields are required." });
+                Id = existingUser.Id,
+                UserName = existingUser.UserName,
+                Email = existingUser.Email,
+                SecurityStamp = existingUser.SecurityStamp,
+                PasswordHash = existingUser.PasswordHash, // Preserve existing hash before update
+                PhoneNumber = existingUser.PhoneNumber ?? "",
+                EmailConfirmed = existingUser.EmailConfirmed,
+                PhoneNumberConfirmed = existingUser.PhoneNumberConfirmed,
+                TwoFactorEnabled = existingUser.TwoFactorEnabled,
+                LockoutEnd = existingUser.LockoutEnd,
+                LockoutEnabled = existingUser.LockoutEnabled,
+                AccessFailedCount = existingUser.AccessFailedCount,
+                FirstName = existingUser.FirstName ?? "",
+                LastName = existingUser.LastName ?? "",
+                UserType = existingUser.UserType ?? "",
+                CompanyName = existingUser.CompanyName ?? "",
+                CompanyRegNo = existingUser.CompanyRegNo ?? "",
+                VatNo = existingUser.VatNo ?? "",
+                ConstructionType = existingUser.ConstructionType ?? "",
+                NrEmployees = existingUser.NrEmployees ?? "0", // Default to "0" for string representation
+                YearsOfOperation = existingUser.YearsOfOperation ?? "",
+                CertificationStatus = existingUser.CertificationStatus ?? "",
+                CertificationDocumentPath = existingUser.CertificationDocumentPath ?? "",
+                Availability = existingUser.Availability ?? "",
+                Trade = existingUser.Trade ?? "",
+                SupplierType = existingUser.SupplierType ?? "",
+                ProductsOffered = existingUser.ProductsOffered ?? "",
+                ProjectPreferences = existingUser.ProjectPreferences ?? "",
+                DeliveryArea = existingUser.DeliveryArea ?? "",
+                DeliveryTime = existingUser.DeliveryTime ?? "",
+                Country = existingUser.Country ?? "",
+                State = existingUser.State ?? "",
+                City = existingUser.City ?? "",
+                SubscriptionPackage = existingUser.SubscriptionPackage ?? "",
+                IsVerified = existingUser.IsVerified
+            };
+
+            var protector = _dataProtectionProvider.CreateProtector($"{user.Id}:Default:ResetPassword");
+            string unprotectedToken;
+            try
+            {
+                unprotectedToken = protector.Unprotect(model.Token);
+                if (!unprotectedToken.StartsWith("ResetToken:"))
+                    return BadRequest("Invalid token");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Token Validation Error: {ex.Message}");
+                return BadRequest("Invalid token");
             }
 
-            var user = await _userManager.FindByEmailAsync(model.Email);
-            if (user == null)
-            {
-                return BadRequest(new { message = "User not found" });
-            }
+            // Log the state before update
+            Console.WriteLine($"Before Update - Availability: {user.Availability ?? "null"}");
 
-            var result = await _userManager.ResetPasswordAsync(user, model.Token, model.Password);
-            if (result.Succeeded)
-            {
-                return Ok(new { message = "Password reset successful." });
-            }
+            // Set Availability to empty string (optional, based on your intent)
+            user.Availability = "";
+            Console.WriteLine($"After Setting - Availability: {user.Availability}");
 
-            return BadRequest(new { message = "Error resetting password.", errors = result.Errors });
+            // Manually update the password
+            var hasher = new PasswordHasher<UserModel>();
+            var newPasswordHash = hasher.HashPassword(user, model.Password);
+            user.PasswordHash = newPasswordHash;
+
+            // Attach and update only the changed properties
+            _context.Users.Attach(user);
+            _context.Entry(user).Property(u => u.PasswordHash).IsModified = true;
+            _context.Entry(user).Property(u => u.Availability).IsModified = true;
+            await _context.SaveChangesAsync();
+
+
+            return Ok();
         }
 
     }
