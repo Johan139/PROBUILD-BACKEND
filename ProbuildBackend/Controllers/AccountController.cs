@@ -260,7 +260,7 @@ namespace ProbuildBackend.Controllers
             var protector = _dataProtectionProvider.CreateProtector($"{user.Id}:Default:ResetPassword");
             var token = protector.Protect("ResetToken:" + Guid.NewGuid().ToString());
             var frontendBaseUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["URL:FrontendBaseUrl"]; ;
-            var callbackUrl = $"{frontendBaseUrl}/reset-password?userId={Uri.EscapeDataString(user.Id)}&token={Uri.EscapeDataString(token)}";
+            var callbackUrl = $"{frontendBaseUrl}/reset-password?email={Uri.EscapeDataString(user.Email)}&token={Uri.EscapeDataString(token)}";
 
             await _emailSender.SendEmailAsync(model.Email, "Reset Password",
                 $"Please reset your password by <a href='{callbackUrl}'>clicking here</a>.");
