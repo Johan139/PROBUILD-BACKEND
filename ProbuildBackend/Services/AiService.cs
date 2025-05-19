@@ -215,7 +215,7 @@ Page {pageIndex + 1} of a construction document. Please analyze the architectura
         {
             var messages = new List<ChatMessage>
         {
-            new SystemChatMessage(LoadPromptTemplate("refinement")),
+            new SystemChatMessage(LoadPromptTemplate("FineTune")),
             new UserChatMessage($"Here is the extract:\n```\n{extractedText}\n```")
         };
 
