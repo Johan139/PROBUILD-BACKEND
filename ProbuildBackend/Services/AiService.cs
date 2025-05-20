@@ -18,6 +18,7 @@ namespace ProbuildBackend.Services
         private readonly OcrSettings _settings;
         private readonly HttpClient _openAiHttpClient;
         private const string AssistantId = "asst_avihQboQwQCI6dz0gukIMrHD";
+        private const string AssistantId2 = "asst_i29rHs5ZsAbdaYMvhzAOOcuH";
 
         public AiService(OcrSettings settings, IConfiguration configuration, IHttpClientFactory httpClientFactory)
         {
@@ -213,17 +214,72 @@ Page {pageIndex + 1} of a construction document. Please analyze the architectura
         }
         public async Task<string> RefineTextWithAiAsync(string extractedText, string blobUrl)
         {
-            var messages = new List<ChatMessage>
-        {
-            new SystemChatMessage("You are a senior construction documentation expert tasked with refining raw construction analysis from a multi-page plan document into a cohesive, professional report. Your output must be highly detailed, technically precise, and comprehensive, matching the depth of a human expert’s analysis.\r\n\r\n---\r\n\r\n## 🔧 FORMAT ENFORCEMENT INSTRUCTIONS\r\n\r\nYou must return your response using the **exact markdown structure** shown below.  \r\n- **Every section is required** and must be returned even if values are placeholders.  \r\n- Output must begin with `# Building Plan Analysis Report`.  \r\n- The section `## **Construction Timeline by Task Category**` must follow this structure exactly:\r\n  - Each task must be formatted as a **`### # X. Task Name (MasterFormat Code)`** section.\r\n  - Each subtask must appear **bolded**, with a block underneath showing:\r\n    - **Duration**\r\n    - **Start Date**\r\n    - **End Date**\r\n  - Each subtask block must end with a horizontal separator: `---`.\r\n\r\n**Do not skip or rename any of the following required sections**:\r\n\r\n```\r\n# Building Plan Analysis Report\r\n\r\n## **Building Description**\r\n- **Type:** \r\n- **Design Characteristics:** \r\n\r\n## **Layout & Design**\r\n- **Rooms Identified:** \r\n- **Access Points:** \r\n- **Vertical Circulation:** \r\n- **Unique Features:** \r\n\r\n## **Materials List**\r\n| Item                 | Quantity | Unit      | Location/Notes                          |\r\n|----------------------|----------|-----------|-----------------------------------------|\r\n|                      |          |           |                                         |\r\n\r\n## **Construction Timeline by Task Category**\r\n\r\n### # X. [Your Task Name Here] (MasterFormat Code)\r\n**Duration:** \r\n**Start Date:** \r\n**End Date:** \r\n\r\n**[Subtask Name]**  \r\n**Duration:**   \r\n**Start Date:**   \r\n**End Date:**   \r\n---\r\n\r\n(repeat as needed)\r\n\r\n## **Final Bill of Materials**\r\n| Item                 | Quantity | Unit      | Justification                          |\r\n|----------------------|----------|-----------|----------------------------------------|\r\n|                      |          |           |                                        |\r\n\r\nThis report consolidates the construction analysis based on the provided materials and inferred tasks, ensuring a comprehensive overview for project planning and execution.\r\n```\r\n\r\n---\r\n\r\n## 🎯 REFINEMENT TASKS\r\n\r\n1. **Merge Redundant Data**: Consolidate repeated material entries or sections across multiple pages into a single, unified set. Example: merge duplicate mentions of 'framing lumber' into one entry with a clear justification.\r\n\r\n2. **Resolve Inconsistencies**:\r\n   - Standardize all units (e.g., board feet for lumber, square feet for drywall).\r\n   - Normalize terminology (e.g., 'roofing shingles' → 'roofing material').\r\n   - Correct conflicting values using domain logic (e.g., square footage ranges).\r\n\r\n3. **Improve Structure**:\r\n   - Maintain clear headers as shown in the structure above.\r\n   - Use MasterFormat codes for all tasks and subtasks.\r\n   - Ensure all subtasks use bolded names and horizontal separators.\r\n\r\n4. **Enhance Clarity**:\r\n   - Use markdown tables and formatted sections.\r\n   - No bullet points in subtasks — use bold labels and `---`.\r\n   - Tasks should be clearly separated by hierarchy.\r\n\r\n5. **Generate Final Bill of Materials**:\r\n   - Provide a single, consolidated table with items and justifications.\r\n   - Categorize BOM under timeline task groupings, linked to MasterFormat.\r\n\r\n6. **Apply Accurate MasterFormat Codes**:\r\n   - Use authoritative codes from https://crmservice.csinet.org/widgets/masterformat/numbersandtitles.aspx.\r\n   - If unsure, use the closest relevant section and note your assumption.\r\n\r\n7. **Categorize by Tasks**:\r\n   - Convert each BOM item into a main task.\r\n   - Infer realistic subtasks (e.g., drywall → install, finish, paint).\r\n\r\n8. **Group Tasks Together**:\r\n   - Keep subtasks under their main task.\r\n   - Sequence dates and durations from **April 16, 2025**, ensuring all subtasks fit within the main task duration.\r\n\r\n---\r\n\r\n## ✅ FINAL REQUIREMENTS\r\n\r\n- Your response must begin with `# Building Plan Analysis Report`.\r\n- You must return the full section layout shown above.\r\n- Do not include commentary or raw content outside the report structure.\r\n- Be clear, professional, and assume typical construction norms when inferring missing data.\r\n- Return only the final, clean markdown report."),
-            new UserChatMessage($"Here is the extract:\n```\n{extractedText}\n```")
-        };
+            // Step 1: Create a thread
+            var threadRequest = new HttpRequestMessage(HttpMethod.Post, "threads");
+            threadRequest.Headers.Add("OpenAI-Beta", "assistants=v2");
+            threadRequest.Content = new StringContent("{}", Encoding.UTF8, "application/json");
 
-            var chatOptions = new ChatCompletionOptions { MaxOutputTokenCount = _settings.MaxTokens, Temperature = 0.2f, TopP = 0.9f };
-            ChatCompletion response = await _chatClient3Turbo.CompleteChatAsync(messages, chatOptions);
+            var threadResponse = await _openAiHttpClient.SendAsync(threadRequest);
+            var threadJson = await threadResponse.Content.ReadAsStringAsync();
+            if (!threadResponse.IsSuccessStatusCode)
+                throw new Exception($"Failed to create thread: {threadResponse.StatusCode} - {threadJson}");
 
-            return response.Content?.FirstOrDefault()?.Text ?? extractedText;
+            var threadId = JsonDocument.Parse(threadJson).RootElement.GetProperty("id").GetString();
+
+            // Step 2: Send the extracted text message to the thread
+            var messagePayload = JsonSerializer.Serialize(new
+            {
+                role = "user",
+                content = $"Here is the extract:\n```\n{extractedText}\n```"
+            });
+
+            var messageRequest = new HttpRequestMessage(HttpMethod.Post, $"threads/{threadId}/messages");
+            messageRequest.Headers.Add("OpenAI-Beta", "assistants=v2");
+            messageRequest.Content = new StringContent(messagePayload, Encoding.UTF8, "application/json");
+
+            var messageResponse = await _openAiHttpClient.SendAsync(messageRequest);
+            var messageJson = await messageResponse.Content.ReadAsStringAsync();
+            if (!messageResponse.IsSuccessStatusCode)
+                throw new Exception($"Message creation failed: {messageResponse.StatusCode} - {messageJson}");
+
+            // Step 3: Run the assistant
+            var runPayload = JsonSerializer.Serialize(new { assistant_id = AssistantId2 });
+            var runRequest = new HttpRequestMessage(HttpMethod.Post, $"threads/{threadId}/runs");
+            runRequest.Headers.Add("OpenAI-Beta", "assistants=v2");
+            runRequest.Content = new StringContent(runPayload, Encoding.UTF8, "application/json");
+
+            var runResponse = await _openAiHttpClient.SendAsync(runRequest);
+            var runJson = await runResponse.Content.ReadAsStringAsync();
+            if (!runResponse.IsSuccessStatusCode)
+                throw new Exception($"Run creation failed: {runResponse.StatusCode} - {runJson}");
+
+            var runId = JsonDocument.Parse(runJson).RootElement.GetProperty("id").GetString();
+
+            // Step 4: Poll for run status
+            string status;
+            do
+            {
+                await Task.Delay(1500);
+                var checkResponse = await _openAiHttpClient.GetAsync($"threads/{threadId}/runs/{runId}");
+                var checkJson = await checkResponse.Content.ReadAsStringAsync();
+                status = JsonDocument.Parse(checkJson).RootElement.GetProperty("status").GetString();
+            } while (status == "queued" || status == "in_progress");
+
+            // Step 5: Fetch the assistant response
+            var msgResponse = await _openAiHttpClient.GetAsync($"threads/{threadId}/messages");
+            var msgJson = await msgResponse.Content.ReadAsStringAsync();
+
+            var messageContent = JsonDocument.Parse(msgJson)
+                .RootElement
+                .GetProperty("data")[0]
+                .GetProperty("content")[0]
+                .GetProperty("text")
+                .GetProperty("value")
+                .GetString();
+
+            return messageContent ?? "[No response returned by Assistant]";
         }
+
         public async Task<string> CallCustomAssistantAsync(string userPrompt)
         {
             // Step 1: Create thread
