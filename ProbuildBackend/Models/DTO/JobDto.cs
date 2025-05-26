@@ -41,5 +41,13 @@
         public string? Latitude { get; set; }
         public string? Longitude { get; set; }
         public string GooglePlaceId { get; set; }
+
+        // 👇 Client Details — added
+        public string FirstName { get; set; }
+        public string LastName { get; set; }
+        public string Email { get; set; }
+        public string? Phone { get; set; }
+        public string? CompanyName { get; set; }
+        public string? Position { get; set; }
     }
 }

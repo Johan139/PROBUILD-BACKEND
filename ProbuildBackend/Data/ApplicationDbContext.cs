@@ -11,8 +11,10 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
 
     public DbSet<DataProtectionKey> DataProtectionKeys { get; set; }
     public DbSet<UserModel> Users { get; set; }
+    public DbSet<ClientDetailsModel> ClientDetails { get; set; }
     public DbSet<ProjectModel> Projects { get; set; }
     public DbSet<JobModel> Jobs { get; set; }
+    public DbSet<JobsTermsAgreement> JobsTermsAgreement { get; set; }
     public DbSet<BidModel> Bids { get; set; }
     public DbSet<NotificationModel> Notifications { get; set; }
     public DbSet<JobAssignmentModel> JobAssignments { get; set; }

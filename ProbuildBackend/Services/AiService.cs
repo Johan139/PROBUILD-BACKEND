@@ -100,7 +100,20 @@ Page {pageIndex + 1} of a construction document. Please analyze the architectura
 - Materials List (with estimated quantities)
 - Cost Estimate
 - Other Notes (legends, symbols, dimensions)
-- USE THIS DATE FOR START DATE AND CALCULATE ENDDATE OF IT{job.DesiredStartDate.ToString()}" },
+- USE THIS DATE FOR START DATE AND CALCULATE ENDDATE OF IT{job.DesiredStartDate.ToString()}
+Use the following details as a cheat sheet for assumptions and guidance:
+- Start Date: {job.DesiredStartDate:yyyy-MM-dd}
+- Wall Structure: {job.WallStructure}
+- Wall Insulation: {job.WallInsulation}
+- Roof Structure: {job.RoofStructure}
+- Roof Insulation: {job.RoofInsulation}
+- Foundation: {job.Foundation}
+- Finishes: {job.Finishes}
+- Electrical Supply Needs: {job.ElectricalSupplyNeeds}
+- Number of Stories: {job.Stories}
+- Building Size: {job.BuildingSize} sq ft
+
+Use this information to better infer design requirements, material needs, and cost estimates." },
 
         new
         {

@@ -372,7 +372,22 @@ namespace ProbuildBackend.Controllers
 
                     _context.Jobs.Add(job);
                     await _context.SaveChangesAsync();
-                    
+
+                    var clientModel = new ClientDetailsModel()
+                    {
+                        FirstName = jobRequest.FirstName,
+                        LastName = jobRequest.LastName,
+                        Email = jobRequest.Email,
+                        CompanyName = jobRequest.CompanyName,
+                        Phone = jobRequest.Phone,
+                        Position = jobRequest.Position,
+                        CreatedAt = DateTime.Now,
+                        JobId = job.Id
+                    };
+
+                    _context.ClientDetails.Add(clientModel);
+                   await _context.SaveChangesAsync();
+
                     if (!string.IsNullOrEmpty(jobRequest.Address))
                     {
                         decimal lat = Math.Round(Convert.ToDecimal(jobRequest.Latitude, CultureInfo.InvariantCulture), 6);
@@ -420,9 +435,6 @@ namespace ProbuildBackend.Controllers
                         string connectionId = _httpContextAccessor.HttpContext?.Connection.Id ?? string.Empty;
                         BackgroundJob.Enqueue(() => _documentProcessorService.ProcessDocumentsForJobAsync(job.Id, documentUrls, connectionId));
                     }
-
-
-
                     return Ok(jobRequest);
                 }
                 catch (Exception ex)
@@ -592,16 +604,19 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("subtask")]
-        public async Task<IActionResult> SaveSubtasks([FromBody] List<JobSubtasksModel> subtasks)
+        public async Task<IActionResult> SaveSubtasks([FromBody] SaveSubtasksRequest subtasks)
         {
             try
             {
-
+                bool isNew = true;
+                int jobID = 0;
         
-            foreach (var subtask in subtasks)
+            foreach (var subtask in subtasks.Subtasks)
             {
+                    jobID = subtask.JobId;
                 if (subtask.Id > 0)
                 {
+                        isNew = false;
                     // UPDATE
                     var existing = await _context.JobSubtasks.FindAsync(subtask.Id);
                     if (existing != null)
@@ -618,10 +633,22 @@ namespace ProbuildBackend.Controllers
                 }
                 else
                 {
-                    // INSERT
+                        // INSERT
+
                     _context.JobSubtasks.Add(subtask);
+
                 }
             }
+            if(isNew)
+                {
+                    var acceptance = new JobsTermsAgreement()
+                    {
+                        UserId = subtasks.UserId,
+                        DateAgreed = DateTime.UtcNow,
+                        JobId = jobID
+                    };
+                    _context.JobsTermsAgreement.Add(acceptance);
+                }
 
             await _context.SaveChangesAsync();
             return Ok("Subtasks processed");

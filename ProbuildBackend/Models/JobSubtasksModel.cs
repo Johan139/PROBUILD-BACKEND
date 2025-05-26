@@ -1,5 +1,11 @@
 ﻿namespace ProbuildBackend.Models
 {
+
+    public class SaveSubtasksRequest
+    {
+        public List<JobSubtasksModel> Subtasks { get; set; }
+        public string UserId { get; set; }
+    }
     public class JobSubtasksModel
     {
         public int Id { get; set; }

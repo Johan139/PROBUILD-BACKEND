@@ -84,6 +84,7 @@ namespace ProbuildBackend.Controllers
                         UserId = user.Id,
                         DateAgreed = DateTime.UtcNow
                     };
+
                     _context.UserTermsAgreement.Add(userAgree);
                     _context.SaveChanges();
 
@@ -217,8 +218,6 @@ namespace ProbuildBackend.Controllers
                 throw;
             }
         }
-
-
 
         private string GenerateJwtToken(UserModel user)
         {
