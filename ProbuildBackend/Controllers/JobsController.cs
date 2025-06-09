@@ -166,6 +166,41 @@ namespace ProbuildBackend.Controllers
                 return StatusCode(500, $"An error occurred while fetching the blob: {ex.Message}");
             }
         }
+        [HttpGet("downloadFile")]
+        public async Task<IActionResult> DownloadFile([FromQuery(Name = "fileUrl")] string fileUrl)
+        {
+            try
+            {
+                var (contentStream, contentType, originalFileName) = await _azureBlobservice.GetBlobContentAsync(fileUrl);
+
+                if (contentType == "application/gzip")
+                {
+                    var decompressedStream = new MemoryStream();
+                    using (var gzipStream = new GZipStream(contentStream, CompressionMode.Decompress))
+                    {
+                        await gzipStream.CopyToAsync(decompressedStream);
+                    }
+
+                    decompressedStream.Position = 0;
+
+                    // ⛏ Infer the correct type from file extension (e.g., .pdf)
+                    string inferredContentType = GetContentTypeFromFileName(originalFileName);
+
+                    return File(decompressedStream, inferredContentType, originalFileName);
+                }
+
+                // ✅ if not gzip, just return with actual type
+                return File(contentStream, contentType, originalFileName);
+            }
+            catch (FileNotFoundException ex)
+            {
+                return NotFound(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An error occurred while fetching the blob: {ex.Message}");
+            }
+        }
 
         [HttpGet("downloadNote/{documentId}")]
         public async Task<IActionResult> DownloadNoteBlob(int documentId)
@@ -322,16 +357,22 @@ namespace ProbuildBackend.Controllers
 
         private string GetContentTypeFromFileName(string fileName)
         {
-            var extension = Path.GetExtension(fileName).ToLower();
+            var extension = Path.GetExtension(fileName).ToLowerInvariant();
+
             return extension switch
             {
                 ".pdf" => "application/pdf",
                 ".png" => "image/png",
                 ".jpg" => "image/jpeg",
                 ".jpeg" => "image/jpeg",
+                ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                ".doc" => "application/msword",
+                ".xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                ".xls" => "application/vnd.ms-excel",
                 _ => "application/octet-stream"
             };
         }
+
 
         [HttpPost]
         [RequestSizeLimit(200 * 1024 * 1024)]
