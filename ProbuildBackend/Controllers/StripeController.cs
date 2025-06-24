@@ -65,7 +65,7 @@ namespace ProbuildBackend.Controllers
 
             return Ok(new { url = session.Url });
         }
-
+       
         [HttpPost("webhook")]
         public async Task<IActionResult> StripeWebhook()    
         {
@@ -102,7 +102,8 @@ namespace ProbuildBackend.Controllers
                             Status = "Success",
                             PaidAt = DateTime.UtcNow,
                             ValidUntil = validDate,
-                            Amount = Convert.ToDecimal(session.AmountTotal) / 100.0m
+                            Amount = Convert.ToDecimal(session.AmountTotal) / 100.0m,
+                            IsTrial = false
                         };
 
                     _context.PaymentRecords.Add(payment);

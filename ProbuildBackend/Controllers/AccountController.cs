@@ -45,15 +45,20 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
+                if (!ModelState.IsValid)
+                    return BadRequest(ModelState);
 
+                // Trim and normalize email
+                var email = model.Email.Trim();
+                var normalizedEmail = email.ToUpperInvariant();
 
-            if (ModelState.IsValid)
-            {
                 var user = new UserModel
                 {
                     Id = Guid.NewGuid().ToString(),
-                    UserName = model.Email,
-                    Email = model.Email,
+                    UserName = email,
+                    Email = email,
+                    NormalizedUserName = normalizedEmail, // optional: handled automatically but safe
+                    NormalizedEmail = normalizedEmail,    // optional: handled automatically but safe
                     FirstName = model.FirstName,
                     LastName = model.LastName,
                     PhoneNumber = model.PhoneNumber,
@@ -79,46 +84,42 @@ namespace ProbuildBackend.Controllers
                     SubscriptionPackage = model.SubscriptionPackage
                 };
 
-                    var userAgree = new UserTermsAgreementModel
-                    {
-                        UserId = user.Id,
-                        DateAgreed = DateTime.UtcNow
-                    };
-
-                    _context.UserTermsAgreement.Add(userAgree);
-                    _context.SaveChanges();
-
                 var result = await _userManager.CreateAsync(user, model.Password);
-                if (result.Succeeded)
-                {
-                    var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
 
-                    Console.WriteLine($"Generated confirmation code for user {user.Id}: {code}");
-                    var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL");
-                    var callbackUrl = $"{frontendUrl}/confirm-email/?userId={user.Id}&code={Uri.EscapeDataString(code)}";
-
-                    await _emailSender.SendEmailAsync(model.Email, "Confirm your email",
-                        $"Please confirm this account for {user.UserName} by <a href='{callbackUrl}'>clicking here</a>.");
-
-                        return Ok(new
-                        {
-                            message = "Registration successful, please verify your email.",
-                            userId = user.Id
-                        });
-                    }
-                else
-                {
+                if (!result.Succeeded)
                     return BadRequest(result.Errors);
-                }
-            }
-            return BadRequest(ModelState);
+
+                // Only save agreement if user was created successfully
+                var userAgree = new UserTermsAgreementModel
+                {
+                    UserId = user.Id,
+                    DateAgreed = DateTime.UtcNow
+                };
+
+                _context.UserTermsAgreement.Add(userAgree);
+                await _context.SaveChangesAsync();
+
+                var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+                var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL");
+                var callbackUrl = $"{frontendUrl}/confirm-email/?userId={user.Id}&code={Uri.EscapeDataString(code)}";
+
+                await _emailSender.SendEmailAsync(model.Email, "Confirm your email",
+                    $"Please confirm this account for {user.UserName} by <a href='{callbackUrl}'>clicking here</a>.");
+
+                return Ok(new
+                {
+                    message = "Registration successful, please verify your email.",
+                    userId = user.Id
+                });
             }
             catch (Exception ex)
             {
-
+                // Optional: Log the exception before rethrowing
+                Console.WriteLine("Error during registration: " + ex.Message);
                 throw;
             }
         }
+
 
         [HttpGet("has-active-subscription/{userId}")]
         public async Task<ActionResult> HasActiveSubscription(string userId)
@@ -218,7 +219,44 @@ namespace ProbuildBackend.Controllers
                 throw;
             }
         }
+        [HttpPost("trailversion")]
+        public async Task<IActionResult> TrailVersionSubscription([FromBody] TrialRequestDTO dto)
+        {
+            try
+            {
 
+     
+            var user = await _context.Users.FindAsync(dto.UserId);
+            if (user == null) return NotFound("User not found.");
+
+            var existingTrial = await _context.PaymentRecords
+                .AnyAsync(p => p.UserId == dto.UserId && p.IsTrial);
+
+            if (existingTrial)
+                return BadRequest("Trial already used.");
+
+            var trial = new PaymentRecord
+            {
+                UserId = dto.UserId,
+                Package = "Trial",
+                StripeSessionId = "TRIAL-NO-SESSION",
+                Status = "Success",
+                PaidAt = DateTime.UtcNow,
+                ValidUntil = DateTime.UtcNow.AddDays(3),
+                Amount = 0,
+                IsTrial = true
+            };
+
+            _context.PaymentRecords.Add(trial);
+            await _context.SaveChangesAsync();
+            return Ok();
+            }
+            catch (Exception)
+            {
+
+                throw;
+            }
+        }
         private string GenerateJwtToken(UserModel user)
         {
             var claims = new[]
