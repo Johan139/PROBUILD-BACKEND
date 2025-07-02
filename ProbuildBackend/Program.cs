@@ -132,25 +132,17 @@ builder.Services.AddHangfire(config => config
     .UseMemoryStorage()); // Replace with UseSqlServerStorage in production
 builder.Services.AddScoped<IEmailService, EmailService>(); // Add this line
 builder.Services.AddScoped<IEmailSender, EmailSender>(); // Add this line
-builder.Services.AddScoped<IAiService, AiService>(); // Add this line
-//builder.Services.AddScoped<IBomConsolidator, BomConsolidator>(); // Add this line
+// Register all services
+builder.Services.AddScoped<IConversationRepository, SqlConversationRepository>();
+builder.Services.AddScoped<IPromptManagerService, PromptManagerService>();
+// The DI container will automatically inject the other services into GeminiAiService's constructor
+builder.Services.AddScoped<IAiService, GeminiAiService>();
+builder.Services.AddScoped<IProjectAnalysisOrchestrator, ProjectAnalysisOrchestrator>();
+
 builder.Services.AddScoped<IPdfImageConverter, PdfImageConverter>(); // Add this line
 builder.Services.AddScoped<ITextExtractor, OcrTextExtractor>(); // Add this line
 builder.Services.Configure<OcrSettings>(configuration.GetSection("OcrSettings"));
 builder.Services.AddScoped(sp => sp.GetRequiredService<IOptions<OcrSettings>>().Value);
-
-
-builder.Services.AddHttpClient("OpenAI", client =>
-{
-    client.BaseAddress = new Uri("https://api.openai.com/v1/");
-    client.DefaultRequestHeaders.Authorization =
-        new AuthenticationHeaderValue("Bearer", Environment.GetEnvironmentVariable("GPTAPIKEY")
-          ?? configuration["ChatGPTAPI:APIKey"]);
-
-
-    client.DefaultRequestHeaders.Add("OpenAI-Beta", "assistants=v2");
-});
-
 
 builder.Services.AddHangfireServer();
 var app = builder.Build();

@@ -720,30 +720,6 @@ namespace ProbuildBackend.Controllers
                 throw;
             }
         }
-        public async Task ProcessDocumentAndGenerateBomAsync(string blobUrl, string connectionId)
-        {
-            //try
-            //{
-            //    string documentText = await _documentProcessorService.ExtractTextFromBlob(blobUrl);
-            //    var bom = await _documentProcessorService.GenerateBomFromText(documentText);
-            //    var bomWithCosts = _documentProcessorService.CalculateCosts(bom);
-
-            //    await _hubContext.Clients.Client(connectionId).SendAsync("BomGenerated", new
-            //    {
-            //        BlobUrl = blobUrl,
-            //        Bom = bomWithCosts
-            //    });
-            //}
-            //catch (Exception ex)
-            //{
-            //    Console.WriteLine($"Error processing document {blobUrl}: {ex.Message}");
-            //    await _hubContext.Clients.Client(connectionId).SendAsync("BomGenerationFailed", new
-            //    {
-            //        BlobUrl = blobUrl,
-            //        Error = ex.Message
-            //    });
-            //}
-        }
 
         [HttpPost("{id}")]
         public async Task<IActionResult> PutJob(int id, [FromBody] JobModel job)

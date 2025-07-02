@@ -1,0 +1,16 @@
+{
+  "ProjectName": "Client Test Project",
+  "JobType": "Residential New Build",
+  "Address": "456 Innovation Drive, Tech City",
+  "OperatingArea": "Tech City",
+  "DesiredStartDate": "2025-09-01T00:00:00Z",
+  "Stories": 2,
+  "BuildingSize": 2800,
+  "WallStructure": "Steel Frame with SIPs",
+  "WallInsulation": "Spray Foam",
+  "RoofStructure": "Flat Roof with Steel Beams",
+  "RoofInsulation": "Rigid Foam Board",
+  "Foundation": "Poured Concrete Basement",
+  "Finishes": "High-End Custom",
+  "ElectricalSupplyNeeds": "400 Amp Service with EV charging"
+}

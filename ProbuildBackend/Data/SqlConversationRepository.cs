@@ -1,0 +1,89 @@
+// ProbuildBackend/Data/SqlConversationRepository.cs
+using Dapper;
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
+using ProbuildBackend.Models;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+public class SqlConversationRepository : IConversationRepository
+{
+    private readonly string _connectionString;
+
+    public SqlConversationRepository(IConfiguration configuration)
+    {
+        _connectionString = configuration.GetConnectionString("DefaultConnection") 
+            ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+    }
+
+    private SqlConnection GetConnection() => new SqlConnection(_connectionString);
+
+    public async Task<string> CreateConversationAsync(string userId, string title)
+    {
+        using var connection = GetConnection();
+        var newConversation = new Conversation
+        {
+            Id = Guid.NewGuid().ToString(),
+            UserId = userId,
+            Title = title,
+            CreatedAt = DateTime.UtcNow
+        };
+        var sql = @"INSERT INTO Conversations (Id, UserId, Title, CreatedAt) VALUES (@Id, @UserId, @Title, @CreatedAt);";
+        await connection.ExecuteAsync(sql, newConversation);
+        return newConversation.Id;
+    }
+
+    public async Task<Conversation?> GetConversationAsync(string conversationId)
+    {
+        using var connection = GetConnection();
+        var sql = "SELECT * FROM Conversations WHERE Id = @Id";
+        return await connection.QuerySingleOrDefaultAsync<Conversation>(sql, new { Id = conversationId });
+    }
+    
+    public async Task<List<Message>> GetUnsummarizedMessagesAsync(string conversationId)
+    {
+        using var connection = GetConnection();
+        var sql = "SELECT * FROM Messages WHERE ConversationId = @ConversationId AND IsSummarized = 0 ORDER BY Timestamp ASC;";
+        var messages = await connection.QueryAsync<Message>(sql, new { ConversationId = conversationId });
+        return messages.ToList();
+    }
+
+    public async Task AddMessageAsync(Message message)
+    {
+        using var connection = GetConnection();
+        message.Timestamp = DateTime.UtcNow;
+        var sql = @"INSERT INTO Messages (ConversationId, Role, Content, IsSummarized, Timestamp) VALUES (@ConversationId, @Role, @Content, @IsSummarized, @Timestamp);";
+        await connection.ExecuteAsync(sql, message);
+    }
+    
+    public async Task UpdateConversationSummaryAsync(string conversationId, string? newSummary)
+    {
+        using var connection = GetConnection();
+        var sql = "UPDATE Conversations SET ConversationSummary = @Summary WHERE Id = @Id;";
+        await connection.ExecuteAsync(sql, new { Summary = newSummary, Id = conversationId });
+    }
+
+    public async Task MarkMessagesAsSummarizedAsync(IEnumerable<long> messageIds)
+    {
+        if (messageIds == null || !messageIds.Any()) return;
+        using var connection = GetConnection();
+        var sql = "UPDATE Messages SET IsSummarized = 1 WHERE Id IN @Ids;";
+        await connection.ExecuteAsync(sql, new { Ids = messageIds });
+    }
+
+    public async Task<List<Message>> GetMessagesAsync(string conversationId, bool includeSummarized = true)
+    {
+        using var connection = GetConnection();
+        var sqlBuilder = new StringBuilder("SELECT * FROM Messages WHERE ConversationId = @ConversationId ");
+        if (!includeSummarized)
+        {
+            sqlBuilder.Append("AND IsSummarized = 0 ");
+        }
+        sqlBuilder.Append("ORDER BY Timestamp ASC;");
+        var messages = await connection.QueryAsync<Message>(sqlBuilder.ToString(), new { ConversationId = conversationId });
+        return messages.ToList();
+    }
+}

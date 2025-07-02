@@ -1,6 +1,4 @@
 ﻿using System.Text.Json;
-using OpenAI;
-using OpenAI.Chat;
 using System.Drawing;
 using System.Collections.Concurrent;
 using Microsoft.AspNetCore.SignalR;
@@ -300,44 +298,6 @@ namespace ProbuildBackend.Services
 
 
 
-        public class BillOfMaterials
-        {
-            public List<BomItem> BillOfMaterialsItems { get; set; } = new();
-        }
-
-        public class BomItem
-        {
-            public string Item { get; set; }
-            public decimal Quantity { get; set; }
-            public string Unit { get; set; }
-        }
-
-        public class BomWithCosts
-        {
-            public List<BomItemWithCost> BillOfMaterials { get; set; } = new();
-            public decimal TotalCost { get; set; }
-        }
-
-        public class BomItemWithCost
-        {
-            public string Item { get; set; }
-            public decimal Quantity { get; set; }
-            public string Unit { get; set; }
-            public decimal CostPerUnit { get; set; }
-            public decimal TotalItemCost { get; set; }
-        }
-
-        public class MaterialsEstimate
-        {
-            public List<MaterialEstimateItem> Materials { get; set; } = new();
-        }
-
-        public class MaterialEstimateItem
-        {
-            public string Item { get; set; }
-            public decimal TotalQuantity { get; set; }
-            public string Unit { get; set; }
-        }
 
         // Helper class to render PDF content to ImageSharp image
         public class ImageRenderListener : IEventListener

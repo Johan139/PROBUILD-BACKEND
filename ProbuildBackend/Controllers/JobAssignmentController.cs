@@ -158,9 +158,5 @@ namespace ProbuildBackend.Controllers
             return Ok(linkedUserList);
         }
 
-        public IActionResult Index()
-        {
-            return View();
-        }
     }
 }
