@@ -10,5 +10,7 @@
         public decimal Amount { get; set; }
         public DateTime PaidAt { get; set; }
         public DateTime ValidUntil { get; set; }  // ⬅️ New column
+
+        public bool IsTrial { get; set; }
     }
 }
