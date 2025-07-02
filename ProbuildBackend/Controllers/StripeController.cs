@@ -32,7 +32,7 @@ namespace ProbuildBackend.Controllers
                 PaymentMethodTypes = new List<string> { "card" },
                 Mode = "payment",
                 LineItems = new List<SessionLineItemOptions>
-        {
+            {
             new SessionLineItemOptions
             {
                 PriceData = new SessionLineItemPriceDataOptions
@@ -43,18 +43,18 @@ namespace ProbuildBackend.Controllers
                     {
                         Name = request.PackageName,
                     },
+                    },
+                        Quantity = 1,
+                    }
                 },
-                Quantity = 1,
-            }
-        },
 
                 // ✅ Store user ID and package in metadata
                 Metadata = new Dictionary<string, string>
-        {
-            { "userId", request.UserId },
-            { "package", request.PackageName },
-            { "amount", request.Amount.ToString() }
-        },
+                {
+                    { "userId", request.UserId },
+                    { "package", request.PackageName },
+                    { "amount", request.Amount.ToString() }
+                },
 
                 SuccessUrl = $"https://app.probuildai.com/payment-success?source={request.Source}",
                 CancelUrl = "https://app.probuildai.com/payment-cancel",
@@ -67,7 +67,7 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("webhook")]
-        public async Task<IActionResult> StripeWebhook()    
+        public async Task<IActionResult> StripeWebhook()
         {
             var json = await new StreamReader(HttpContext.Request.Body).ReadToEndAsync();
             DateTime validDate = DateTime.MinValue;
@@ -86,24 +86,24 @@ namespace ProbuildBackend.Controllers
                     var customerEmail = session.CustomerEmail;
                     var packageName = session.Metadata["package"];
                     var userId = session.Metadata["userId"]; // Add this to metadata on session creation
-              if(packageName.Contains("Annual"))
+                    if (packageName.Contains("Annual"))
                     {
                         validDate = DateTime.UtcNow.AddMonths(12);
                     }
-              else
+                    else
                     {
                         validDate = DateTime.UtcNow.AddMonths(1);
                     }
-                        var payment = new PaymentRecord
-                        {
-                            UserId = userId,
-                            Package = packageName,
-                            StripeSessionId = session.Id,
-                            Status = "Success",
-                            PaidAt = DateTime.UtcNow,
-                            ValidUntil = validDate,
-                            Amount = Convert.ToDecimal(session.AmountTotal) / 100.0m
-                        };
+                    var payment = new PaymentRecord
+                    {
+                        UserId = userId,
+                        Package = packageName,
+                        StripeSessionId = session.Id,
+                        Status = "Success",
+                        PaidAt = DateTime.UtcNow,
+                        ValidUntil = validDate,
+                        Amount = Convert.ToDecimal(session.AmountTotal) / 100.0m
+                    };
 
                     _context.PaymentRecords.Add(payment);
                     await _context.SaveChangesAsync();
@@ -123,8 +123,8 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-            var subscriptions = await _context.Subscriptions.ToListAsync();
-            return Ok(subscriptions);
+                var subscriptions = await _context.Subscriptions.ToListAsync();
+                return Ok(subscriptions);
             }
             catch (Exception ex)
             {
