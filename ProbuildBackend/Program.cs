@@ -73,6 +73,7 @@ builder.WebHost.ConfigureKestrel(options =>
     options.Limits.MaxRequestBodySize = 200 * 1024 * 1024; // 200MB
     options.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(5); // 5-minute timeout
 });
+
 builder.Services.AddDataProtection()
     .SetApplicationName("ProbuildAI")
     .PersistKeysToDbContext<ApplicationDbContext>()
