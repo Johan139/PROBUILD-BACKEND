@@ -45,8 +45,7 @@ namespace ProbuildBackend.Services
                     Console.WriteLine($"User with ID {job.UserId} not found. Cannot send email.");
                 }
 
-                string initialPrompt = GenerateInitialPrompt(job);
-                string finalReport = await _comprehensiveAnalysisService.PerformAnalysisFromFilesAsync(documentUrls, initialPrompt);
+                string finalReport = await _comprehensiveAnalysisService.PerformAnalysisFromFilesAsync(job.UserId, documentUrls, job);
 
                 var processingResult = new DocumentProcessingResult
                 {
@@ -117,30 +116,5 @@ namespace ProbuildBackend.Services
             }
         }
 
-        private string GenerateInitialPrompt(JobModel jobDetails)
-        {
-            return $@"
-Please perform a comprehensive analysis based on the following project details and the provided document files.
-Use these details as the primary source of information to guide your analysis:
-
-Project Name: {jobDetails.ProjectName}
-Job Type: {jobDetails.JobType}
-Address: {jobDetails.Address}
-Operating Area / Location for Localization: {jobDetails.OperatingArea}
-Desired Start Date: {jobDetails.DesiredStartDate:yyyy-MM-dd}
-Stories: {jobDetails.Stories}
-Building Size: {jobDetails.BuildingSize} sq ft
-Client-Specified Assumptions:
-Wall Structure: {jobDetails.WallStructure}
-Wall Insulation: {jobDetails.WallInsulation}
-Roof Structure: {jobDetails.RoofStructure}
-Roof Insulation: {jobDetails.RoofInsulation}
-Foundation: {jobDetails.Foundation}
-Finishes: {jobDetails.Finishes}
-Electrical Needs: {jobDetails.ElectricalSupplyNeeds}
-
-Now, please execute the full analysis based on this information. I will provide you with a sequence of prompts to follow.
-";
-        }
     }
 }

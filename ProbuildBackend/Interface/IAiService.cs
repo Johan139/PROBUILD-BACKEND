@@ -13,5 +13,7 @@ namespace ProbuildBackend.Interface
         Task<string> RefineTextWithAiAsync(string extractedText, string blobUrl);
         Task<BillOfMaterials> GenerateBomFromText(string documentText);
         Task<string> PerformMultimodalAnalysisAsync(IEnumerable<string> fileUris, string prompt);
+
+        Task<(string initialResponse, string conversationId)> StartMultimodalConversationAsync(string userId, IEnumerable<string> documentUris, string systemPersonaPrompt, string initialUserPrompt);
     }
 }

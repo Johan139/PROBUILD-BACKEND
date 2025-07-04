@@ -103,20 +103,54 @@ Now, please execute the full analysis based on this information. I will provide 
             return await Task.FromResult("Image analysis feature is under development.");
         }
 
-        public async Task<string> PerformAnalysisFromFilesAsync(IEnumerable<string> documentUris, string initialPrompt)
+        public async Task<string> PerformAnalysisFromFilesAsync(string userId, IEnumerable<string> documentUris, JobModel jobDetails)
         {
-            _logger.LogInformation("Starting comprehensive analysis from files.");
+            _logger.LogInformation("Starting stateful analysis from files for user {UserId}", userId);
+
+            // 1. Get Prompts
+            var systemPersonaPrompt = await _promptManager.GetPromptAsync("system-persona");
+            var initialAnalysisPrompt = await _promptManager.GetPromptAsync("prompt-00-initial-analysis");
+
+            // Construct the full initial prompt with job details
+            var initialUserPrompt = $"{initialAnalysisPrompt}\n\nHere are the project details:\n" +
+                                    $"Project Name: {jobDetails.ProjectName}\n" +
+                                    $"Job Type: {jobDetails.JobType}\n" +
+                                    $"Address: {jobDetails.Address}\n" +
+                                    $"Operating Area: {jobDetails.OperatingArea}\n" +
+                                    $"Desired Start Date: {jobDetails.DesiredStartDate:yyyy-MM-dd}\n" +
+                                    $"Stories: {jobDetails.Stories}\n" +
+                                    $"Building Size: {jobDetails.BuildingSize} sq ft\n" +
+                                    $"Wall Structure: {jobDetails.WallStructure}\n" +
+                                    $"Wall Insulation: {jobDetails.WallInsulation}\n" +
+                                    $"Roof Structure: {jobDetails.RoofStructure}\n" +
+                                    $"Roof Insulation: {jobDetails.RoofInsulation}\n" +
+                                    $"Foundation: {jobDetails.Foundation}\n" +
+                                    $"Finishes: {jobDetails.Finishes}\n" +
+                                    $"Electrical Needs: {jobDetails.ElectricalSupplyNeeds}";
+
             try
             {
-                // Directly call the new multimodal analysis method on the AI service.
-                var analysisResult = await _aiService.PerformMultimodalAnalysisAsync(documentUris, initialPrompt);
-                _logger.LogInformation("Successfully completed multimodal analysis from files.");
-                return analysisResult;
+                // 2. Start Conversation
+                var (initialResponse, conversationId) = await _aiService.StartMultimodalConversationAsync(userId, documentUris, systemPersonaPrompt, initialUserPrompt);
+                _logger.LogInformation("Started multimodal conversation {ConversationId} for user {UserId}", conversationId, userId);
+
+                // 3. Health Check
+                if (initialResponse.Contains("BLUEPRINT FAILURE", StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogWarning("Blueprint FAILURE detected for conversation {ConversationId}. Halting analysis.", conversationId);
+                    // Optionally, you could call ContinueConversationAsync here to ask the AI to elaborate on the failure.
+                    return initialResponse; // Return the failure report
+                }
+
+                _logger.LogInformation("Blueprint fitness check PASSED for conversation {ConversationId}. Proceeding with full sequential analysis.", conversationId);
+
+                // 4. Execute Sequential Prompts
+                return await ExecuteSequentialPromptsAsync(conversationId, userId);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "An error occurred during PerformAnalysisFromFilesAsync.");
-                throw; // Re-throw the exception to be handled by the caller
+                _logger.LogError(ex, "An error occurred during PerformAnalysisFromFilesAsync for user {UserId}", userId);
+                throw;
             }
         }
 

@@ -271,4 +271,61 @@ JSON Output:";
         }
     }
     #endregion
+
+    public async Task<(string initialResponse, string conversationId)> StartMultimodalConversationAsync(string userId, IEnumerable<string> documentUris, string systemPersonaPrompt, string initialUserPrompt)
+    {
+        _logger.LogInformation("Starting new multimodal conversation for user {UserId}", userId);
+
+        // 1. Create a new conversation
+        var conversationTitle = $"Analysis started on {DateTime.UtcNow:yyyy-MM-dd}";
+        var conversationId = await _conversationRepo.CreateConversationAsync(userId, conversationTitle);
+        var conversation = await _conversationRepo.GetConversationAsync(conversationId) ?? throw new Exception("Failed to create or retrieve conversation.");
+
+        // 2. Construct the initial request
+        var systemContent = new Content { Role = Roles.User, Parts = new List<Part> { new Part { Text = systemPersonaPrompt } } };
+        var modelResponseToSystem = new Content { Role = Roles.Model, Parts = new List<Part> { new Part { Text = "Understood. I will act as a construction Project Manager, Quantity Surveyor and Financial Advisor. I am ready to begin." } } };
+
+        var userContent = new Content { Role = Roles.User };
+        userContent.AddText(initialUserPrompt);
+
+        foreach (var fileUri in documentUris)
+        {
+            try
+            {
+                var (fileBytes, mimeType) = await _azureBlobService.DownloadBlobAsBytesAsync(fileUri);
+                var base64String = Convert.ToBase64String(fileBytes);
+                userContent.AddInlineData(base64String, mimeType);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to download or add file for analysis: {FileUri}", fileUri);
+                // Depending on requirements, you might want to continue or throw
+            }
+        }
+
+        var request = new GenerateContentRequest
+        {
+            Contents = new List<Content> { systemContent, modelResponseToSystem, userContent }
+        };
+
+        try
+        {
+            // 3. Send the request
+            var response = await _generativeModel.GenerateContentAsync(request);
+            var modelResponseText = response.Text();
+
+            // 4. Store initial messages
+            await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "user", Content = initialUserPrompt });
+            await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "model", Content = modelResponseText });
+
+            // 5. Return response and ID
+            _logger.LogInformation("Successfully started multimodal conversation {ConversationId}", conversationId);
+            return (modelResponseText, conversationId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "An error occurred while calling the Gemini API in StartMultimodalConversationAsync for conversation {ConversationId}", conversationId);
+            throw;
+        }
+    }
 }
