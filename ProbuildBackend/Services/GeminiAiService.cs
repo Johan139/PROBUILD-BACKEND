@@ -1,9 +1,9 @@
-// ProbuildBackend/Services/GeminiAiService.cs
 using GenerativeAI;
 using GenerativeAI.Types;
 using Microsoft.Extensions.Configuration;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
+using ProbuildBackend.Services;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -17,19 +17,22 @@ public class GeminiAiService : IAiService
     private readonly IPromptManagerService _promptManager;
     private readonly GenerativeModel _generativeModel;
     private readonly ILogger<GeminiAiService> _logger;
+     private readonly AzureBlobService _azureBlobService;
 
     private const int SUMMARIZATION_THRESHOLD_CHARS = 250000;
 
-    public GeminiAiService(IConfiguration configuration, IConversationRepository conversationRepo, IPromptManagerService promptManager, ILogger<GeminiAiService> logger)
+    public GeminiAiService(IConfiguration configuration, IConversationRepository conversationRepo, IPromptManagerService promptManager, ILogger<GeminiAiService> logger, AzureBlobService azureBlobService)
     {
         _conversationRepo = conversationRepo;
         _promptManager = promptManager;
         _logger = logger;
+        _azureBlobService = azureBlobService;
         var apiKey = configuration["GoogleGeminiAPI:APIKey"]
             ?? throw new InvalidOperationException("API Key 'GoogleGeminiAPI:APIKey' not found.");
-        
+
         var googleAI = new GoogleAi(apiKey);
-        _generativeModel = googleAI.CreateGenerativeModel("gemini-1.5-pro-latest");
+        _generativeModel = googleAI.CreateGenerativeModel("gemini-2.5-pro");
+        _generativeModel.UseGoogleSearch = true;
     }
 
     #region Conversational Method
@@ -43,7 +46,7 @@ public class GeminiAiService : IAiService
         var updatedConv = await _conversationRepo.GetConversationAsync(conversationId) ?? conversation;
 
         var history = await BuildHistoryAsync(updatedConv);
-        
+
         var request = new GenerateContentRequest { Contents = history };
 
         var currentUserContent = new Content { Role = Roles.User };
@@ -120,7 +123,7 @@ public class GeminiAiService : IAiService
         {
             history.Add(new Content { Role = msg.Role, Parts = new List<Part> { new Part { Text = msg.Content } } });
         }
-        
+
         return history;
     }
 
@@ -168,7 +171,7 @@ Start Date: {job.DesiredStartDate:yyyy-MM-dd}, Wall Structure: {job.WallStructur
         var request = new GenerateContentRequest();
         var content = new Content { Role = Roles.User };
         content.AddText(userPrompt);
-        
+
         var (mimeType, extension) = MimeTypeValidator.GetMimeType(imageBytes);
         var tempFilePath = Path.GetTempFileName() + extension;
         await File.WriteAllBytesAsync(tempFilePath, imageBytes);
@@ -211,7 +214,7 @@ Refined Output:";
             throw;
         }
     }
-    
+
     public async Task<BillOfMaterials> GenerateBomFromText(string documentText)
     {
         var prompt = $@"You are a construction document parser specializing in generating a Bill of Materials (BOM). Analyze the following text extracted from a construction plan. Extract all materials, estimate their quantities, and provide the output in a valid JSON format. The JSON object should have a single key 'BillOfMaterialsItems' which is an array of objects. Each object in the array should have three string properties: 'Item', 'Description', and 'Quantity'.
@@ -228,6 +231,43 @@ JSON Output:";
         {
             Console.WriteLine($"Failed to deserialize BOM from Gemini. Error: {ex.Message}");
             return new BillOfMaterials { BillOfMaterialsItems = new List<BomItem>() };
+        }
+    }
+
+    public async Task<string> PerformMultimodalAnalysisAsync(IEnumerable<string> fileUris, string prompt)
+    {
+        var userContent = new Content { Role = Roles.User };
+        userContent.AddText(prompt);
+
+        foreach (var fileUri in fileUris)
+        {
+            try
+            {
+                var (fileBytes, mimeType) = await _azureBlobService.DownloadBlobAsBytesAsync(fileUri);
+                var base64String = Convert.ToBase64String(fileBytes);
+
+                userContent.AddInlineData(base64String, mimeType);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to download or add file for analysis: {FileUri}", fileUri);
+            }
+        }
+
+        var request = new GenerateContentRequest
+        {
+            Contents = new List<Content> { userContent }
+        };
+
+        try
+        {
+            var response = await _generativeModel.GenerateContentAsync(request);
+            return response.Text();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "An error occurred while calling the Gemini API in PerformMultimodalAnalysisAsync.");
+            throw;
         }
     }
     #endregion

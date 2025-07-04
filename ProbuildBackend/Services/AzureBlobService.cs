@@ -17,9 +17,11 @@ namespace ProbuildBackend.Services
         private readonly BlobContainerClient _containerClient;
         private readonly string _containerName = "probuildaiprojects";
         private readonly IHttpContextAccessor _httpContextAccessor;
+        private readonly ILogger<AzureBlobService> _logger;
 
-        public AzureBlobService(IConfiguration configuration, IHttpContextAccessor httpContextAccessor)
+        public AzureBlobService(IConfiguration configuration, IHttpContextAccessor httpContextAccessor, ILogger<AzureBlobService> logger)
         {
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
             var azureConnectionString = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY")
                       ?? configuration["ConnectionStrings:AzureBlobConnection"];
@@ -216,6 +218,96 @@ namespace ProbuildBackend.Services
         public BlobClient GetBlobClient(string fileName)
         {
             return _containerClient.GetBlobClient(fileName);
+        }
+
+        public string GenerateTemporaryPublicUrl(string blobUrl)
+        {
+            try
+            {
+                var uri = new Uri(blobUrl);
+                var containerName = uri.Segments[1].TrimEnd('/');
+                var blobName = uri.AbsolutePath.Substring(uri.AbsolutePath.IndexOf('/', 1) + 1);
+
+                var containerClient = _blobClient.GetBlobContainerClient(containerName);
+                var blobClient = containerClient.GetBlobClient(blobName);
+
+                if (!blobClient.CanGenerateSasUri)
+                {
+                    _logger.LogError("BlobClient cannot generate SAS URI. Check account permissions.");
+                    return blobClient.Uri.ToString(); // Fallback to raw URL
+                }
+
+                var sasBuilder = new BlobSasBuilder()
+                {
+                    BlobContainerName = containerName,
+                    BlobName = blobName,
+                    Resource = "b", // 'b' for a single blob
+                    StartsOn = DateTimeOffset.UtcNow,
+                    ExpiresOn = DateTimeOffset.UtcNow.AddHours(1), // Grant access for 1 hour
+                };
+
+                // Specify Read permissions for the SAS token
+                sasBuilder.SetPermissions(BlobSasPermissions.Read);
+
+                // Generate the SAS URI and return it as a string
+                return blobClient.GenerateSasUri(sasBuilder).ToString();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to generate SAS URI for blob: {BlobUrl}", blobUrl);
+                return blobUrl; // Fallback to the original URL on error
+            }
+        }
+
+        public async Task<(byte[] Content, string ContentType)> DownloadBlobAsBytesAsync(string blobUrl)
+        {
+            var uri = new Uri(blobUrl);
+            string fullPath = uri.AbsolutePath.TrimStart('/');
+            string containerName = fullPath.Split('/')[0];
+            string blobName = fullPath.Substring(containerName.Length + 1);
+
+            var containerClient = _blobClient.GetBlobContainerClient(containerName);
+            var blobClient = containerClient.GetBlobClient(blobName);
+
+            if (!await blobClient.ExistsAsync())
+            {
+                _logger.LogError("Blob not found for download at Container: {Container}, Blob: {Blob}", containerName, blobName);
+                throw new FileNotFoundException("Blob not found for download.", blobName);
+            }
+
+            // Step 1: Download the blob's info and content stream
+            BlobDownloadInfo download = await blobClient.DownloadAsync();
+            var properties = await blobClient.GetPropertiesAsync();
+            var metadata = properties.Value.Metadata;
+
+            // Step 2: Check if the blob is compressed
+            bool isCompressed = metadata.ContainsKey("compression") && metadata["compression"] == "gzip";
+
+            if (isCompressed)
+            {
+                // Step 3a: If compressed, decompress the content into a new memory stream
+                using var decompressedStream = new MemoryStream();
+                using (var gzipStream = new GZipStream(download.Content, CompressionMode.Decompress))
+                {
+                    await gzipStream.CopyToAsync(decompressedStream);
+                }
+
+                // Determine the original content type (e.g., application/pdf)
+                string originalFileName = metadata.ContainsKey("originalFileName") ? metadata["originalFileName"] : blobName;
+                string originalContentType = originalFileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)
+                    ? "application/pdf"
+                    : "application/octet-stream"; // Fallback
+
+                // Return the DECOMPRESSED bytes and the ORIGINAL content type
+                return (decompressedStream.ToArray(), originalContentType);
+            }
+            else
+            {
+                // Step 3b: If not compressed, download directly and return
+                using var memoryStream = new MemoryStream();
+                await download.Content.CopyToAsync(memoryStream);
+                return (memoryStream.ToArray(), properties.Value.ContentType);
+            }
         }
     }
 }

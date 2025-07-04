@@ -142,7 +142,6 @@ builder.Services.AddScoped<IProjectAnalysisOrchestrator, ProjectAnalysisOrchestr
 builder.Services.AddScoped<IComprehensiveAnalysisService, ComprehensiveAnalysisService>();
 
 builder.Services.AddScoped<IPdfImageConverter, PdfImageConverter>(); // Add this line
-builder.Services.AddScoped<ITextExtractor, OcrTextExtractor>(); // Add this line
 builder.Services.Configure<OcrSettings>(configuration.GetSection("OcrSettings"));
 builder.Services.AddScoped(sp => sp.GetRequiredService<IOptions<OcrSettings>>().Value);
 

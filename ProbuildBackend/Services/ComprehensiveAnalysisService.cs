@@ -20,6 +20,7 @@ namespace ProbuildBackend.Services
             _logger = logger;
         }
 
+        [Obsolete("This method is deprecated and will be removed in a future version. Use PerformAnalysisFromFilesAsync instead.")]
         public async Task<string> PerformAnalysisFromTextAsync(string userId, string fullText, JobModel jobDetails)
         {
             _logger.LogInformation("Starting comprehensive analysis from text for user {UserId}", userId);
@@ -100,6 +101,23 @@ Now, please execute the full analysis based on this information. I will provide 
             // without a valid conversationId. We will return a placeholder message.
             
             return await Task.FromResult("Image analysis feature is under development.");
+        }
+
+        public async Task<string> PerformAnalysisFromFilesAsync(IEnumerable<string> documentUris, string initialPrompt)
+        {
+            _logger.LogInformation("Starting comprehensive analysis from files.");
+            try
+            {
+                // Directly call the new multimodal analysis method on the AI service.
+                var analysisResult = await _aiService.PerformMultimodalAnalysisAsync(documentUris, initialPrompt);
+                _logger.LogInformation("Successfully completed multimodal analysis from files.");
+                return analysisResult;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An error occurred during PerformAnalysisFromFilesAsync.");
+                throw; // Re-throw the exception to be handled by the caller
+            }
         }
 
         private async Task<string> ExecuteSequentialPromptsAsync(string conversationId, string userId)

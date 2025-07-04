@@ -14,7 +14,7 @@ public class PromptManagerService : IPromptManagerService
     public PromptManagerService(IConfiguration configuration)
     {
         // Uses the correct connection string key from your appsettings.json
-        var connectionString = configuration.GetConnectionString("AzureBlobConnection") 
+        var connectionString = configuration.GetConnectionString("AzureBlobConnection")
             ?? throw new InvalidOperationException("Connection string 'AzureBlobConnection' not found.");
         _blobContainerClient = new BlobContainerClient(connectionString, "probuild-prompts");
     }

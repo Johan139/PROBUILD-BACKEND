@@ -12,5 +12,6 @@ namespace ProbuildBackend.Interface
         Task<string> AnalyzePageWithAssistantAsync(byte[] imageBytes, int pageIndex, string blobUrl, JobModel job);
         Task<string> RefineTextWithAiAsync(string extractedText, string blobUrl);
         Task<BillOfMaterials> GenerateBomFromText(string documentText);
+        Task<string> PerformMultimodalAnalysisAsync(IEnumerable<string> fileUris, string prompt);
     }
 }
