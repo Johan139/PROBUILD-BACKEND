@@ -24,6 +24,8 @@ public class ProjectAnalysisOrchestrator : IProjectAnalysisOrchestrator
         string? conversationId = null;
         
         var initialTaskPrompt = await _promptManager.GetPromptAsync("prompt-00-initial-analysis");
+        var (initialResponseText, _) = await _aiService.ContinueConversationAsync(conversationId, userId, initialTaskPrompt, null);
+        _logger.LogInformation("Initial fitness check completed for conversation {ConversationId}.", conversationId);
         
         // Build a detailed setup message using the full JobModel
         var userSetupMessage = $@"
@@ -54,26 +56,39 @@ Now, please execute the initial analysis task based on this information and the 
         conversationId = newConversationId;
         _logger.LogInformation("Started conversation {ConversationId}", conversationId);
 
-        var promptNames = new[] {
-            "prompt-01-sitelogistics", "prompt-02-groundwork", "prompt-03-framing",
-            "prompt-04-roofing", "prompt-05-exterior", "prompt-06-electrical",
-            "prompt-07-plumbing", "prompt-08-hvac", "prompt-09-insulation",
-            "prompt-10-drywall", "prompt-11-painting", "prompt-12-trim",
-            "prompt-13-kitchenbath", "prompt-14-flooring", "prompt-15-exteriorflatwork",
-            "prompt-16-cleaning", "prompt-17-costbreakdowns", "prompt-18-riskanalyst",
-            "prompt-19-timeline", "prompt-20-environmental", "prompt-21-closeout"
-        };
-
-        int step = 1;
-        foreach (var promptName in promptNames)
+        if (initialResponseText.Trim().Contains("BLUEPRINT FAILURE", StringComparison.CurrentCultureIgnoreCase))
         {
-            _logger.LogInformation("Executing step {Step}: {PromptName}", step, promptName);
-            var promptText = await _promptManager.GetPromptAsync(promptName);
-            await _aiService.ContinueConversationAsync(conversationId, userId, promptText, null);
-            step++;
+            _logger.LogWarning("Blueprint FAILURE detected for conversation {ConversationId}. Halting analysis and generating corrective action report.", conversationId);
+            var failurePromptText = await _promptManager.GetPromptAsync("prompt-failure-corrective-action");
+            var (failureReport, _) = await _aiService.ContinueConversationAsync(conversationId, userId, failurePromptText, null);
+            return failureReport;
+        } else {
+            _logger.LogInformation("Blueprint fitness check PASSED for conversation {ConversationId}. Proceeding with full sequential analysis.", conversationId);
+
+            // === STEP 6: Proceed with the Full Sequential Analysis (Prompts 1-21) ===
+            var promptNames = new[] {
+                "prompt-01-sitelogistics", "prompt-02-groundwork", "prompt-03-framing",
+                "prompt-04-roofing", "prompt-05-exterior", "prompt-06-electrical",
+                "prompt-07-plumbing", "prompt-08-hvac", "prompt-09-insulation",
+                "prompt-10-drywall", "prompt-11-painting", "prompt-12-trim",
+                "prompt-13-kitchenbath", "prompt-14-flooring", "prompt-15-exteriorflatwork",
+                "prompt-16-cleaning", "prompt-17-costbreakdowns", "prompt-18-riskanalyst",
+                "prompt-19-timeline", "prompt-20-environmental", "prompt-21-closeout"
+            };
+
+            int step = 1;
+            foreach (var promptName in promptNames)
+            {
+                _logger.LogInformation("Executing step {Step} of {TotalSteps}: {PromptName} for conversation {ConversationId}", step, promptNames.Length, promptName, conversationId);
+                var promptText = await _promptManager.GetPromptAsync(promptName);
+                await _aiService.ContinueConversationAsync(conversationId, userId, promptText, null);
+                step++;
+            }
+
+            _logger.LogInformation("Full sequential analysis completed successfully for conversation {ConversationId}", conversationId);
+            // The analysis completed successfully, return the ID for future reference and retrieval of the full history.
+            return conversationId;
         }
-        _logger.LogInformation("Full analysis completed for conversation {ConversationId}", conversationId);
-        return conversationId;
     }
 
     public async Task<string> GenerateRebuttalAsync(string conversationId, string clientQuery)
