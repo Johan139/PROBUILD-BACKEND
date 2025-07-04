@@ -264,7 +264,7 @@ namespace ProbuildBackend.Services
                     throw new InvalidOperationException($"Blob at {blobUrl} is not a PDF. Content-Type: {contentType}");
                 }
 
-                Console.WriteLine($"Extracting text from PDF at {blobUrl} using OpenAI ChatGPT API.");
+                Console.WriteLine($"Extracting text from PDF at {blobUrl} using Gemini API.");
                 string extractedText = await _textExtractor.ExtractTextWithOcr(blobUrl, contentStream, job);
 
                 if (string.IsNullOrEmpty(extractedText))
@@ -274,9 +274,9 @@ namespace ProbuildBackend.Services
                 AIText.Add(extractedText);
                 Console.WriteLine($"Extracted {extractedText.Length} characters from PDF at {blobUrl}.");
 
-                // Refine the extracted text using the OpenAI API
+                // Refine the extracted text using the Gemini API
 
-                Console.WriteLine($"Refined text to {AIText.Count} characters for PDF at {blobUrl}.");
+                Console.WriteLine($"Document {AIText.Count} at {blobUrl} refined.");
 
                 return AIText;
             }
