@@ -193,6 +193,7 @@ Start Date: {job.DesiredStartDate:yyyy-MM-dd}, Wall Structure: {job.WallStructur
 
     public async Task<string> RefineTextWithAiAsync(string extractedText, string blobUrl)
     {
+        _logger.LogInformation("Refining text for blob(s): {BlobUrl}. Text length: {TextLength}", blobUrl, extractedText.Length);
         var prompt = $@"You are a document processing expert. The following text was extracted from a construction document. Your task is to review, clean up, and structure this text into a clear and coherent summary. Correct any OCR errors, format it logically using markdown, and synthesize the information into a professional report.
 Extracted Text:
 {extractedText}
@@ -200,11 +201,13 @@ Refined Output:";
         try
         {
             var response = await _generativeModel.GenerateContentAsync(prompt);
-            return response.Text();
+            var refinedText = response.Text();
+            _logger.LogInformation("Successfully refined text for blob(s): {BlobUrl}. Refined text length: {RefinedTextLength}", blobUrl, refinedText.Length);
+            return refinedText;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "An error occurred while calling the Gemini API in RefineTextWithAiAsync.");
+            _logger.LogError(ex, "An error occurred while calling the Gemini API in RefineTextWithAiAsync for blob(s): {BlobUrl}", blobUrl);
             throw;
         }
     }

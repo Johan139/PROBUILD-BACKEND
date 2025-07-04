@@ -139,6 +139,7 @@ builder.Services.AddScoped<IPromptManagerService, PromptManagerService>();
 // The DI container will automatically inject the other services into GeminiAiService's constructor
 builder.Services.AddScoped<IAiService, GeminiAiService>();
 builder.Services.AddScoped<IProjectAnalysisOrchestrator, ProjectAnalysisOrchestrator>();
+builder.Services.AddScoped<IComprehensiveAnalysisService, ComprehensiveAnalysisService>();
 
 builder.Services.AddScoped<IPdfImageConverter, PdfImageConverter>(); // Add this line
 builder.Services.AddScoped<ITextExtractor, OcrTextExtractor>(); // Add this line

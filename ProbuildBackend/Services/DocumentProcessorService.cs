@@ -32,22 +32,21 @@ namespace ProbuildBackend.Services
         private readonly ApplicationDbContext _context; // Add database context
         private readonly IHubContext<ProgressHub> _hubContext; // Add SignalR hub context
         private readonly IEmailSender _emailService; // Add this
-        public List<string> AIText = new List<string>();
         private readonly ITextExtractor _textExtractor;
-        private readonly IAiService _aiService;
-
+        private readonly IComprehensiveAnalysisService _comprehensiveAnalysisService;
+ 
         public DocumentProcessorService(
             AzureBlobService azureBlobService,
             IConfiguration configuration,
             ApplicationDbContext context,
             IHubContext<ProgressHub> hubContext,
-        IEmailSender emailService, IAiService aiService, ITextExtractor textExtractor)
+        IEmailSender emailService, ITextExtractor textExtractor, IComprehensiveAnalysisService comprehensiveAnalysisService)
         {
             _azureBlobService = azureBlobService ?? throw new ArgumentNullException(nameof(azureBlobService));
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _hubContext = hubContext ?? throw new ArgumentNullException(nameof(hubContext));
             _emailService = emailService ?? throw new ArgumentNullException(nameof(emailService));
-            _aiService = aiService;
+            _comprehensiveAnalysisService = comprehensiveAnalysisService;
 
             _materialCosts = new Dictionary<string, decimal>
             {
@@ -59,9 +58,9 @@ namespace ProbuildBackend.Services
             _textExtractor = textExtractor;
         }
 
-        public async Task<(BomWithCosts BomWithCosts, MaterialsEstimate MaterialsEstimate, List<string> FullResponse)> ProcessDocumentAsync(string blobUrl,JobModel job)
+        public async Task<(BomWithCosts BomWithCosts, MaterialsEstimate MaterialsEstimate, string FullResponse)> ProcessDocumentAsync(string blobUrl, JobModel job)
         {
-            List<string> documentText = await ExtractTextFromBlob(blobUrl, job); // This is the full response
+            string documentText = await ExtractTextFromBlob(blobUrl, job); // This is the full response
                                                                             // var bom = await GenerateBomFromText(documentText);
                                                                             //var bomWithCosts = CalculateCosts(bom);                                                                           //var materialsEstimate = await ExtractMaterialsEstimateFromText(documentText);
             return (null, null, documentText); // Return the full response
@@ -72,7 +71,7 @@ namespace ProbuildBackend.Services
         {
             try
             {
-              List<string> FullResponseList = new List<string>();
+                var allExtractedText = new List<string>();
                 var bomResults = new List<BomWithCosts>();
                 var materialsEstimates = new List<MaterialsEstimate>();
 
@@ -107,7 +106,7 @@ namespace ProbuildBackend.Services
                     // Process the document
                     var (bomWithCosts, materialsEstimate, fullResponse) = await ProcessDocumentAsync(url, job);
 
-                    FullResponseList = fullResponse;
+                    allExtractedText.Add(fullResponse);
                     AIProcessed = true;
 
                     // Environment.Exit(0);
@@ -119,15 +118,10 @@ namespace ProbuildBackend.Services
                 // Send an email notification
                 if (AIProcessed)
                 {
-                    string RefineText = string.Empty;
-
-                    foreach (var item in FullResponseList)
-                    {
-                        RefineText += " " + item;
-                    }
-
-                    string refinedText = await _aiService.RefineTextWithAiAsync(RefineText, "");
-
+                    string combinedText = string.Join("\n\n--- End of Document ---\n\n", allExtractedText);
+                    Console.WriteLine($"Refined text to {combinedText.Length} characters for PDF at {string.Join(", ", documentUrls)}.");
+                    string finalReport = await _comprehensiveAnalysisService.PerformAnalysisFromTextAsync(job.UserId, combinedText, job);
+ 
                     // Save the results to the DocumentProcessingResults table
                     var processingResult = new DocumentProcessingResult
                     {
@@ -135,7 +129,7 @@ namespace ProbuildBackend.Services
                         DocumentId = 0,
                         BomJson = JsonSerializer.Serialize(""),
                         MaterialsEstimateJson = JsonSerializer.Serialize(""),
-                        FullResponse = refinedText, // Save the full response
+                        FullResponse = finalReport, // Save the full response
                         CreatedAt = DateTime.UtcNow
                     };
 
@@ -253,7 +247,7 @@ namespace ProbuildBackend.Services
             return consolidatedBom;
         }
 
-        public async Task<List<string>> ExtractTextFromBlob(string blobUrl, JobModel job)
+        public async Task<string> ExtractTextFromBlob(string blobUrl, JobModel job)
         {
             try
             {
@@ -271,14 +265,9 @@ namespace ProbuildBackend.Services
                 {
                     throw new InvalidOperationException($"No text could be extracted from PDF at {blobUrl}.");
                 }
-                AIText.Add(extractedText);
                 Console.WriteLine($"Extracted {extractedText.Length} characters from PDF at {blobUrl}.");
 
-                // Refine the extracted text using the Gemini API
-
-                Console.WriteLine($"Document {AIText.Count} at {blobUrl} refined.");
-
-                return AIText;
+                return extractedText;
             }
             catch (Exception ex)
             {

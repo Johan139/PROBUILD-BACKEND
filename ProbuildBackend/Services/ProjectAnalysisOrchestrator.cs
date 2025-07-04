@@ -10,85 +10,20 @@ public class ProjectAnalysisOrchestrator : IProjectAnalysisOrchestrator
     private readonly IAiService _aiService;
     private readonly IPromptManagerService _promptManager;
     private readonly ILogger<ProjectAnalysisOrchestrator> _logger;
+    private readonly IComprehensiveAnalysisService _comprehensiveAnalysisService;
 
-    public ProjectAnalysisOrchestrator(IAiService aiService, IPromptManagerService promptManager, ILogger<ProjectAnalysisOrchestrator> logger)
+    public ProjectAnalysisOrchestrator(IAiService aiService, IPromptManagerService promptManager, ILogger<ProjectAnalysisOrchestrator> logger, IComprehensiveAnalysisService comprehensiveAnalysisService)
     {
         _aiService = aiService;
         _promptManager = promptManager;
         _logger = logger;
+        _comprehensiveAnalysisService = comprehensiveAnalysisService;
     }
 
     public async Task<string> StartFullAnalysisAsync(string userId, IEnumerable<byte[]> blueprintImages, JobModel jobDetails)
     {
-        _logger.LogInformation("Starting full analysis for user {UserId}", userId);
-        string? conversationId = null;
-        
-        var initialTaskPrompt = await _promptManager.GetPromptAsync("prompt-00-initial-analysis");
-        var (initialResponseText, _) = await _aiService.ContinueConversationAsync(conversationId, userId, initialTaskPrompt, null);
-        _logger.LogInformation("Initial fitness check completed for conversation {ConversationId}.", conversationId);
-        
-        // Build a detailed setup message using the full JobModel
-        var userSetupMessage = $@"
-Please begin the initial analysis on the attached blueprint images for the following project.
-Use these details as the primary source of information to guide your analysis:
-
-Project Name: {jobDetails.ProjectName}
-Job Type: {jobDetails.JobType}
-Address: {jobDetails.Address}
-Operating Area / Location for Localization: {jobDetails.OperatingArea}
-Desired Start Date: {jobDetails.DesiredStartDate:yyyy-MM-dd}
-Stories: {jobDetails.Stories}
-Building Size: {jobDetails.BuildingSize} sq ft
-Client-Specified Assumptions:
-Wall Structure: {jobDetails.WallStructure}
-Wall Insulation: {jobDetails.WallInsulation}
-Roof Structure: {jobDetails.RoofStructure}
-Roof Insulation: {jobDetails.RoofInsulation}
-Foundation: {jobDetails.Foundation}
-Finishes: {jobDetails.Finishes}
-Electrical Needs: {jobDetails.ElectricalSupplyNeeds}
-
-Now, please execute the initial analysis task based on this information and the provided blueprints.
-
-{initialTaskPrompt}";
-
-        var (_, newConversationId) = await _aiService.ContinueConversationAsync(conversationId, userId, userSetupMessage, blueprintImages);
-        conversationId = newConversationId;
-        _logger.LogInformation("Started conversation {ConversationId}", conversationId);
-
-        if (initialResponseText.Trim().Contains("BLUEPRINT FAILURE", StringComparison.CurrentCultureIgnoreCase))
-        {
-            _logger.LogWarning("Blueprint FAILURE detected for conversation {ConversationId}. Halting analysis and generating corrective action report.", conversationId);
-            var failurePromptText = await _promptManager.GetPromptAsync("prompt-failure-corrective-action");
-            var (failureReport, _) = await _aiService.ContinueConversationAsync(conversationId, userId, failurePromptText, null);
-            return failureReport;
-        } else {
-            _logger.LogInformation("Blueprint fitness check PASSED for conversation {ConversationId}. Proceeding with full sequential analysis.", conversationId);
-
-            // === STEP 6: Proceed with the Full Sequential Analysis (Prompts 1-21) ===
-            var promptNames = new[] {
-                "prompt-01-sitelogistics", "prompt-02-groundwork", "prompt-03-framing",
-                "prompt-04-roofing", "prompt-05-exterior", "prompt-06-electrical",
-                "prompt-07-plumbing", "prompt-08-hvac", "prompt-09-insulation",
-                "prompt-10-drywall", "prompt-11-painting", "prompt-12-trim",
-                "prompt-13-kitchenbath", "prompt-14-flooring", "prompt-15-exteriorflatwork",
-                "prompt-16-cleaning", "prompt-17-costbreakdowns", "prompt-18-riskanalyst",
-                "prompt-19-timeline", "prompt-20-environmental", "prompt-21-closeout"
-            };
-
-            int step = 1;
-            foreach (var promptName in promptNames)
-            {
-                _logger.LogInformation("Executing step {Step} of {TotalSteps}: {PromptName} for conversation {ConversationId}", step, promptNames.Length, promptName, conversationId);
-                var promptText = await _promptManager.GetPromptAsync(promptName);
-                await _aiService.ContinueConversationAsync(conversationId, userId, promptText, null);
-                step++;
-            }
-
-            _logger.LogInformation("Full sequential analysis completed successfully for conversation {ConversationId}", conversationId);
-            // The analysis completed successfully, return the ID for future reference and retrieval of the full history.
-            return conversationId;
-        }
+        _logger.LogInformation("Orchestrating full analysis for user {UserId}", userId);
+        return await _comprehensiveAnalysisService.PerformAnalysisFromImagesAsync(userId, blueprintImages, jobDetails);
     }
 
     public async Task<string> GenerateRebuttalAsync(string conversationId, string clientQuery)
