@@ -86,9 +86,9 @@ builder.Services.AddDataProtection()
 
 
 
-var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
-                       ?? builder.Configuration.GetConnectionString("DefaultConnection");
-
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+                       ?? Environment.GetEnvironmentVariable("DB_CONNECTION_STRING");
+                       
 var azureBlobStorage = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY")
                       ?? builder.Configuration.GetConnectionString("AzureBlobConnection");
 var configuration = builder.Configuration;
