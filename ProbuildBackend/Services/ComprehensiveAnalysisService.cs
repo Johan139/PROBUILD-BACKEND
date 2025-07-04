@@ -76,7 +76,7 @@ Now, please execute the full analysis based on this information. I will provide 
             await _aiService.ContinueConversationAsync(conversationId, userId, userSetupMessage, null);
             _logger.LogInformation("Started main analysis for conversation {ConversationId}.", conversationId);
 
-            return await ExecuteSequentialPromptsAsync(conversationId, userId);
+            return await ExecuteSequentialPromptsAsync(conversationId, userId, initialResponseText);
         }
 
         public async Task<string> PerformAnalysisFromImagesAsync(string userId, IEnumerable<byte[]> blueprintImages, JobModel jobDetails)
@@ -145,7 +145,7 @@ Now, please execute the full analysis based on this information. I will provide 
                 _logger.LogInformation("Blueprint fitness check PASSED for conversation {ConversationId}. Proceeding with full sequential analysis.", conversationId);
 
                 // 4. Execute Sequential Prompts
-                return await ExecuteSequentialPromptsAsync(conversationId, userId);
+                return await ExecuteSequentialPromptsAsync(conversationId, userId, initialResponse);
             }
             catch (Exception ex)
             {
@@ -154,8 +154,11 @@ Now, please execute the full analysis based on this information. I will provide 
             }
         }
 
-        private async Task<string> ExecuteSequentialPromptsAsync(string conversationId, string userId)
+        private async Task<string> ExecuteSequentialPromptsAsync(string conversationId, string userId, string initialResponse)
         {
+            var stringBuilder = new System.Text.StringBuilder();
+            stringBuilder.Append(initialResponse);
+
             var promptNames = new[] {
                 "prompt-01-sitelogistics", "prompt-02-groundwork", "prompt-03-framing",
                 "prompt-04-roofing", "prompt-05-exterior", "prompt-06-electrical",
@@ -166,19 +169,23 @@ Now, please execute the full analysis based on this information. I will provide 
                 "prompt-19-timeline", "prompt-20-environmental", "prompt-21-closeout"
             };
 
-            string lastResponse = "Initial analysis complete."; // Placeholder
+            string lastResponse;
             int step = 1;
             foreach (var promptName in promptNames)
             {
                 _logger.LogInformation("Executing step {Step} of {TotalSteps}: {PromptName} for conversation {ConversationId}", step, promptNames.Length, promptName, conversationId);
                 var promptText = await _promptManager.GetPromptAsync(promptName);
                 (lastResponse, _) = await _aiService.ContinueConversationAsync(conversationId, userId, promptText, null);
+
+                stringBuilder.Append("\n\n---\n\n");
+                stringBuilder.Append(lastResponse);
+
                 step++;
             }
 
             _logger.LogInformation("Full sequential analysis completed successfully for conversation {ConversationId}", conversationId);
 
-            return lastResponse;
+            return stringBuilder.ToString();
         }
     }
 }
