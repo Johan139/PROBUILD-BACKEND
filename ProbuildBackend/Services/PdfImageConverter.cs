@@ -46,9 +46,9 @@ namespace ProbuildBackend.Services
                     image.Mutate(ctx => ctx.BackgroundColor(SixLabors.ImageSharp.Color.White));
 
                     // Render the PDF page to an image using PdfCanvasProcessor
-                    var strategy = new ImageRenderListener(image);
-                    var processor = new PdfCanvasProcessor(strategy);
-                    processor.ProcessPageContent(page);
+                    // var strategy = new ImageRenderListener(image);
+                    // var processor = new PdfCanvasProcessor(strategy);
+                    // processor.ProcessPageContent(page);
 
                     // Resize the image using ImageSharp
                     int maxWidth = _settings.MaxImageWidth;

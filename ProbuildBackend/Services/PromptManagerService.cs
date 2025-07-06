@@ -1,0 +1,31 @@
+using Azure.Storage.Blobs;
+using Microsoft.Extensions.Configuration;
+using System;
+using System.Collections.Concurrent;
+using System.IO;
+using System.Threading.Tasks;
+
+public class PromptManagerService : IPromptManagerService
+{
+    private readonly BlobContainerClient _blobContainerClient;
+    private static readonly ConcurrentDictionary<string, string> _promptCache = new();
+
+    public PromptManagerService(IConfiguration configuration)
+    {
+        // Uses the correct connection string key from your appsettings.json
+        var connectionString = configuration.GetConnectionString("AzureBlobConnection")
+            ?? throw new InvalidOperationException("Connection string 'AzureBlobConnection' not found.");
+        _blobContainerClient = new BlobContainerClient(connectionString, "probuild-prompts");
+    }
+
+    public async Task<string> GetPromptAsync(string promptName)
+    {
+        if (_promptCache.TryGetValue(promptName, out var cachedPrompt)) return cachedPrompt;
+        var blobClient = _blobContainerClient.GetBlobClient($"{promptName}.txt");
+        if (!await blobClient.ExistsAsync()) throw new FileNotFoundException($"Prompt '{promptName}.txt' not found in Azure Blob Storage.");
+        var response = await blobClient.DownloadContentAsync();
+        var promptText = response.Value.Content.ToString();
+        _promptCache.TryAdd(promptName, promptText);
+        return promptText;
+    }
+}

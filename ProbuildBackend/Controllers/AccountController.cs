@@ -28,7 +28,6 @@ namespace ProbuildBackend.Controllers
         private readonly ApplicationDbContext _context;
         private readonly IServiceProvider _serviceProvider;
         private readonly IDataProtectionProvider _dataProtectionProvider;
-
         public AccountController(UserManager<UserModel> userManager, IDataProtectionProvider dataProtectionProvider, IEmailSender emailSender, IConfiguration configuration, ApplicationDbContext context,
     IServiceProvider serviceProvider)
         {
