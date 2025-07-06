@@ -15,6 +15,12 @@ public class SqlConversationRepository : IConversationRepository
 
     public SqlConversationRepository(IConfiguration configuration)
     {
+#if (DEBUG)
+        var connectionString = configuration.GetConnectionString("DefaultConnection");
+#else
+var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING");
+#endif
+
         _connectionString = configuration.GetConnectionString("DefaultConnection") 
             ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
     }
