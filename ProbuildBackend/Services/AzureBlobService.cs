@@ -270,8 +270,9 @@ namespace ProbuildBackend.Services
 
             string containerName = segments[0];
             string blobName = segments[1]; // Use the remaining string as-is
-
+            Console.WriteLine(blobName);
             var containerClient = _blobClient.GetBlobContainerClient(containerName);
+            Console.WriteLine(containerClient);
             var blobClient = containerClient.GetBlobClient(blobName);
 
             Console.WriteLine($"Full Blob Path: {blobClient.Uri}");
