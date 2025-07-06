@@ -1,4 +1,3 @@
-// ProbuildBackend/Models/Conversation.cs
 public class Conversation
 {
     public string Id { get; set; }

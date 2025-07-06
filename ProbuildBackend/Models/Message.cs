@@ -1,4 +1,3 @@
-// ProbuildBackend/Models/Message.cs
 public class Message
 {
     public long Id { get; set; }
