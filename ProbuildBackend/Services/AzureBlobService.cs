@@ -262,7 +262,7 @@ namespace ProbuildBackend.Services
         public async Task<(byte[] Content, string ContentType)> DownloadBlobAsBytesAsync(string blobUrl)
         {
             var uri = new Uri(blobUrl);
-            string fullPath = uri.AbsolutePath.TrimStart('/');
+            string fullPath = Uri.UnescapeDataString(uri.AbsolutePath.TrimStart('/')); // <== FIXED
             string containerName = fullPath.Split('/')[0];
             string blobName = fullPath.Substring(containerName.Length + 1);
 
