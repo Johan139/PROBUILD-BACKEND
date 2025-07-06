@@ -262,12 +262,19 @@ namespace ProbuildBackend.Services
         public async Task<(byte[] Content, string ContentType)> DownloadBlobAsBytesAsync(string blobUrl)
         {
             var uri = new Uri(blobUrl);
-            string fullPath = Uri.UnescapeDataString(uri.AbsolutePath.TrimStart('/')); // <== FIXED
-            string containerName = fullPath.Split('/')[0];
-            string blobName = fullPath.Substring(containerName.Length + 1);
+            string fullPath = Uri.UnescapeDataString(uri.AbsolutePath.TrimStart('/'));
+            string[] segments = fullPath.Split('/', 2); // Split into container and blob name
+
+            if (segments.Length != 2)
+                throw new InvalidOperationException("Invalid blob URL format.");
+
+            string containerName = segments[0];
+            string blobName = segments[1]; // Use the remaining string as-is
 
             var containerClient = _blobClient.GetBlobContainerClient(containerName);
             var blobClient = containerClient.GetBlobClient(blobName);
+
+            Console.WriteLine($"Full Blob Path: {blobClient.Uri}");
             Console.WriteLine(blobClient.Uri + " " + blobClient.Name);
             if (!await blobClient.ExistsAsync())
             {
