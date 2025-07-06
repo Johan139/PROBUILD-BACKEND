@@ -86,13 +86,13 @@ builder.Services.AddDataProtection()
 
 #if(DEBUG)
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-var azureBlobStorage = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY");
+var azureBlobStorage = builder.Configuration.GetConnectionString("AzureBlobConnection");
 #else
 var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING");
-builder.Configuration.GetConnectionString("AzureBlobConnection");
+var azureBlobStorage = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY");
 #endif
 
-                  
+
 var configuration = builder.Configuration;
 // Configure DbContext with retry policy to handle rate-limiting
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
