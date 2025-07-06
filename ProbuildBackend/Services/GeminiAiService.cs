@@ -155,7 +155,7 @@ New, Updated, and Consolidated Summary:";
         catch (Exception ex)
         {
             _logger.LogError(ex, "An error occurred while compacting history for conversation {ConversationId}", conversation.Id);
-            // We don't re-throw here as summarization failure is not critical to the main flow.
+            // Don't re-throw here as summarization failure is not critical to the main flow.
         }
     }
     #endregion
@@ -299,7 +299,6 @@ JSON Output:";
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to download or add file for analysis: {FileUri}", fileUri);
-                // Depending on requirements, you might want to continue or throw
             }
         }
 

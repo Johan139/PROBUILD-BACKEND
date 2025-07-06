@@ -85,20 +85,14 @@ Now, please execute the full analysis based on this information. I will provide 
             string? conversationId = null;
 
             // TODO: Implement the initial AI conversation setup with images.
-            // For now, we'll just log a message.
+            // For now, log a message.
             _logger.LogInformation("Image analysis path not fully implemented. This is a placeholder.");
 
             // This is a placeholder for where the conversation would be initiated with images.
             // var (initialResponse, newConversationId) = await _aiService.StartConversationWithImagesAsync(....);
             // conversationId = newConversationId;
 
-            // For now, we can't proceed without a conversation ID.
-            // In a real implementation, the above would be replaced with actual logic.
-            // We will simulate a successful start and proceed to sequential prompts.
-            
-            // This is a placeholder. A real conversationId would be established above.
-            // For the purpose of this refactoring, we can't call ExecuteSequentialPromptsAsync
-            // without a valid conversationId. We will return a placeholder message.
+            // For now, can't proceed without a conversation ID.
             
             return await Task.FromResult("Image analysis feature is under development.");
         }
@@ -138,7 +132,7 @@ Now, please execute the full analysis based on this information. I will provide 
                 if (initialResponse.Contains("BLUEPRINT FAILURE", StringComparison.OrdinalIgnoreCase))
                 {
                     _logger.LogWarning("Blueprint FAILURE detected for conversation {ConversationId}. Halting analysis.", conversationId);
-                    // Optionally, you could call ContinueConversationAsync here to ask the AI to elaborate on the failure.
+                    // Optionally, could call ContinueConversationAsync here to ask the AI to elaborate on the failure.
                     return initialResponse; // Return the failure report
                 }
 
