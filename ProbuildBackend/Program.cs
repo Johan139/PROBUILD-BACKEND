@@ -84,13 +84,15 @@ builder.Services.AddDataProtection()
         ValidationAlgorithm = ValidationAlgorithm.HMACSHA256
     });
 
+#if(DEBUG)
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+var azureBlobStorage = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY");
+#else
+var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING");
+builder.Configuration.GetConnectionString("AzureBlobConnection");
+#endif
 
-
-var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING") 
-                      ?? builder.Configuration.GetConnectionString("DefaultConnection");
-                       
-var azureBlobStorage = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY")
-                      ?? builder.Configuration.GetConnectionString("AzureBlobConnection");
+                  
 var configuration = builder.Configuration;
 // Configure DbContext with retry policy to handle rate-limiting
 builder.Services.AddDbContext<ApplicationDbContext>(options =>

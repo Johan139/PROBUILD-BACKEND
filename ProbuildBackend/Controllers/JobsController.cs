@@ -19,6 +19,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using static iText.StyledXmlParser.Jsoup.Select.Evaluator;
 using static ProbuildBackend.Services.DocumentProcessorService;
+using BomWithCosts = ProbuildBackend.Models.BomWithCosts;
 
 
 namespace ProbuildBackend.Controllers
