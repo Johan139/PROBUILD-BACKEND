@@ -29,9 +29,9 @@ public class GeminiAiService : IAiService
         _azureBlobService = azureBlobService;
 
 #if (DEBUG)
-        var apiKey = configuration["GeminiAPIKey"] ?? throw new InvalidOperationException("API Key 'GoogleGeminiAPI:APIKey' not found.");
+        var apiKey = configuration["GeminiAPIKey"];
 #else
-   var apiKey = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY"); ?? throw new InvalidOperationException("API Key 'GoogleGeminiAPI:APIKey' not found.");
+   var apiKey = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY");
 #endif
 
 
