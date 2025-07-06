@@ -268,7 +268,7 @@ namespace ProbuildBackend.Services
 
             var containerClient = _blobClient.GetBlobContainerClient(containerName);
             var blobClient = containerClient.GetBlobClient(blobName);
-
+            Console.WriteLine(blobClient.Uri + " " + blobClient.Name);
             if (!await blobClient.ExistsAsync())
             {
                 _logger.LogError("Blob not found for download at Container: {Container}, Blob: {Blob}", containerName, blobName);
