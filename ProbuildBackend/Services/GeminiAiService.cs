@@ -84,7 +84,11 @@ public class GeminiAiService : IAiService
                 _logger.LogInformation("Gemini returned response of length {Length}", modelResponseText.Length);
 
             }
-
+            catch (Exception ex)
+            {
+                _logger.LogCritical(ex, "Gemini call crashed the app");
+                throw;
+            }
             await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "user", Content = userPrompt });
             await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "model", Content = modelResponseText });
 
