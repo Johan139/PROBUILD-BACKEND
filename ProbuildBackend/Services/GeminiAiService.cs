@@ -74,8 +74,8 @@ public class GeminiAiService : IAiService
 
         try
         {
-            var response = await _generativeModel.GenerateContentAsync(request);
-            var modelResponseText = response.Text();
+            //var response = await _generativeModel.GenerateContentAsync(request);
+            var modelResponseText = "This is a test";
 
             await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "user", Content = userPrompt });
             await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "model", Content = modelResponseText });
@@ -321,8 +321,8 @@ JSON Output:";
         try
         {
             // 3. Send the request
-            var response = await _generativeModel.GenerateContentAsync(request);
-            var modelResponseText = response.Text();
+            //var response = await _generativeModel.GenerateContentAsync(request);
+            var modelResponseText = "This is a test.";
 
             // 4. Store initial messages
             await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "user", Content = initialUserPrompt });
