@@ -74,8 +74,16 @@ public class GeminiAiService : IAiService
 
         try
         {
-            //var response = await _generativeModel.GenerateContentAsync(request);
-            var modelResponseText = "This is a test";
+            _logger.LogInformation("Sending request to Gemini: {PartsCount}", request.Contents.Sum(c => c.Parts?.Count ?? 0));
+            string modelResponseText = string.Empty;
+            try
+            {
+                _logger.LogInformation("Calling Gemini with {PartCount} parts", request.Contents.Sum(c => c.Parts?.Count ?? 0));
+                var response = await _generativeModel.GenerateContentAsync(request);
+                modelResponseText = response.Text();
+                _logger.LogInformation("Gemini returned response of length {Length}", modelResponseText.Length);
+
+            }
 
             await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "user", Content = userPrompt });
             await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "model", Content = modelResponseText });
@@ -321,8 +329,21 @@ JSON Output:";
         try
         {
             // 3. Send the request
-            //var response = await _generativeModel.GenerateContentAsync(request);
-            var modelResponseText = "This is a test.";
+            _logger.LogInformation("Sending request to Gemini: {PartsCount}", request.Contents.Sum(c => c.Parts?.Count ?? 0));
+            string modelResponseText = string.Empty;
+            try
+            {
+                _logger.LogInformation("Calling Gemini with {PartCount} parts", request.Contents.Sum(c => c.Parts?.Count ?? 0));
+                var response = await _generativeModel.GenerateContentAsync(request);
+                 modelResponseText = response.Text();
+                _logger.LogInformation("Gemini returned response of length {Length}", modelResponseText.Length);
+       
+            }
+            catch (Exception ex)
+            {
+                _logger.LogCritical(ex, "Gemini call crashed the app");
+                throw;
+            }
 
             // 4. Store initial messages
             await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "user", Content = initialUserPrompt });
@@ -337,5 +358,10 @@ JSON Output:";
             _logger.LogError(ex, "An error occurred while calling the Gemini API in StartMultimodalConversationAsync for conversation {ConversationId}", conversationId);
             throw;
         }
+    }
+    private static bool LogAndReturnFalse(Exception ex)
+    {
+        Console.WriteLine($"[Critical Gemini Crash] {ex}");
+        return false;
     }
 }
