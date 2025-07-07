@@ -79,6 +79,11 @@ public class GeminiAiService : IAiService
             try
             {
                 _logger.LogInformation("Calling Gemini with {PartCount} parts", request.Contents.Sum(c => c.Parts?.Count ?? 0));
+                _logger.LogInformation("ContinueConversationAsync Memory before Gemini call: {MemoryMb} MB", GC.GetTotalMemory(false) / 1024 / 1024);
+                _logger.LogInformation("ContinueConversationAsync GC Memory Info: {Info}", GC.GetGCMemoryInfo().ToString());
+                _logger.LogInformation("ContinueConversationAsync");
+
+
                 var response = await _generativeModel.GenerateContentAsync(request);
                 modelResponseText = response.Text();
                 _logger.LogInformation("Gemini returned response of length {Length}", modelResponseText.Length);
@@ -164,6 +169,9 @@ New, Updated, and Consolidated Summary:";
 
         try
         {
+            _logger.LogInformation("CompactHistoryIfRequiredAsync Memory before Gemini call: {MemoryMb} MB", GC.GetTotalMemory(false) / 1024 / 1024);
+            _logger.LogInformation("CompactHistoryIfRequiredAsync GC Memory Info: {Info}", GC.GetGCMemoryInfo().ToString());
+            _logger.LogInformation("CompactHistoryIfRequiredAsync");
             var response = await _generativeModel.GenerateContentAsync(summarizationPrompt);
             var summaryResponseText = response.Text();
 
@@ -198,6 +206,9 @@ Start Date: {job.DesiredStartDate:yyyy-MM-dd}, Wall Structure: {job.WallStructur
 
         try
         {
+            _logger.LogInformation("AnalyzePageWithAssistantAsync Memory before Gemini call: {MemoryMb} MB", GC.GetTotalMemory(false) / 1024 / 1024);
+            _logger.LogInformation("AnalyzePageWithAssistantAsync GC Memory Info: {Info}", GC.GetGCMemoryInfo().ToString());
+            _logger.LogInformation("AnalyzePageWithAssistantAsync");
             var response = await _generativeModel.GenerateContentAsync(request);
             return response.Text();
         }
@@ -221,6 +232,9 @@ Extracted Text:
 Refined Output:";
         try
         {
+            _logger.LogInformation("RefineTextWithAiAsync Memory before Gemini call: {MemoryMb} MB", GC.GetTotalMemory(false) / 1024 / 1024);
+            _logger.LogInformation("RefineTextWithAiAsync GC Memory Info: {Info}", GC.GetGCMemoryInfo().ToString());
+            _logger.LogInformation("RefineTextWithAiAsync");
             var response = await _generativeModel.GenerateContentAsync(prompt);
             var refinedText = response.Text();
             _logger.LogInformation("Successfully refined text for blob(s): {BlobUrl}. Refined text length: {RefinedTextLength}", blobUrl, refinedText.Length);
@@ -284,6 +298,9 @@ JSON Output:";
 
         try
         {
+            _logger.LogInformation("PerformMultimodalAnalysisAsync Memory before Gemini call: {MemoryMb} MB", GC.GetTotalMemory(false) / 1024 / 1024);
+            _logger.LogInformation("PerformMultimodalAnalysisAsync GC Memory Info: {Info}", GC.GetGCMemoryInfo().ToString());
+            _logger.LogInformation("PerformMultimodalAnalysisAsync");
             var response = await _generativeModel.GenerateContentAsync(request);
             return response.Text();
         }
@@ -338,6 +355,9 @@ JSON Output:";
             try
             {
                 _logger.LogInformation("Calling Gemini with {PartCount} parts", request.Contents.Sum(c => c.Parts?.Count ?? 0));
+                _logger.LogInformation("StartMultimodalConversationAsync Memory before Gemini call: {MemoryMb} MB", GC.GetTotalMemory(false) / 1024 / 1024);
+                _logger.LogInformation("StartMultimodalConversationAsync GC Memory Info: {Info}", GC.GetGCMemoryInfo().ToString());
+                _logger.LogInformation("StartMultimodalConversationAsync");
                 var response = await _generativeModel.GenerateContentAsync(request);
                  modelResponseText = response.Text();
                 _logger.LogInformation("Gemini returned response of length {Length}", modelResponseText.Length);
