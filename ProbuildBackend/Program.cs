@@ -134,7 +134,11 @@ builder.Services.AddHangfire(config => config
     .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
     .UseSimpleAssemblyNameTypeSerializer()
     .UseRecommendedSerializerSettings()
-    .UseMemoryStorage()); // Replace with UseSqlServerStorage in production
+    .UseSqlServerStorage(connectionString)); // Replace with UseSqlServerStorage in production
+builder.Services.AddHangfireServer(options =>
+{
+    options.WorkerCount = 2; // or even 1 if Gemini calls are large
+});
 builder.Services.AddScoped<IEmailService, EmailService>(); // Add this line
 builder.Services.AddScoped<IEmailSender, EmailSender>(); // Add this line
 // Register all services
