@@ -93,6 +93,8 @@ var azureBlobStorage = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY");
 #endif
 
 
+
+
 var configuration = builder.Configuration;
 // Configure DbContext with retry policy to handle rate-limiting
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -268,6 +270,7 @@ try
     app.Logger.LogInformation("Attempting to initialize Azure Blob Service...");
     var blobService = app.Services.GetRequiredService<AzureBlobService>();
     app.Logger.LogInformation("Successfully initialized Azure Blob Service");
+
 
     using (var scope = app.Services.CreateScope())
     {

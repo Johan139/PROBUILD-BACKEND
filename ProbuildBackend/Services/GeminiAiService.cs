@@ -245,19 +245,24 @@ JSON Output:";
         var userContent = new Content { Role = Roles.User };
         userContent.AddText(prompt);
 
-        foreach (var fileUri in fileUris)
+        var fileTasks = fileUris.Select(async uri =>
         {
             try
             {
-                var (fileBytes, mimeType) = await _azureBlobService.DownloadBlobAsBytesAsync(fileUri);
-                var base64String = Convert.ToBase64String(fileBytes);
-
-                userContent.AddInlineData(base64String, mimeType);
+                var (bytes, mime) = await _azureBlobService.DownloadBlobAsBytesAsync(uri);
+                return (base64: Convert.ToBase64String(bytes), mime);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to download or add file for analysis: {FileUri}", fileUri);
+                _logger.LogError(ex, "Failed to download file: {Uri}", uri);
+                return default;
             }
+        }).ToList();
+
+        var fileResults = await Task.WhenAll(fileTasks);
+        foreach (var (base64, mime) in fileResults.Where(r => r != default))
+        {
+            userContent.AddInlineData(base64, mime);
         }
 
         var request = new GenerateContentRequest
