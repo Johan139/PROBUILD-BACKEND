@@ -271,24 +271,19 @@ JSON Output:";
         var userContent = new Content { Role = Roles.User };
         userContent.AddText(prompt);
 
-        var fileTasks = fileUris.Select(async uri =>
+        foreach (var fileUri in fileUris)
         {
             try
             {
-                var (bytes, mime) = await _azureBlobService.DownloadBlobAsBytesAsync(uri);
-                return (base64: Convert.ToBase64String(bytes), mime);
+                var (fileBytes, mimeType) = await _azureBlobService.DownloadBlobAsBytesAsync(fileUri);
+                var base64String = Convert.ToBase64String(fileBytes);
+
+                userContent.AddInlineData(base64String, mimeType);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to download file: {Uri}", uri);
-                return default;
+                _logger.LogError(ex, "Failed to download or add file for analysis: {FileUri}", fileUri);
             }
-        }).ToList();
-
-        var fileResults = await Task.WhenAll(fileTasks);
-        foreach (var (base64, mime) in fileResults.Where(r => r != default))
-        {
-            userContent.AddInlineData(base64, mime);
         }
 
         var request = new GenerateContentRequest
@@ -298,9 +293,6 @@ JSON Output:";
 
         try
         {
-            _logger.LogInformation("PerformMultimodalAnalysisAsync Memory before Gemini call: {MemoryMb} MB", GC.GetTotalMemory(false) / 1024 / 1024);
-            _logger.LogInformation("PerformMultimodalAnalysisAsync GC Memory Info: {Info}", GC.GetGCMemoryInfo().ToString());
-            _logger.LogInformation("PerformMultimodalAnalysisAsync");
             var response = await _generativeModel.GenerateContentAsync(request);
             return response.Text();
         }
