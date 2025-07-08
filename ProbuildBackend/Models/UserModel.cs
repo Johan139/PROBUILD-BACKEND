@@ -33,7 +33,7 @@ namespace ProbuildBackend.Models {
         public string? SubscriptionPackage { get; set; }
         public bool IsVerified { get; set; }
 
-        public DateTime DateCreated { get; set; }
+        public DateTime? DateCreated { get; set; }
 
         public ICollection<BidModel>? Bids { get; set; }
         public ICollection<NotificationModel>? Notifications { get; set; }
