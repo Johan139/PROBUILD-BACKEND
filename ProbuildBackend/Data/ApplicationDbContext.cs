@@ -33,10 +33,12 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<DocumentProcessingResult> DocumentProcessingResults { get; set; }
     public DbSet<AddressModel> JobAddresses { get; set; }
     public DbSet<JobDocumentModel> JobDocuments { get; set; }
+    public DbSet<LogosModel> Logos { get; set; }
 
     public DbSet<Quote> Quotes { get; set; }
     public DbSet<QuoteRow> QuoteRows { get; set; }
     public DbSet<QuoteExtraCost> QuoteExtraCosts { get; set; }
+
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {   
@@ -203,6 +205,12 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .WithOne(ec => ec.Quote)
             .HasForeignKey(ec => ec.QuoteId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<Quote>()
+            .HasOne(q => q.Logo)
+            .WithMany()
+            .HasForeignKey(q => q.LogoId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         base.OnModelCreating(modelBuilder);
     }

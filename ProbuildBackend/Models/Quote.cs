@@ -34,7 +34,12 @@ namespace ProbuildBackend.Models
         public DateTime CreatedDate { get; set; }
         public string CreatedBy { get; set; } = string.Empty;
         public string CreatedID { get; set; } = string.Empty;
+        public int? JobID { get; set; }
+        public decimal? Version { get; set; }
+        public string? Status { get; set; }
         public List<QuoteRow> Rows { get; set; } = new List<QuoteRow>();
         public List<QuoteExtraCost> ExtraCosts { get; set; } = new List<QuoteExtraCost>();
+        public Guid? LogoId { get; set; }
+        public LogosModel Logo { get; set; }
     }
 }
