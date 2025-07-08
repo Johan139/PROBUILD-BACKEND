@@ -284,7 +284,6 @@ namespace ProbuildBackend.Controllers
         [HttpPost("ChangeStatus/{id}")]
         public async Task<ActionResult> ChangeStatus(string id, [FromBody] string newStatus)
         {
-            string email = "Nade303@gmail.com";
 
             if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(newStatus))
                 return BadRequest("Invalid ID or status.");
@@ -319,7 +318,7 @@ namespace ProbuildBackend.Controllers
 
                         message += "<p>Thank you,<br/>ProBuildAI</p>";
 
-                        await _emailSender.SendEmailAsync(email, subject, message);
+                        await _emailSender.SendEmailAsync(quoteUser.Email, subject, message);
                         break;
 
                     case "Submitted":
@@ -338,7 +337,7 @@ namespace ProbuildBackend.Controllers
                             <p>Please log in to review and take action.</p>
                             <p>Thanks,<br/>ProBuildAI</p>";
 
-                        await _emailSender.SendEmailAsync(email, subject, message);
+                        await _emailSender.SendEmailAsync(jobCreator.Email, subject, message);
                         break;
                 }
 
