@@ -1,6 +1,10 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.UI.Services;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Models;
+using ProbuildBackend.Services;
+using System.Net.Mail;
 
 namespace ProbuildBackend.Controllers
 {
@@ -9,10 +13,13 @@ namespace ProbuildBackend.Controllers
     public class QuotesController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
+        private readonly EmailSender emailSender;
+        private readonly IEmailSender _emailSender;
 
-        public QuotesController(ApplicationDbContext context)
+        public QuotesController(ApplicationDbContext context, IEmailSender emailSender)
         {
             _context = context;
+            _emailSender = emailSender;
         }
 
         [HttpGet("GetQuotes/{id}")]
@@ -277,6 +284,8 @@ namespace ProbuildBackend.Controllers
         [HttpPost("ChangeStatus/{id}")]
         public async Task<ActionResult> ChangeStatus(string id, [FromBody] string newStatus)
         {
+            string email = "Nade303@gmail.com";
+
             if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(newStatus))
                 return BadRequest("Invalid ID or status.");
 
@@ -290,13 +299,47 @@ namespace ProbuildBackend.Controllers
             {
                 await _context.SaveChangesAsync();
 
-                if (quote.Status == "Approved")
+                string subject;
+                string message;
+
+                switch (quote.Status)
                 {
-                    //Email
-                }
-                else if (quote.Status == "Rejected")
-                {
-                    //Email
+                    case "Approved":
+                    case "Rejected":
+                        var quoteUser = await _context.Users.FirstOrDefaultAsync(a => a.Id == quote.CreatedID);
+                        if (quoteUser == null)
+                            return NotFound("Quote creator not found.");
+                        if (string.IsNullOrEmpty(quoteUser.Email))
+                            return BadRequest("Quote creator email is missing.");
+
+                        subject = $"Your quote #{quote.Number} has been {quote.Status.ToLower()}";
+                        message = quote.Status == "Approved"
+                            ? $"<p>Great news! Your quote <strong>#{quote.Number}</strong> has been approved.</p>"
+                            : $"<p>Unfortunately, your quote <strong>#{quote.Number}</strong> has been rejected.</p>";
+
+                        message += "<p>Thank you,<br/>ProBuildAI</p>";
+
+                        await _emailSender.SendEmailAsync(email, subject, message);
+                        break;
+
+                    case "Submitted":
+                        var job = await _context.Jobs.FirstOrDefaultAsync(j => j.Id == quote.JobID);
+                        if (job == null)
+                            return NotFound("Linked job not found.");
+
+                        var jobCreator = await _context.Users.FirstOrDefaultAsync(u => u.Id == job.UserId);
+                        if (jobCreator == null || string.IsNullOrEmpty(jobCreator.Email))
+                            return BadRequest("Job creator not found or email is missing.");
+
+                        subject = $"Quote submitted for job '{job.ProjectName}'";
+                        message = $@"
+                            <p>A new quote <strong>#{quote.Number}</strong> has been <strong>submitted</strong> 
+                            for the job <strong>{job.ProjectName}</strong>.</p>
+                            <p>Please log in to review and take action.</p>
+                            <p>Thanks,<br/>ProBuildAI</p>";
+
+                        await _emailSender.SendEmailAsync(email, subject, message);
+                        break;
                 }
 
                 return Ok(quote);
@@ -306,5 +349,6 @@ namespace ProbuildBackend.Controllers
                 return StatusCode(500, $"Error updating status: {ex.Message}");
             }
         }
+
     }
 }

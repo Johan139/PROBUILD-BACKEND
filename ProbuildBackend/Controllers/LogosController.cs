@@ -18,22 +18,15 @@ namespace ProbuildBackend.Controllers
         [HttpPost]
         public async Task<IActionResult> UploadLogo([FromForm] IFormFile file, [FromForm] string type, [FromForm] string uploadedBy)
         {
-            Console.WriteLine("UploadLogo called");
-
             try
             {
                 if (file == null || file.Length == 0)
                 {
-                    Console.WriteLine("File was null or empty.");
                     return BadRequest("Invalid file.");
                 }
 
-                Console.WriteLine($"File received: {file.FileName}, {file.Length} bytes, content-type: {file.ContentType}");
-
                 using var ms = new MemoryStream();
                 await file.CopyToAsync(ms);
-
-                Console.WriteLine("File copied to memory stream");
 
                 var base64 = Convert.ToBase64String(ms.ToArray());
 
@@ -46,14 +39,9 @@ namespace ProbuildBackend.Controllers
                     Type = type,
                     UploadedAt = DateTime.Now,
                 };
-
-                Console.WriteLine("Logo model created");
-
                 _context.Logos.Add(logo);
-                Console.WriteLine("Added to context");
 
                 await _context.SaveChangesAsync();
-                Console.WriteLine("Saved to database");
 
                 return Ok(logo);
             }
