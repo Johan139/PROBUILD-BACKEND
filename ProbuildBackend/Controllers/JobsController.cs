@@ -291,7 +291,7 @@ namespace ProbuildBackend.Controllers
             {
                 var results = await _context.DocumentProcessingResults
                     .Where(r => r.JobId == jobId)
-                    .ToListAsync(); 
+                    .ToListAsync();
 
                 if (results == null || !results.Any())
                 {
@@ -652,7 +652,7 @@ namespace ProbuildBackend.Controllers
             {
                 bool isNew = true;
                 int jobID = 0;
-        
+
             foreach (var subtask in subtasks.Subtasks)
             {
                     jobID = subtask.JobId;
@@ -740,6 +740,58 @@ namespace ProbuildBackend.Controllers
             catch (DbUpdateConcurrencyException)
             {
                 if (!JobExists(id))
+                {
+                    return NotFound();
+                }
+                else
+                {
+                    throw;
+                }
+            }
+
+            return NoContent();
+        }
+
+        [HttpPut("{jobId}/address")]
+        public async Task<IActionResult> UpdateJobAddress(int jobId, [FromBody] UpdateJobAddressDto addressDto)
+        {
+            var job = await _context.Jobs.FindAsync(jobId);
+            if (job == null)
+            {
+                return NotFound("Job not found.");
+            }
+
+            var address = await _context.JobAddresses.FirstOrDefaultAsync(a => a.JobId == jobId);
+            if (address == null)
+            {
+                address = new AddressModel
+                {
+                    JobId = jobId,
+                    CreatedAt = DateTime.UtcNow
+                };
+                _context.JobAddresses.Add(address);
+            }
+            address.StreetNumber = addressDto.StreetNumber;
+            address.StreetName = addressDto.StreetName;
+            address.City = addressDto.City;
+            address.State = addressDto.State;
+            address.PostalCode = addressDto.PostalCode;
+            address.Country = addressDto.Country;
+            address.Latitude = (decimal)addressDto.Latitude;
+            address.Longitude = (decimal)addressDto.Longitude;
+            address.FormattedAddress = addressDto.FormattedAddress;
+            address.GooglePlaceId = addressDto.GooglePlaceId;
+            address.UpdatedAt = DateTime.UtcNow;
+
+            job.Address = addressDto.FormattedAddress;
+
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (!JobExists(jobId))
                 {
                     return NotFound();
                 }
@@ -845,7 +897,7 @@ namespace ProbuildBackend.Controllers
             try
             {
 
-         
+
             var note = await _context.SubtaskNote.Where(m => m.JobSubtaskId == noteUpdate.JobSubtaskId && (m.Approved != true && m.Rejected != true)).ToListAsync();
             if (note == null) return NotFound();
                 foreach (var item in note)
@@ -1001,12 +1053,12 @@ namespace ProbuildBackend.Controllers
             var usernote = new SubtaskNoteUserModel
                 {
                     SubtaskNoteId = note.Id,
-                    UserId = item.UserId    
+                    UserId = item.UserId
                 };
                 useridEmail.Add(item.UserId);
                 _context.SubtaskNoteUser.Add(usernote);
             }
-            
+
             await _context.SaveChangesAsync();
             foreach (var item in useridEmail)
             {
@@ -1064,22 +1116,24 @@ namespace ProbuildBackend.Controllers
                 decimal latitude = decimal.Parse(lat, CultureInfo.InvariantCulture);
                 lon = lon.Replace(',', '.');
                 decimal longitude = decimal.Parse(lon, CultureInfo.InvariantCulture);
-
+                
                 var client = _httpClientFactory.CreateClient();
-            var apiKey = Environment.GetEnvironmentVariable("MapsAPI")
-                      ?? _config["GoogleMapsAPI:APIKey"];
-            var url = $"https://weather.googleapis.com/v1/forecast/days:lookup?key={apiKey}&location.latitude={latitude.ToString(CultureInfo.InvariantCulture)}&location.longitude={longitude.ToString(CultureInfo.InvariantCulture)}&unitsSystem=METRIC&days=10";
-            var response = await client.GetAsync(url);
-            var content = await response.Content.ReadAsStringAsync();
-            return Content(content, "application/json");
+                var apiKey = Environment.GetEnvironmentVariable("MapsAPI")
+                    ?? _config["GoogleMapsAPI:APIKey"];
+                    
+                var url = $"https://weather.googleapis.com/v1/forecast/days:lookup?key={apiKey}&location.latitude={latitude.ToString(CultureInfo.InvariantCulture)}&location.longitude={longitude.ToString(CultureInfo.InvariantCulture)}&unitsSystem=METRIC&days=10&pageSize=10";
+                
+                var response = await client.GetAsync(url);
+                var content = await response.Content.ReadAsStringAsync();
+                
+                return Content(content, "application/json");
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-
+                Console.WriteLine($"Weather API Error: {ex.Message}");
                 throw;
             }
         }
-
     }
 
     public class DeleteTemporaryFilesRequest
