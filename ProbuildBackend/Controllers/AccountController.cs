@@ -208,10 +208,13 @@ namespace ProbuildBackend.Controllers
             if (user != null && await _userManager.CheckPasswordAsync(user, model.Password) && user.EmailConfirmed == true)// add email comfirmation check
             {
                 var token = GenerateJwtToken(user);
-                return Ok(new { token, user.Id, user.FirstName, user.UserType });
+                return Ok(new { token, user.Id, user.FirstName, user.LastName, user.UserType });
             }
-
-            return Unauthorized();
+                if (user != null && !user.EmailConfirmed)
+                {
+                    return Unauthorized(new { error = "Email address has not been confirmed." });
+                }
+                return Unauthorized(new { error = "Invalid login credentials. Please try again." });
             }
             catch (Exception ex)
             {
