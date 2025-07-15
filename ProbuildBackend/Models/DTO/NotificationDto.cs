@@ -1,13 +1,12 @@
-﻿using System.Collections.Generic;
-
-namespace ProbuildBackend.Dtos
-
+﻿namespace ProbuildBackend.Models.DTO
 {
     public class NotificationDto
     {
-        public string? Message { get; set; }
+        public int Id { get; set; }
+        public string Message { get; set; }
+        public DateTime Timestamp { get; set; }
         public int ProjectId { get; set; }
-        public string? UserId { get; set; }
-        public List<string>? Recipients { get; set; }
+        public string ProjectName { get; set; }
+        public string SenderFullName { get; set; }
     }
 }

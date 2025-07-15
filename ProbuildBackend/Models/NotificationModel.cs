@@ -19,10 +19,14 @@ namespace ProbuildBackend.Models
         public ProjectModel? Project { get; set; }
 
         [ForeignKey("UserId")]
-        public string UserId { get; set; }
+        public string UserId { get; set; } // The user receiving the notification
         public UserModel? User { get; set; }
 
-        // Broadcast group or specific recipients
-        public List<string> Recipients { get; set; } // You can define Recipients as a list for flexibility.
+        [Required]
+        [ForeignKey("Sender")]
+        public string SenderId { get; set; } // The user who sent the notification
+        public UserModel? Sender { get; set; }
+
+        public List<string> Recipients { get; set; }
     }
 }

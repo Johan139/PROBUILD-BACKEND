@@ -17,6 +17,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<JobsTermsAgreement> JobsTermsAgreement { get; set; }
     public DbSet<BidModel> Bids { get; set; }
     public DbSet<NotificationModel> Notifications { get; set; }
+    public DbSet<NotificationView> NotificationViews { get; set; }
     public DbSet<JobAssignmentModel> JobAssignments { get; set; }
     public DbSet<SubtaskNoteDocumentModel> SubtaskNoteDocument { get; set; }
     public DbSet<ProfileDocuments> ProfileDocuments { get; set; }
@@ -39,7 +40,9 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<QuoteExtraCost> QuoteExtraCosts { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {   
+    {
+        modelBuilder.Entity<NotificationView>().ToView("vw_Notifications");
+
         modelBuilder.Entity<ProjectModel>()
             .HasOne(p => p.Foreman)
             .WithMany()

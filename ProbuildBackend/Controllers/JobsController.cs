@@ -36,6 +36,7 @@ namespace ProbuildBackend.Controllers
         private readonly IEmailSender _emailService; // Add this
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IConfiguration _config;
+        private readonly WebSocketManager _webSocketManager;
 
         public JobsController(
             ApplicationDbContext context,
@@ -45,7 +46,8 @@ namespace ProbuildBackend.Controllers
             DocumentProcessorService documentProcessorService,
             IEmailSender emailService,
             IHttpClientFactory httpClientFactory,
-            IConfiguration config)
+            IConfiguration config,
+            WebSocketManager webSocketManager)
         {
             _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
             _context = context;
@@ -55,6 +57,7 @@ namespace ProbuildBackend.Controllers
             _emailService = emailService ?? throw new ArgumentNullException(nameof(emailService));
             _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
             _config = config ?? throw new ArgumentNullException(nameof(config));
+            _webSocketManager = webSocketManager;
         }
 
         [HttpGet]
@@ -693,6 +696,33 @@ namespace ProbuildBackend.Controllers
                 }
 
             await _context.SaveChangesAsync();
+
+            // After saving subtasks, send notifications
+            var job = await _context.Jobs.FindAsync(jobID);
+            if (job != null)
+            {
+                var assignments = await _context.JobAssignments
+                    .Where(a => a.JobId == jobID)
+                    .ToListAsync();
+
+                var userIds = assignments.Select(a => a.UserId).ToList();
+                var message = $"An item on the timeline for project {job.ProjectName} has been moved.";
+
+                var notification = new NotificationModel
+                {
+                    Message = message,
+                    Recipients = userIds,
+                    Timestamp = DateTime.UtcNow,
+                    ProjectId = job.Id,
+                    SenderId = subtasks.UserId
+                };
+
+                _context.Notifications.Add(notification);
+                await _context.SaveChangesAsync();
+
+                await _webSocketManager.BroadcastMessageAsync(notification.Message, notification.Recipients);
+            }
+
             return Ok("Subtasks processed");
             }
             catch (Exception ex)
@@ -1116,16 +1146,16 @@ namespace ProbuildBackend.Controllers
                 decimal latitude = decimal.Parse(lat, CultureInfo.InvariantCulture);
                 lon = lon.Replace(',', '.');
                 decimal longitude = decimal.Parse(lon, CultureInfo.InvariantCulture);
-                
+
                 var client = _httpClientFactory.CreateClient();
                 var apiKey = Environment.GetEnvironmentVariable("MapsAPI")
                     ?? _config["GoogleMapsAPI:APIKey"];
-                    
+
                 var url = $"https://weather.googleapis.com/v1/forecast/days:lookup?key={apiKey}&location.latitude={latitude.ToString(CultureInfo.InvariantCulture)}&location.longitude={longitude.ToString(CultureInfo.InvariantCulture)}&unitsSystem=METRIC&days=10&pageSize=10";
-                
+
                 var response = await client.GetAsync(url);
                 var content = await response.Content.ReadAsStringAsync();
-                
+
                 return Content(content, "application/json");
             }
             catch (Exception ex)
