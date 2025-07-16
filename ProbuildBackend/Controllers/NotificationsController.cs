@@ -1,5 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using System.Security.Claims;
@@ -11,12 +13,12 @@ namespace ProbuildBackend.Controllers
     public class NotificationsController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
-        private readonly WebSocketManager _webSocketManager;
+        private readonly IHubContext<NotificationHub> _hubContext;
 
-        public NotificationsController(ApplicationDbContext context, WebSocketManager webSocketManager)
+        public NotificationsController(ApplicationDbContext context, IHubContext<NotificationHub> hubContext)
         {
             _context = context;
-            _webSocketManager = webSocketManager;
+            _hubContext = hubContext;
         }
 
         [HttpPost]
@@ -29,7 +31,7 @@ namespace ProbuildBackend.Controllers
             await _context.SaveChangesAsync();
 
             // Broadcast message to recipients via WebSocket
-            await _webSocketManager.BroadcastMessageAsync(notification.Message, notification.Recipients);
+            await _hubContext.Clients.All.SendAsync("ReceiveNotification", notification);
 
             return Ok(new { message = "Notification sent and broadcasted" });
         }
@@ -75,6 +77,32 @@ namespace ProbuildBackend.Controllers
                 .ToListAsync();
 
             return Ok(notifications);
+        }
+
+        [HttpPost("test")]
+        public async Task<IActionResult> SendTestNotification()
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized();
+            }
+
+            var testNotification = new NotificationModel
+            {
+                Message = "This is a test notification.",
+                Timestamp = DateTime.UtcNow,
+                ProjectId = 356, // DDTHernandez - multi test 3
+                UserId = userId, // Recipient: Daniel Davies
+                SenderId = "483284e7-a356-43c6-b399-c3af452e879b", // Sender: sdafewf asdfaewf
+                Recipients = new List<string> { userId }
+            };
+
+            _context.Notifications.Add(testNotification);
+            await _context.SaveChangesAsync();
+
+            await _hubContext.Clients.All.SendAsync("ReceiveNotification", testNotification);
+            return Ok(new { message = "Test notification created successfully." });
         }
     }
 }

@@ -14,6 +14,7 @@ using Microsoft.Extensions.Options;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
+using ProbuildBackend.Middleware;
 using ProbuildBackend.Options;
 using ProbuildBackend.Services;
 using System.Net.Http.Headers;
@@ -182,6 +183,7 @@ app.MapGet("/health", () => Results.Ok("Healthy"));
 
 // Map SignalR hub
 app.MapHub<ProgressHub>("/progressHub");
+app.MapHub<NotificationHub>("/hubs/notifications");
 
 // Log the URLs the application is listening on
 var listeningUrls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "Not set";
