@@ -120,7 +120,6 @@ namespace ProbuildBackend.Controllers
                 Message = "This is a test notification.",
                 Timestamp = DateTime.UtcNow,
                 JobId = job.Id,
-                UserId = userId,
                 SenderId = userId, // Use current user as sender
                 Recipients = new List<string> { userId }
             };

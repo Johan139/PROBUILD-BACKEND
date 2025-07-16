@@ -1191,23 +1191,23 @@ namespace ProbuildBackend.Controllers
 
             if (assignments.Any())
             {
-                var notifications = new List<NotificationModel>();
-                foreach (var assignment in assignments)
+                var recipientIds = assignments.Select(a => a.UserId).ToList();
+
+                if (recipientIds.Any())
                 {
                     var notification = new NotificationModel
                     {
                         Message = $"Task '{subtask.Task}' in job '{job.ProjectName}' has been updated.",
                         JobId = job.Id,
-                        UserId = assignment.UserId,
+                        UserId = null, // Set to null as Recipients is the source of truth
                         SenderId = request.SenderId,
                         Timestamp = DateTime.UtcNow,
-                        Recipients = new List<string> { assignment.UserId }
+                        Recipients = recipientIds
                     };
-                    notifications.Add(notification);
-                }
 
-                _context.Notifications.AddRange(notifications);
-                await _context.SaveChangesAsync();
+                    _context.Notifications.Add(notification);
+                    await _context.SaveChangesAsync();
+                }
             }
 
             return Ok();
