@@ -41,7 +41,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<NotificationView>().ToView("vw_Notifications");
+        modelBuilder.Entity<NotificationView>().HasNoKey().ToView("vw_Notifications");
 
         modelBuilder.Entity<ProjectModel>()
             .HasOne(p => p.Foreman)
@@ -115,8 +115,8 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
 
         modelBuilder.Entity<NotificationModel>()
             .HasOne(n => n.Job)
-            .WithMany(j => j.Notifications)  
-            .HasForeignKey(n => n.JobId);  
+            .WithMany(j => j.Notifications)
+            .HasForeignKey(n => n.JobId);
 
         // Keep the existing UserId relationship
         modelBuilder.Entity<NotificationModel>()

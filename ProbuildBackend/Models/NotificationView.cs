@@ -7,7 +7,6 @@ namespace ProbuildBackend.Models
     [Table("vw_Notifications")]
     public class NotificationView
     {
-        [Key]
         public int Id { get; set; }
         public string Message { get; set; }
         public DateTime Timestamp { get; set; }

@@ -31,16 +31,19 @@ namespace ProbuildBackend.Controllers
             _context.Notifications.Add(notification);
             await _context.SaveChangesAsync();
 
-            // Broadcast message to recipients via WebSocket
-            await _hubContext.Clients.All.SendAsync("ReceiveNotification", notification);
+            // Send notification to each recipient
+            foreach (var recipientId in notification.Recipients)
+            {
+                await _hubContext.Clients.User(recipientId).SendAsync("ReceiveNotification", notification);
+            }
 
-            return Ok(new { message = "Notification sent and broadcasted" });
+            return Ok(new { message = "Notification sent successfully" });
         }
 
         [HttpGet("recent")]
         public async Task<ActionResult<IEnumerable<NotificationDto>>> GetRecentNotifications()
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var userId = User.FindFirstValue("UserId");
             var notifications = await _context.NotificationViews
                 .Where(n => n.RecipientId == userId)
                 .OrderByDescending(n => n.Timestamp)
@@ -62,7 +65,7 @@ namespace ProbuildBackend.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<NotificationDto>>> GetNotifications()
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var userId = User.FindFirstValue("UserId");
             var notifications = await _context.NotificationViews
                 .Where(n => n.RecipientId == userId)
                 .OrderByDescending(n => n.Timestamp)
@@ -92,21 +95,20 @@ namespace ProbuildBackend.Controllers
             {
                 Console.WriteLine("No Authorization header found!");
             }
-            
+
             var userId = User.FindFirstValue("UserId");
-            
+
             if (string.IsNullOrEmpty(userId))
             {
                 return Unauthorized(new { error = "User ID not found in token" });
             }
-            
+
             // Check if Job exists
             var jobExists = await _context.Jobs.AnyAsync(j => j.Id == 356);
-            
             // Use first available job if 356 doesn't exist
-            var job = await _context.Jobs.FirstOrDefaultAsync(j => j.Id == 356) ?? 
+            var job = await _context.Jobs.FirstOrDefaultAsync(j => j.Id == 356) ??
                     await _context.Jobs.FirstOrDefaultAsync();
-            
+
             if (job == null)
             {
                 return BadRequest(new { error = "No jobs available" });
@@ -121,15 +123,19 @@ namespace ProbuildBackend.Controllers
                 SenderId = userId, // Use current user as sender
                 Recipients = new List<string> { userId }
             };
-            
+
             try
             {
                 _context.Notifications.Add(testNotification);
                 await _context.SaveChangesAsync();
-                
-                await _hubContext.Clients.All.SendAsync("ReceiveNotification", testNotification);
-                
-                return Ok(new { 
+
+                // Send notification to each recipient
+                foreach (var recipientId in testNotification.Recipients)
+                {
+                    await _hubContext.Clients.User(recipientId).SendAsync("ReceiveNotification", testNotification);
+                }
+
+                return Ok(new {
                     message = "Test notification created successfully.",
                     jobId = job.Id,
                     userId = userId
