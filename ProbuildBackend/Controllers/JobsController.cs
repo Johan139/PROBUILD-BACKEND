@@ -1164,6 +1164,60 @@ namespace ProbuildBackend.Controllers
                 throw;
             }
         }
+
+        [HttpPost("NotifyTimelineUpdate")]
+        public async Task<IActionResult> NotifyTimelineUpdate([FromBody] TimelineUpdateRequest request)
+        {
+            if (request == null)
+            {
+                return BadRequest("Invalid request.");
+            }
+
+            var job = await _context.Jobs.FindAsync(request.JobId);
+            if (job == null)
+            {
+                return NotFound($"Job with ID {request.JobId} not found.");
+            }
+
+            var subtask = await _context.JobSubtasks.FindAsync(request.SubtaskId);
+            if (subtask == null)
+            {
+                return NotFound($"Subtask with ID {request.SubtaskId} not found.");
+            }
+
+            var assignments = await _context.JobAssignments
+                .Where(a => a.JobId == request.JobId)
+                .ToListAsync();
+
+            if (assignments.Any())
+            {
+                var notifications = new List<NotificationModel>();
+                foreach (var assignment in assignments)
+                {
+                    var notification = new NotificationModel
+                    {
+                        Message = $"Task '{subtask.Task}' in job '{job.ProjectName}' has been updated.",
+                        JobId = job.Id,
+                        UserId = assignment.UserId,
+                        SenderId = "system", // Or the ID of the user who triggered the update
+                        Timestamp = DateTime.UtcNow,
+                        Recipients = new List<string> { assignment.UserId }
+                    };
+                    notifications.Add(notification);
+                }
+
+                _context.Notifications.AddRange(notifications);
+                await _context.SaveChangesAsync();
+            }
+
+            return Ok();
+        }
+    }
+
+    public class TimelineUpdateRequest
+    {
+        public int JobId { get; set; }
+        public int SubtaskId { get; set; }
     }
 
     public class DeleteTemporaryFilesRequest

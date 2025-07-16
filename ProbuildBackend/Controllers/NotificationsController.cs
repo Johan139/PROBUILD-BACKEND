@@ -55,7 +55,7 @@ namespace ProbuildBackend.Controllers
                     Timestamp = n.Timestamp,
                     JobId = n.JobId,
                     ProjectName = n.ProjectName,
-                    SenderFullName = $"{n.SenderFirstName} {n.SenderLastName}"
+                    SenderFullName = n.SenderId == "system" ? "System" : $"{n.SenderFirstName} {n.SenderLastName}"
                 })
                 .ToListAsync();
 
@@ -76,7 +76,7 @@ namespace ProbuildBackend.Controllers
                     Timestamp = n.Timestamp,
                     JobId = n.JobId,
                     ProjectName = n.ProjectName,
-                    SenderFullName = $"{n.SenderFirstName} {n.SenderLastName}"
+                    SenderFullName = n.SenderId == "system" ? "System" : $"{n.SenderFirstName} {n.SenderLastName}"
                 })
                 .ToListAsync();
 
@@ -105,6 +105,7 @@ namespace ProbuildBackend.Controllers
 
             // Check if Job exists
             var jobExists = await _context.Jobs.AnyAsync(j => j.Id == 356);
+
             // Use first available job if 356 doesn't exist
             var job = await _context.Jobs.FirstOrDefaultAsync(j => j.Id == 356) ??
                     await _context.Jobs.FirstOrDefaultAsync();
