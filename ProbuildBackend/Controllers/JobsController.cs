@@ -713,7 +713,7 @@ namespace ProbuildBackend.Controllers
                     Message = message,
                     Recipients = userIds,
                     Timestamp = DateTime.UtcNow,
-                    ProjectId = job.Id,
+                    JobId = job.Id,
                     SenderId = subtasks.UserId
                 };
 

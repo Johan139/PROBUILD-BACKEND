@@ -34,9 +34,8 @@ namespace ProbuildBackend.Models
         public UserModel? User { get; set; }
         public ICollection<BidModel>? Bids { get; set; }
         public string? Blueprint { get; set; }
-
         public ICollection<JobDocumentModel>? Documents { get; set; } // Add the list of associated documents
-
+        public ICollection<NotificationModel>? Notifications { get; set; }
         //public int? AddressId { get; set; }
     }
 }

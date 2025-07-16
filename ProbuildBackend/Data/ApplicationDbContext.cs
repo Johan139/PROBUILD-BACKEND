@@ -114,14 +114,21 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .HasForeignKey(b => b.UserId);
 
         modelBuilder.Entity<NotificationModel>()
-            .HasOne(n => n.Project)
-            .WithMany(p => p.Notifications)
-            .HasForeignKey(n => n.ProjectId);
+            .HasOne(n => n.Job)
+            .WithMany(j => j.Notifications)  
+            .HasForeignKey(n => n.JobId);  
 
+        // Keep the existing UserId relationship
         modelBuilder.Entity<NotificationModel>()
             .HasOne(n => n.User)
             .WithMany(u => u.Notifications)
             .HasForeignKey(n => n.UserId);
+
+        modelBuilder.Entity<NotificationModel>()
+            .HasOne(n => n.Sender)
+            .WithMany()  // No collection needed on the User side for sent notifications
+            .HasForeignKey(n => n.SenderId)
+            .OnDelete(DeleteBehavior.Restrict);  // Prevent cascade delete conflicts
 
         modelBuilder.Entity<JobModel>()
                     .HasMany(j => j.Documents)

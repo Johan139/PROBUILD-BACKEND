@@ -14,9 +14,9 @@ namespace ProbuildBackend.Models
         public string Message { get; set; }
         public DateTime Timestamp { get; set; } = DateTime.UtcNow;
 
-        [ForeignKey("ProjectId")]
-        public int ProjectId { get; set; }
-        public ProjectModel? Project { get; set; }
+        [ForeignKey("JobId")]
+        public int JobId { get; set; }
+        public JobModel? Job { get; set; }
 
         [ForeignKey("UserId")]
         public string UserId { get; set; } // The user receiving the notification

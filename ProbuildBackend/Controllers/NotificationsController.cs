@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Middleware;
@@ -49,7 +50,7 @@ namespace ProbuildBackend.Controllers
                     Id = n.Id,
                     Message = n.Message,
                     Timestamp = n.Timestamp,
-                    ProjectId = n.ProjectId,
+                    JobId = n.JobId,
                     ProjectName = n.ProjectName,
                     SenderFullName = $"{n.SenderFirstName} {n.SenderLastName}"
                 })
@@ -70,7 +71,7 @@ namespace ProbuildBackend.Controllers
                     Id = n.Id,
                     Message = n.Message,
                     Timestamp = n.Timestamp,
-                    ProjectId = n.ProjectId,
+                    JobId = n.JobId,
                     ProjectName = n.ProjectName,
                     SenderFullName = $"{n.SenderFirstName} {n.SenderLastName}"
                 })
@@ -80,29 +81,64 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("test")]
+        [Authorize]
         public async Task<IActionResult> SendTestNotification()
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (Request.Headers.ContainsKey("Authorization"))
+            {
+                var authHeader = Request.Headers["Authorization"].FirstOrDefault();
+            }
+            else
+            {
+                Console.WriteLine("No Authorization header found!");
+            }
+            
+            var userId = User.FindFirstValue("UserId");
+            
             if (string.IsNullOrEmpty(userId))
             {
-                return Unauthorized();
+                return Unauthorized(new { error = "User ID not found in token" });
+            }
+            
+            // Check if Job exists
+            var jobExists = await _context.Jobs.AnyAsync(j => j.Id == 356);
+            
+            // Use first available job if 356 doesn't exist
+            var job = await _context.Jobs.FirstOrDefaultAsync(j => j.Id == 356) ?? 
+                    await _context.Jobs.FirstOrDefaultAsync();
+            
+            if (job == null)
+            {
+                return BadRequest(new { error = "No jobs available" });
             }
 
             var testNotification = new NotificationModel
             {
                 Message = "This is a test notification.",
                 Timestamp = DateTime.UtcNow,
-                ProjectId = 356, // DDTHernandez - multi test 3
-                UserId = userId, // Recipient: Daniel Davies
-                SenderId = "483284e7-a356-43c6-b399-c3af452e879b", // Sender: sdafewf asdfaewf
+                JobId = job.Id,
+                UserId = userId,
+                SenderId = userId, // Use current user as sender
                 Recipients = new List<string> { userId }
             };
-
-            _context.Notifications.Add(testNotification);
-            await _context.SaveChangesAsync();
-
-            await _hubContext.Clients.All.SendAsync("ReceiveNotification", testNotification);
-            return Ok(new { message = "Test notification created successfully." });
+            
+            try
+            {
+                _context.Notifications.Add(testNotification);
+                await _context.SaveChangesAsync();
+                
+                await _hubContext.Clients.All.SendAsync("ReceiveNotification", testNotification);
+                
+                return Ok(new { 
+                    message = "Test notification created successfully.",
+                    jobId = job.Id,
+                    userId = userId
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to save notification", details = ex.Message });
+            }
         }
     }
 }

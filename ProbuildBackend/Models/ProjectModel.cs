@@ -91,6 +91,6 @@ namespace ProbuildBackend.Models
         public string? Status { get; set; }
 
         public ICollection<BidModel>? Bids { get; set; }
-        public ICollection<NotificationModel>? Notifications { get; set; }
+        // public ICollection<NotificationModel>? Notifications { get; set; }
     }
 }
