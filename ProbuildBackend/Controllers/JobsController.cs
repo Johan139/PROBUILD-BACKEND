@@ -1166,7 +1166,7 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("NotifyTimelineUpdate")]
-        public async Task<IActionResult> NotifyTimelineUpdate([FromBody] TimelineUpdateRequest request)
+        public async Task<IActionResult> NotifyTimelineUpdate([FromBody] NotifyTimelineUpdateRequest request)
         {
             if (request == null)
             {
@@ -1199,7 +1199,7 @@ namespace ProbuildBackend.Controllers
                         Message = $"Task '{subtask.Task}' in job '{job.ProjectName}' has been updated.",
                         JobId = job.Id,
                         UserId = assignment.UserId,
-                        SenderId = "system", // Or the ID of the user who triggered the update
+                        SenderId = request.SenderId,
                         Timestamp = DateTime.UtcNow,
                         Recipients = new List<string> { assignment.UserId }
                     };
@@ -1212,12 +1212,6 @@ namespace ProbuildBackend.Controllers
 
             return Ok();
         }
-    }
-
-    public class TimelineUpdateRequest
-    {
-        public int JobId { get; set; }
-        public int SubtaskId { get; set; }
     }
 
     public class DeleteTemporaryFilesRequest
