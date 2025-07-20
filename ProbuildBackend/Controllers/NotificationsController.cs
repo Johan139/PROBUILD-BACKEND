@@ -63,12 +63,24 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<NotificationDto>>> GetNotifications()
+        public async Task<ActionResult<PaginatedNotificationResponse>> GetNotifications([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
         {
             var userId = User.FindFirstValue("UserId");
-            var notifications = await _context.NotificationViews
-                .Where(n => n.RecipientId == userId)
+
+            // validation for page and pageSize
+            if (page <= 0) page = 1;
+            if (pageSize <= 0) pageSize = 10;
+            // cap the max page size to prevent abuse
+            if (pageSize > 100) pageSize = 100;
+
+            var query = _context.NotificationViews.Where(n => n.RecipientId == userId);
+
+            var totalCount = await query.CountAsync();
+
+            var notifications = await query
                 .OrderByDescending(n => n.Timestamp)
+                .Skip((page - 1) * pageSize) // Skips the notifications from previous pages
+                .Take(pageSize)             // Takes the number of notifications for the current page
                 .Select(n => new NotificationDto
                 {
                     Id = n.Id,
@@ -80,7 +92,13 @@ namespace ProbuildBackend.Controllers
                 })
                 .ToListAsync();
 
-            return Ok(notifications);
+            var response = new PaginatedNotificationResponse
+            {
+                Notifications = notifications,
+                TotalCount = totalCount
+            };
+
+            return Ok(response);
         }
 
         [HttpPost("test")]
