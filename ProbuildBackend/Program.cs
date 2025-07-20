@@ -16,7 +16,9 @@ using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Options;
 using ProbuildBackend.Services;
-using System.Net.Http.Headers;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -91,7 +93,7 @@ var azureBlobStorage = builder.Configuration.GetConnectionString("AzureBlobConne
 var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING");
 var azureBlobStorage = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY");
 #endif
-
+var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY") ?? builder.Configuration["Jwt:Key"];
 
 
 
@@ -120,6 +122,25 @@ builder.Services.Configure<DataProtectionTokenProviderOptions>(options =>
 {
     options.TokenLifespan = TimeSpan.FromHours(24);
 });
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidAudience = builder.Configuration["Jwt:Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+    };
+});
+
 
 builder.Services.AddScoped<DocumentProcessorService>();
 builder.Services.AddTransient<IEmailSender, EmailSender>();
@@ -153,6 +174,7 @@ builder.Services.AddScoped<IPdfImageConverter, PdfImageConverter>(); // Add this
 builder.Services.Configure<OcrSettings>(configuration.GetSection("OcrSettings"));
 builder.Services.AddScoped(sp => sp.GetRequiredService<IOptions<OcrSettings>>().Value);
 
+builder.Services.AddHostedService<TokenCleanupService>();
 builder.Services.AddHangfireServer();
 var app = builder.Build();
 
@@ -188,6 +210,7 @@ app.MapGet("/health", () => Results.Ok("Healthy"));
 
 // Map SignalR hub
 app.MapHub<ProgressHub>("/progressHub");
+app.MapHub<NotificationHub>("/hubs/notifications");
 
 // Log the URLs the application is listening on
 var listeningUrls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "Not set";
