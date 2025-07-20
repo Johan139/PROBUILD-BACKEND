@@ -75,7 +75,8 @@ namespace ProbuildBackend.Controllers
                     Country = model.Country,
                     State = model.State,
                     City = model.City,
-                    SubscriptionPackage = model.SubscriptionPackage
+                    SubscriptionPackage = model.SubscriptionPackage,
+                    DateCreated = DateTime.Now
                 };
 
                 var result = await _userManager.CreateAsync(user, model.Password);

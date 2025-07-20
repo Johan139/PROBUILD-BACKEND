@@ -95,6 +95,8 @@ var azureBlobStorage = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY");
 #endif
 var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY") ?? builder.Configuration["Jwt:Key"];
 
+
+
 var configuration = builder.Configuration;
 // Configure DbContext with retry policy to handle rate-limiting
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -153,7 +155,11 @@ builder.Services.AddHangfire(config => config
     .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
     .UseSimpleAssemblyNameTypeSerializer()
     .UseRecommendedSerializerSettings()
-    .UseMemoryStorage()); // Replace with UseSqlServerStorage in production
+    .UseSqlServerStorage(connectionString)); // Replace with UseSqlServerStorage in production
+builder.Services.AddHangfireServer(options =>
+{
+    options.WorkerCount = 2; // or even 1 if Gemini calls are large
+});
 builder.Services.AddScoped<IEmailService, EmailService>(); // Add this line
 builder.Services.AddScoped<IEmailSender, EmailSender>(); // Add this line
 // Register all services
@@ -291,6 +297,7 @@ try
     app.Logger.LogInformation("Attempting to initialize Azure Blob Service...");
     var blobService = app.Services.GetRequiredService<AzureBlobService>();
     app.Logger.LogInformation("Successfully initialized Azure Blob Service");
+
 
     using (var scope = app.Services.CreateScope())
     {

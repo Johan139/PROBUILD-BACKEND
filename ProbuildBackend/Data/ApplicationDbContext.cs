@@ -34,6 +34,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<DocumentProcessingResult> DocumentProcessingResults { get; set; }
     public DbSet<AddressModel> JobAddresses { get; set; }
     public DbSet<JobDocumentModel> JobDocuments { get; set; }
+    public DbSet<LogosModel> Logos { get; set; }
 
     public DbSet<Quote> Quotes { get; set; }
     public DbSet<QuoteRow> QuoteRows { get; set; }
@@ -43,7 +44,6 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
      protected override void OnModelCreating(ModelBuilder modelBuilder)
      {
         modelBuilder.Entity<NotificationView>().HasNoKey().ToView("vw_Notifications");
-
         modelBuilder.Entity<ProjectModel>()
             .HasOne(p => p.Foreman)
             .WithMany()
@@ -215,10 +215,18 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .HasForeignKey(ec => ec.QuoteId)
             .OnDelete(DeleteBehavior.Cascade);
 
+
        modelBuilder.Entity<RefreshToken>()
            .HasOne(rt => rt.UserModel)
            .WithMany()
            .HasForeignKey(rt => rt.UserId);
+
+        modelBuilder.Entity<Quote>()
+            .HasOne(q => q.Logo)
+            .WithMany()
+            .HasForeignKey(q => q.LogoId)
+            .OnDelete(DeleteBehavior.SetNull);
+
 
         base.OnModelCreating(modelBuilder);
     }

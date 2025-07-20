@@ -110,7 +110,7 @@ namespace ProbuildBackend.Controllers
                     BuildingSize = job.BuildingSize,
                     // The following fields come from the address entity
                     Address = address?.FormattedAddress,
-                    StreetNumber = address?.StreetNumber ?? "",
+                    StreetNumber = address?.StreetNumber ?? "0",
                     StreetName = address?.StreetName ?? "",
                     City = address?.City ?? "",
                     State = address?.State ?? "",
