@@ -14,10 +14,8 @@ using Microsoft.Extensions.Options;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
-using ProbuildBackend.Middleware;
 using ProbuildBackend.Options;
 using ProbuildBackend.Services;
-using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
@@ -170,6 +168,7 @@ builder.Services.AddScoped<IPdfImageConverter, PdfImageConverter>(); // Add this
 builder.Services.Configure<OcrSettings>(configuration.GetSection("OcrSettings"));
 builder.Services.AddScoped(sp => sp.GetRequiredService<IOptions<OcrSettings>>().Value);
 
+builder.Services.AddHostedService<TokenCleanupService>();
 builder.Services.AddHangfireServer();
 var app = builder.Build();
 

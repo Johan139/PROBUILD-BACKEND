@@ -38,9 +38,10 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<Quote> Quotes { get; set; }
     public DbSet<QuoteRow> QuoteRows { get; set; }
     public DbSet<QuoteExtraCost> QuoteExtraCosts { get; set; }
-
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {
+    public DbSet<RefreshToken> RefreshTokens { get; set; }
+ 
+     protected override void OnModelCreating(ModelBuilder modelBuilder)
+     {
         modelBuilder.Entity<NotificationView>().HasNoKey().ToView("vw_Notifications");
 
         modelBuilder.Entity<ProjectModel>()
@@ -213,6 +214,11 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .WithOne(ec => ec.Quote)
             .HasForeignKey(ec => ec.QuoteId)
             .OnDelete(DeleteBehavior.Cascade);
+
+       modelBuilder.Entity<RefreshToken>()
+           .HasOne(rt => rt.UserModel)
+           .WithMany()
+           .HasForeignKey(rt => rt.UserId);
 
         base.OnModelCreating(modelBuilder);
     }
