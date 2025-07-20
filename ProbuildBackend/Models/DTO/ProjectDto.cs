@@ -1,6 +1,4 @@
-﻿using ProbuildBackend.Dtos;
-
-namespace ProbuildBackend.Models.DTO
+﻿namespace ProbuildBackend.Models.DTO
 {
     public class ProjectDto
     {

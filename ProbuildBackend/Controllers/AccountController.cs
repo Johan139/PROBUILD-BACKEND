@@ -1,6 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Identity;
-using System.Threading.Tasks;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using Microsoft.AspNetCore.Identity.UI.Services;
@@ -9,12 +8,8 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
-using Elastic.Apm.Api;
-using System.Web;
-using Microsoft.AspNetCore.DataProtection.KeyManagement;
-using System.Net;
-using Google.Apis.Auth.OAuth2.Requests;
 using Microsoft.AspNetCore.DataProtection;
+using System.Security.Cryptography;
 
 namespace ProbuildBackend.Controllers
 {
@@ -203,12 +198,35 @@ namespace ProbuildBackend.Controllers
             try
             {
 
-     
+
             var user = await _userManager.FindByEmailAsync(model.Email);
             if (user != null && await _userManager.CheckPasswordAsync(user, model.Password) && user.EmailConfirmed == true)// add email comfirmation check
             {
                 var token = GenerateJwtToken(user);
-                return Ok(new { token, user.Id, user.FirstName, user.LastName, user.UserType });
+
+                var refreshToken = GenerateRefreshToken();
+
+                var refreshTokenEntity = new RefreshToken
+                {
+                    UserId = user.Id,
+                    Token = refreshToken,
+                    Expires = DateTime.UtcNow.AddDays(7),
+                    Created = DateTime.UtcNow
+                };
+
+                _context.RefreshTokens.Add(refreshTokenEntity);
+                await _context.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    token,
+                    refreshToken,
+                    userId = user.Id,
+                    firstName = user.FirstName,
+                    lastName = user.LastName,
+                    userType = user.UserType
+                });
+
             }
                 if (user != null && !user.EmailConfirmed)
                 {
@@ -222,13 +240,62 @@ namespace ProbuildBackend.Controllers
                 throw;
             }
         }
+
+        public record RefreshTokenRequest(string RefreshToken);
+
+        [HttpPost("refresh-token")]
+        public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
+        {
+            var refreshToken = request.RefreshToken;
+
+            var storedToken = await _context.RefreshTokens
+                .Include(rt => rt.UserModel)
+                .FirstOrDefaultAsync(rt => rt.Token == refreshToken);
+
+            if (storedToken == null || storedToken.Revoked != null || storedToken.Expires < DateTime.UtcNow)
+            {
+                return Unauthorized("Invalid refresh token.");
+            }
+
+            var user = storedToken.UserModel;
+            if (user == null)
+            {
+                return Unauthorized("User not found for the given token.");
+            }
+
+            // Revoke the old refresh token
+            storedToken.Revoked = DateTime.UtcNow;
+
+            // Generate a new access token
+            var newAccessToken = GenerateJwtToken(user);
+
+            // Generate a new refresh token
+            var newRefreshToken = GenerateRefreshToken();
+            var newRefreshTokenEntity = new RefreshToken
+            {
+                UserId = user.Id,
+                Token = newRefreshToken,
+                Expires = DateTime.UtcNow.AddDays(7),
+                Created = DateTime.UtcNow
+            };
+
+            _context.RefreshTokens.Add(newRefreshTokenEntity);
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                token = newAccessToken,
+                refreshToken = newRefreshToken
+            });
+        }
+
         [HttpPost("trailversion")]
         public async Task<IActionResult> TrailVersionSubscription([FromBody] TrialRequestDTO dto)
         {
             try
             {
 
-     
+
             var user = await _context.Users.FindAsync(dto.UserId);
             if (user == null) return NotFound("User not found.");
 
@@ -264,9 +331,15 @@ namespace ProbuildBackend.Controllers
         {
             var claims = new[]
             {
-            new Claim(JwtRegisteredClaimNames.Sub, user.Email),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+                new Claim(JwtRegisteredClaimNames.Sub, user.Email ?? ""),
+                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+                new Claim("UserId", user.Id),
+                new Claim("UserType", user.UserType ?? ""),
+                new Claim("FirstName", user.FirstName ?? ""),
+                new Claim("LastName", user.LastName ?? ""),
+                new Claim("CompanyName", user.CompanyName ?? ""),
             };
+
             var JWTKEY = Environment.GetEnvironmentVariable("JWT_KEY") ?? _configuration["Jwt:Key"];
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(JWTKEY));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -401,6 +474,15 @@ namespace ProbuildBackend.Controllers
             return Ok();
         }
 
+        private string GenerateRefreshToken()
+        {
+          var randomNumber = new byte[32];
+          using (var rng = RandomNumberGenerator.Create())
+          {
+            rng.GetBytes(randomNumber);
+            return Convert.ToBase64String(randomNumber);
+          }
+        }
     }
 }
 

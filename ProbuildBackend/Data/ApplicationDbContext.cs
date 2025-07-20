@@ -17,6 +17,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<JobsTermsAgreement> JobsTermsAgreement { get; set; }
     public DbSet<BidModel> Bids { get; set; }
     public DbSet<NotificationModel> Notifications { get; set; }
+    public DbSet<NotificationView> NotificationViews { get; set; }
     public DbSet<JobAssignmentModel> JobAssignments { get; set; }
     public DbSet<SubtaskNoteDocumentModel> SubtaskNoteDocument { get; set; }
     public DbSet<ProfileDocuments> ProfileDocuments { get; set; }
@@ -38,10 +39,11 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<Quote> Quotes { get; set; }
     public DbSet<QuoteRow> QuoteRows { get; set; }
     public DbSet<QuoteExtraCost> QuoteExtraCosts { get; set; }
-
-
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {   
+    public DbSet<RefreshToken> RefreshTokens { get; set; }
+ 
+     protected override void OnModelCreating(ModelBuilder modelBuilder)
+     {
+        modelBuilder.Entity<NotificationView>().HasNoKey().ToView("vw_Notifications");
         modelBuilder.Entity<ProjectModel>()
             .HasOne(p => p.Foreman)
             .WithMany()
@@ -113,14 +115,21 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .HasForeignKey(b => b.UserId);
 
         modelBuilder.Entity<NotificationModel>()
-            .HasOne(n => n.Project)
-            .WithMany(p => p.Notifications)
-            .HasForeignKey(n => n.ProjectId);
+            .HasOne(n => n.Job)
+            .WithMany(j => j.Notifications)
+            .HasForeignKey(n => n.JobId);
 
+        // Keep the existing UserId relationship
         modelBuilder.Entity<NotificationModel>()
             .HasOne(n => n.User)
             .WithMany(u => u.Notifications)
             .HasForeignKey(n => n.UserId);
+
+        modelBuilder.Entity<NotificationModel>()
+            .HasOne(n => n.Sender)
+            .WithMany()  // No collection needed on the User side for sent notifications
+            .HasForeignKey(n => n.SenderId)
+            .OnDelete(DeleteBehavior.Restrict);  // Prevent cascade delete conflicts
 
         modelBuilder.Entity<JobModel>()
                     .HasMany(j => j.Documents)
@@ -206,11 +215,18 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .HasForeignKey(ec => ec.QuoteId)
             .OnDelete(DeleteBehavior.Cascade);
 
+
+       modelBuilder.Entity<RefreshToken>()
+           .HasOne(rt => rt.UserModel)
+           .WithMany()
+           .HasForeignKey(rt => rt.UserId);
+
         modelBuilder.Entity<Quote>()
             .HasOne(q => q.Logo)
             .WithMany()
             .HasForeignKey(q => q.LogoId)
             .OnDelete(DeleteBehavior.SetNull);
+
 
         base.OnModelCreating(modelBuilder);
     }
