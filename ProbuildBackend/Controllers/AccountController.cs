@@ -199,35 +199,33 @@ namespace ProbuildBackend.Controllers
             {
 
 
-            var user = await _userManager.FindByEmailAsync(model.Email);
-            if (user != null && await _userManager.CheckPasswordAsync(user, model.Password) && user.EmailConfirmed == true)// add email comfirmation check
-            {
-                var token = GenerateJwtToken(user);
-
-                var refreshToken = GenerateRefreshToken();
-
-                var refreshTokenEntity = new RefreshToken
+                var user = await _userManager.FindByEmailAsync(model.Email);
+                if (user != null && await _userManager.CheckPasswordAsync(user, model.Password) && user.EmailConfirmed == true)// add email comfirmation check
                 {
-                    UserId = user.Id,
-                    Token = refreshToken,
-                    Expires = DateTime.UtcNow.AddDays(7),
-                    Created = DateTime.UtcNow
-                };
+                    var token = GenerateJwtToken(user);
+                    var refreshToken = GenerateRefreshToken();
 
-                _context.RefreshTokens.Add(refreshTokenEntity);
-                await _context.SaveChangesAsync();
+                    var refreshTokenEntity = new RefreshToken
+                    {
+                        UserId = user.Id,
+                        Token = refreshToken,
+                        Expires = DateTime.UtcNow.AddDays(7),
+                        Created = DateTime.UtcNow
+                    };
 
-                return Ok(new
-                {
-                    token,
-                    refreshToken,
-                    userId = user.Id,
-                    firstName = user.FirstName,
-                    lastName = user.LastName,
-                    userType = user.UserType
-                });
+                    _context.RefreshTokens.Add(refreshTokenEntity);
+                    await _context.SaveChangesAsync();
 
-            }
+                    return Ok(new
+                    {
+                        token,
+                        refreshToken,
+                        userId = user.Id,
+                        firstName = user.FirstName,
+                        lastName = user.LastName,
+                        userType = user.UserType
+                    });
+                }
                 if (user != null && !user.EmailConfirmed)
                 {
                     return Unauthorized(new { error = "Email address has not been confirmed." });
@@ -296,30 +294,30 @@ namespace ProbuildBackend.Controllers
             {
 
 
-            var user = await _context.Users.FindAsync(dto.UserId);
-            if (user == null) return NotFound("User not found.");
+                var user = await _context.Users.FindAsync(dto.UserId);
+                if (user == null) return NotFound("User not found.");
 
-            var existingTrial = await _context.PaymentRecords
-                .AnyAsync(p => p.UserId == dto.UserId && p.IsTrial);
+                var existingTrial = await _context.PaymentRecords
+                    .AnyAsync(p => p.UserId == dto.UserId && p.IsTrial);
 
-            if (existingTrial)
-                return BadRequest("Trial already used.");
+                if (existingTrial)
+                    return BadRequest("Trial already used.");
 
-            var trial = new PaymentRecord
-            {
-                UserId = dto.UserId,
-                Package = "Trial",
-                StripeSessionId = "TRIAL-NO-SESSION",
-                Status = "Success",
-                PaidAt = DateTime.UtcNow,
-                ValidUntil = DateTime.UtcNow.AddDays(3),
-                Amount = 0,
-                IsTrial = true
-            };
+                var trial = new PaymentRecord
+                {
+                    UserId = dto.UserId,
+                    Package = "Trial",
+                    StripeSessionId = "TRIAL-NO-SESSION",
+                    Status = "Success",
+                    PaidAt = DateTime.UtcNow,
+                    ValidUntil = DateTime.UtcNow.AddDays(3),
+                    Amount = 0,
+                    IsTrial = true
+                };
 
-            _context.PaymentRecords.Add(trial);
-            await _context.SaveChangesAsync();
-            return Ok();
+                _context.PaymentRecords.Add(trial);
+                await _context.SaveChangesAsync();
+                return Ok();
             }
             catch (Exception)
             {
@@ -476,13 +474,134 @@ namespace ProbuildBackend.Controllers
 
         private string GenerateRefreshToken()
         {
-          var randomNumber = new byte[32];
-          using (var rng = RandomNumberGenerator.Create())
-          {
-            rng.GetBytes(randomNumber);
-            return Convert.ToBase64String(randomNumber);
-          }
+            var randomNumber = new byte[32];
+            using (var rng = RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(randomNumber);
+                return Convert.ToBase64String(randomNumber);
+            }
         }
+
+        [HttpGet("invitation/{token}")]
+        public async Task<IActionResult> GetInvitation(string token)
+        {
+            var protector = _dataProtectionProvider.CreateProtector("TeamMemberInvitation");
+            string unprotectedToken;
+            try
+            {
+                unprotectedToken = protector.Unprotect(token);
+            }
+            catch (Exception)
+            {
+                return BadRequest("Invalid invitation token.");
+            }
+
+            var teamMember = await _context.TeamMembers
+                .FirstOrDefaultAsync(tm => tm.InvitationToken == token && tm.TokenExpiration > DateTime.UtcNow);
+
+            if (teamMember == null)
+            {
+                return BadRequest("Invalid or expired invitation token.");
+            }
+
+            return Ok(new { teamMember.FirstName, teamMember.LastName, teamMember.Email, teamMember.Role });
+        }
+
+        [HttpPost("register/invited")]
+        public async Task<IActionResult> RegisterInvited([FromBody] InvitedRegistrationDto dto)
+        {
+            var protector = _dataProtectionProvider.CreateProtector("TeamMemberInvitation");
+            string unprotectedToken;
+            try
+            {
+                unprotectedToken = protector.Unprotect(dto.Token);
+            }
+            catch (Exception)
+            {
+                return BadRequest("Invalid invitation token.");
+            }
+
+            var teamMember = await _context.TeamMembers
+                .FirstOrDefaultAsync(tm => tm.InvitationToken == dto.Token && tm.TokenExpiration > DateTime.UtcNow);
+
+            if (teamMember == null)
+            {
+                return BadRequest("Invalid or expired invitation token.");
+            }
+
+            var hasher = new PasswordHasher<TeamMember>();
+            teamMember.PasswordHash = hasher.HashPassword(teamMember, dto.Password);
+            teamMember.PhoneNumber = dto.PhoneNumber;
+            teamMember.Status = "Registered";
+            teamMember.InvitationToken = null;
+            teamMember.TokenExpiration = null;
+
+            // Update all other pending invitations for this email address
+            var otherInvitations = await _context.TeamMembers
+                .Where(tm => tm.Email == teamMember.Email && tm.Status == "Invited")
+                .ToListAsync();
+
+            foreach (var invitation in otherInvitations)
+            {
+                invitation.PasswordHash = teamMember.PasswordHash;
+                invitation.Status = "Registered";
+                invitation.InvitationToken = null;
+                invitation.TokenExpiration = null;
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Registration successful." });
+        }
+
+        [HttpPost("login/member")]
+       public async Task<IActionResult> LoginMember([FromBody] LoginDto model)
+       {
+           var teamMembers = await _context.TeamMembers
+               .Where(tm => tm.Email == model.Email && tm.Status == "Registered")
+               .ToListAsync();
+
+           if (!teamMembers.Any())
+           {
+               return Unauthorized();
+           }
+
+           var firstMember = teamMembers.First();
+           var hasher = new PasswordHasher<TeamMember>();
+           var result = hasher.VerifyHashedPassword(firstMember, firstMember.PasswordHash, model.Password);
+
+           if (result == PasswordVerificationResult.Failed)
+           {
+               return Unauthorized();
+           }
+
+           var claims = new List<Claim>
+           {
+               new Claim(ClaimTypes.Email, firstMember.Email),
+               new Claim("isTeamMember", "true"),
+           };
+
+           foreach (var member in teamMembers)
+           {
+               claims.Add(new Claim("team", $"{member.Id}:{member.InviterId}"));
+           }
+
+           var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
+           var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+           var token = new JwtSecurityToken(
+               issuer: _configuration["Jwt:Issuer"],
+               audience: _configuration["Jwt:Audience"],
+               claims: claims,
+               expires: DateTime.Now.AddMinutes(30),
+               signingCredentials: creds
+           );
+
+           return Ok(new
+           {
+               token = new JwtSecurityTokenHandler().WriteToken(token)
+           });
+       }
     }
 }
 

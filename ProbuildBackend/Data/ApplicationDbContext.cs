@@ -21,7 +21,6 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<JobAssignmentModel> JobAssignments { get; set; }
     public DbSet<SubtaskNoteDocumentModel> SubtaskNoteDocument { get; set; }
     public DbSet<ProfileDocuments> ProfileDocuments { get; set; }
-
     public DbSet<DocumentProcessingLogModel> DocumentProcessingLog { get; set; }
     public DbSet<UserAddressModel> UserAddress { get; set; }
     public DbSet<PaymentRecord> PaymentRecords { get; set; }
@@ -29,21 +28,21 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<SubtaskNoteModel> SubtaskNote { get; set; }
     public DbSet<SubtaskNoteUserModel> SubtaskNoteUser { get; set; }
     public DbSet<StripeModel> Subscriptions { get; set; }
-
     public DbSet<JobSubtasksModel> JobSubtasks { get; set; }
     public DbSet<DocumentProcessingResult> DocumentProcessingResults { get; set; }
     public DbSet<AddressModel> JobAddresses { get; set; }
     public DbSet<JobDocumentModel> JobDocuments { get; set; }
     public DbSet<LogosModel> Logos { get; set; }
-
     public DbSet<Quote> Quotes { get; set; }
     public DbSet<QuoteRow> QuoteRows { get; set; }
     public DbSet<QuoteExtraCost> QuoteExtraCosts { get; set; }
     public DbSet<RefreshToken> RefreshTokens { get; set; }
- 
+    public DbSet<TeamMember> TeamMembers { get; set; }
+
      protected override void OnModelCreating(ModelBuilder modelBuilder)
      {
         modelBuilder.Entity<NotificationView>().HasNoKey().ToView("vw_Notifications");
+
         modelBuilder.Entity<ProjectModel>()
             .HasOne(p => p.Foreman)
             .WithMany()
@@ -215,19 +214,21 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .HasForeignKey(ec => ec.QuoteId)
             .OnDelete(DeleteBehavior.Cascade);
 
-
        modelBuilder.Entity<RefreshToken>()
            .HasOne(rt => rt.UserModel)
            .WithMany()
            .HasForeignKey(rt => rt.UserId);
 
-        modelBuilder.Entity<Quote>()
-            .HasOne(q => q.Logo)
-            .WithMany()
-            .HasForeignKey(q => q.LogoId)
-            .OnDelete(DeleteBehavior.SetNull);
+         modelBuilder.Entity<Quote>()
+           .HasOne(q => q.Logo)
+           .WithMany()
+           .HasForeignKey(q => q.LogoId)
+           .OnDelete(DeleteBehavior.SetNull);
 
+        modelBuilder.Entity<TeamMember>()
+            .HasIndex(t => new { t.InviterId, t.Email })
+            .IsUnique();
 
         base.OnModelCreating(modelBuilder);
-    }
+     }
 }
