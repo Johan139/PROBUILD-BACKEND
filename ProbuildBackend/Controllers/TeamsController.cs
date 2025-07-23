@@ -113,6 +113,16 @@ namespace ProbuildBackend.Controllers
 
             return Ok(teamMembers);
         }
+        
+        [HttpGet("members/user/{userId}")]
+        public async Task<IActionResult> GetTeamMembersByUser(string userId)
+        {
+            var teamMembers = await _context.TeamMembers
+                .Where(tm => tm.InviterId == userId)
+                .ToListAsync();
+
+            return Ok(teamMembers);
+        }
 
         [HttpGet("members/{id}")]
         public async Task<IActionResult> GetTeamMember(string id)
