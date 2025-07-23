@@ -34,7 +34,7 @@ namespace ProbuildBackend.Services
             {
                 context.RefreshTokens.RemoveRange(tokensToRemove);
                 await context.SaveChangesAsync(stoppingToken);
-                _logger.LogInformation($"Cleaned up {tokensToRemove.Count} refresh tokens.");
+                _logger.LogInformation($"Cleaned up {tokensToRemove.Count} refresh token(s).");
             }
             else
             {

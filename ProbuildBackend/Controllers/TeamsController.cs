@@ -4,12 +4,11 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
-using System.Linq;
 using System.Security.Claims;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.DataProtection;
-using System;
+using Microsoft.AspNetCore.SignalR;
+using ProbuildBackend.Middleware;
 
 namespace ProbuildBackend.Controllers
 {
@@ -22,80 +21,106 @@ namespace ProbuildBackend.Controllers
         private readonly UserManager<UserModel> _userManager;
         private readonly IEmailSender _emailSender;
         private readonly IDataProtectionProvider _dataProtectionProvider;
+        private readonly IHubContext<NotificationHub> _hubContext;
 
-        public TeamsController(ApplicationDbContext context, UserManager<UserModel> userManager, IEmailSender emailSender, IDataProtectionProvider dataProtectionProvider)
+        public TeamsController(
+            ApplicationDbContext context,
+            UserManager<UserModel> userManager,
+            IEmailSender emailSender,
+            IDataProtectionProvider dataProtectionProvider,
+            IHubContext<NotificationHub> hubContext)
         {
             _context = context;
             _userManager = userManager;
             _emailSender = emailSender;
             _dataProtectionProvider = dataProtectionProvider;
+            _hubContext = hubContext;
         }
 
         [HttpPost("members")]
         public async Task<IActionResult> InviteMember([FromBody] InviteTeamMemberDto dto)
         {
-            var inviterId = User.FindFirstValue("UserId"); // Corrected claim type
+            var inviterId = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (inviterId == null)
             {
                 return Unauthorized();
             }
 
-            // Check if a full user exists with this email
-            var existingUser = await _userManager.FindByEmailAsync(dto.Email);
-            if (existingUser != null && existingUser.UserType != dto.Role)
+            var inviter = await _userManager.FindByIdAsync(inviterId);
+            if (inviter == null)
             {
-                return Conflict(new { message = "A user with this email already exists with a different role.", existingRole = existingUser.UserType });
+                return Unauthorized(new { message = "Inviter not found." });
             }
 
-            // Check if this inviter has already invited this email
-            var existingInvitation = await _context.TeamMembers
-                .FirstOrDefaultAsync(tm => tm.InviterId == inviterId && tm.Email == dto.Email);
+            var existingTeamMember = await _context.TeamMembers.FirstOrDefaultAsync(tm => tm.Email == dto.Email && tm.InviterId == inviterId);
+            var inviterFullName = $"{inviter.FirstName} {inviter.LastName}";
+            TeamMember teamMemberToInvite;
+            string emailSubject;
+            bool isReInvite = false;
 
-            if (existingInvitation != null)
+            if (existingTeamMember != null)
             {
-                return Conflict(new { message = "You have already invited a team member with this email address." });
-            }
-
-            // Check if the team member has already registered under a different inviter
-            var registeredMember = await _context.TeamMembers
-                .FirstOrDefaultAsync(tm => tm.Email == dto.Email && tm.Status == "Registered");
-
-            var newTeamMember = new TeamMember
-            {
-                Id = Guid.NewGuid().ToString(),
-                InviterId = inviterId,
-                FirstName = dto.FirstName,
-                LastName = dto.LastName,
-                Email = dto.Email,
-                Role = dto.Role,
-            };
-
-            if (registeredMember != null)
-            {
-                // The user is already registered, so just add them to the new team
-                newTeamMember.PasswordHash = registeredMember.PasswordHash;
-                newTeamMember.Status = "Registered";
-                // TODO: Send a notification to the user that they've been added to a new team
+                if (existingTeamMember.Status == "Deleted")
+                {
+                    existingTeamMember.Status = "Invited";
+                    existingTeamMember.FirstName = dto.FirstName;
+                    existingTeamMember.LastName = dto.LastName;
+                    existingTeamMember.Role = dto.Role;
+                    teamMemberToInvite = existingTeamMember;
+                    emailSubject = "You have been re-invited to join a team on Probuild";
+                    _context.TeamMembers.Update(existingTeamMember);
+                    isReInvite = true;
+                }
+                else
+                {
+                    if (existingTeamMember.Role != dto.Role)
+                    {
+                        return Conflict(new { message = "A team member with this email already exists with a different role.", existingRole = existingTeamMember.Role });
+                    }
+                    return Conflict(new { message = "You have already invited a team member with this email address." });
+                }
             }
             else
             {
-                // New user, send an invitation email
-                var protector = _dataProtectionProvider.CreateProtector("TeamMemberInvitation");
-                var token = protector.Protect(dto.Email);
-                newTeamMember.InvitationToken = token;
-                newTeamMember.TokenExpiration = DateTime.UtcNow.AddDays(7);
-
-                var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
-                var callbackUrl = $"{frontendUrl}/register?token={Uri.EscapeDataString(token)}";
-
-                await _emailSender.SendEmailAsync(dto.Email, "You have been invited to join a team on Probuild",
-                    $"You have been invited to join a team. Please <a href='{callbackUrl}'>click here</a> to register.");
+                teamMemberToInvite = new TeamMember
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    InviterId = inviterId,
+                    FirstName = dto.FirstName,
+                    LastName = dto.LastName,
+                    Email = dto.Email,
+                    Role = dto.Role,
+                    Status = "Invited"
+                };
+                emailSubject = "You have been invited to join a team on Probuild";
+                _context.TeamMembers.Add(teamMemberToInvite);
             }
 
-            _context.TeamMembers.Add(newTeamMember);
+            var protector = _dataProtectionProvider.CreateProtector("TeamMemberInvitation");
+            var token = protector.Protect(dto.Email);
+            teamMemberToInvite.InvitationToken = token;
+            teamMemberToInvite.TokenExpiration = DateTime.UtcNow.AddDays(7);
+
+            var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
+            var callbackUrl = $"{frontendUrl}/register?token={Uri.EscapeDataString(token)}";
+            var emailMessage = $"You have been invited to join a team by {inviterFullName}. Please <a href='{callbackUrl}'>click here</a> to register.";
+
+            await _emailSender.SendEmailAsync(dto.Email, emailSubject, emailMessage);
+
+            var notification = new NotificationModel
+            {
+                SenderId = inviterId,
+                Message = $"You have been invited to a team by {inviterFullName}.",
+                Timestamp = DateTime.UtcNow,
+                Recipients = new List<string> { teamMemberToInvite.Id }
+            };
+            _context.Notifications.Add(notification);
+            
             await _context.SaveChangesAsync();
 
-            return Ok(newTeamMember);
+            await _hubContext.Clients.User(teamMemberToInvite.Id).SendAsync("ReceiveNotification", notification);
+
+            return Ok(teamMemberToInvite);
         }
 
         [HttpGet("members")]
@@ -113,7 +138,7 @@ namespace ProbuildBackend.Controllers
 
             return Ok(teamMembers);
         }
-        
+
         [HttpGet("members/user/{userId}")]
         public async Task<IActionResult> GetTeamMembersByUser(string userId)
         {
@@ -134,26 +159,65 @@ namespace ProbuildBackend.Controllers
             }
             return Ok(teamMember);
         }
-        
-        [HttpDelete("members/{id}")]
-        public async Task<IActionResult> RemoveMember(string id)
+
+        [HttpPatch("members/{id}/deactivate")]
+        public async Task<IActionResult> DeactivateMember(string id)
         {
             var inviterId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (inviterId == null)
-            {
-                return Unauthorized();
-            }
-
-            var teamMember = await _context.TeamMembers
-                .FirstOrDefaultAsync(tm => tm.Id == id && tm.InviterId == inviterId);
+            var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(m => m.Id == id && m.InviterId == inviterId);
 
             if (teamMember == null)
             {
                 return NotFound();
             }
 
-            _context.TeamMembers.Remove(teamMember);
+            teamMember.Status = "Deactivated";
             await _context.SaveChangesAsync();
+
+            await _emailSender.SendEmailAsync(teamMember.Email, "Team Member account Deactivated", "Your Team Member account has been deactivated.");
+
+            return NoContent();
+        }
+
+        [HttpPatch("members/{id}/reactivate")]
+        [Authorize]
+        public async Task<IActionResult> ReactivateTeamMember(string id)
+        {
+            // 1. Get the current user's ID
+            var inviterId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(m => m.Id == id && m.InviterId == inviterId);
+
+            if (teamMember == null)
+            {
+                return NotFound("Team member not found.");
+            }
+
+            // 4. Update the team member's status
+            teamMember.Status = "Registered";
+            _context.TeamMembers.Update(teamMember);
+            await _context.SaveChangesAsync();
+
+            // 5. Send a notification email
+            await _emailSender.SendEmailAsync(teamMember.Email, "Team Member Account Reactivated", "Your Team Member account has been reactivated.");
+
+            return Ok();
+        }
+
+        [HttpDelete("members/{id}")]
+        public async Task<IActionResult> DeleteMember(string id)
+        {
+            var inviterId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(m => m.Id == id && m.InviterId == inviterId);
+
+            if (teamMember == null)
+            {
+                return NotFound();
+            }
+
+            teamMember.Status = "Deleted";
+            await _context.SaveChangesAsync();
+
+            await _emailSender.SendEmailAsync(teamMember.Email, "Team Member account Deleted", "Your Team Member account has been deleted from the team.");
 
             return NoContent();
         }
