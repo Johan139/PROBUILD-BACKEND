@@ -214,11 +214,6 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .HasForeignKey(ec => ec.QuoteId)
             .OnDelete(DeleteBehavior.Cascade);
 
-       modelBuilder.Entity<RefreshToken>()
-           .HasOne(rt => rt.UserModel)
-           .WithMany()
-           .HasForeignKey(rt => rt.UserId);
-
          modelBuilder.Entity<Quote>()
            .HasOne(q => q.Logo)
            .WithMany()

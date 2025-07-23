@@ -197,6 +197,8 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
+
+
                 var user = await _userManager.FindByEmailAsync(model.Email);
                 if (user != null && await _userManager.CheckPasswordAsync(user, model.Password) && user.EmailConfirmed == true)// add email comfirmation check
                 {
@@ -226,10 +228,9 @@ namespace ProbuildBackend.Controllers
                 }
                 if (user != null && !user.EmailConfirmed)
                 {
-                    return StatusCode(401, new { error = "Email address has not been confirmed." });
+                    return Unauthorized(new { error = "Email address has not been confirmed." });
                 }
-                return StatusCode(401, new { error = "Invalid login credentials. Please try again." });
-
+                return Unauthorized(new { error = "Invalid login credentials. Please try again." });
             }
             catch (Exception ex)
             {
@@ -246,7 +247,6 @@ namespace ProbuildBackend.Controllers
             var refreshToken = request.RefreshToken;
 
             var storedToken = await _context.RefreshTokens
-                .Include(rt => rt.UserModel)
                 .FirstOrDefaultAsync(rt => rt.Token == refreshToken);
 
             if (storedToken == null || storedToken.Revoked != null || storedToken.Expires < DateTime.UtcNow)
@@ -254,23 +254,62 @@ namespace ProbuildBackend.Controllers
                 return Unauthorized("Invalid refresh token.");
             }
 
-            var user = storedToken.UserModel;
-            if (user == null)
-            {
-                return Unauthorized("User not found for the given token.");
-            }
-
-            // Revoke the old refresh token
+            // Revoke the old refresh token immediately
             storedToken.Revoked = DateTime.UtcNow;
 
-            // Generate a new access token
-            var newAccessToken = GenerateJwtToken(user);
+            string newAccessTokenString;
 
-            // Generate a new refresh token
+            // Case 1: Regular User
+            var user = await _context.Users.FindAsync(storedToken.UserId);
+            if (user != null)
+            {
+                newAccessTokenString = GenerateJwtToken(user);
+            }
+            else
+            {
+                var memberById = await _context.TeamMembers.FindAsync(storedToken.UserId);
+                if (memberById == null)
+                {
+                    return Unauthorized("User or team member not found for the given token.");
+                }
+
+                var teamMembers = await _context.TeamMembers
+                    .Where(tm => tm.Email == memberById.Email && tm.Status == "Registered")
+                    .ToListAsync();
+
+                if (!teamMembers.Any())
+                {
+                    return Unauthorized("Team member not found for the given token.");
+                }
+
+                var firstMember = teamMembers.First();
+                var claims = new List<Claim>
+                {
+                    new Claim(ClaimTypes.Email, firstMember.Email),
+                    new Claim("isTeamMember", "true"),
+                };
+                foreach (var member in teamMembers)
+                {
+                    claims.Add(new Claim("team", $"{member.Id}:{member.InviterId}"));
+                }
+
+                var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
+                var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+                var newAccessToken = new JwtSecurityToken(
+                    issuer: _configuration["Jwt:Issuer"],
+                    audience: _configuration["Jwt:Audience"],
+                    claims: claims,
+                    expires: DateTime.Now.AddMinutes(30),
+                    signingCredentials: creds
+                );
+                newAccessTokenString = new JwtSecurityTokenHandler().WriteToken(newAccessToken);
+            }
+
+            // Generate a new refresh token for both cases
             var newRefreshToken = GenerateRefreshToken();
             var newRefreshTokenEntity = new RefreshToken
             {
-                UserId = user.Id,
+                UserId = storedToken.UserId, // Re-use the same ID (either UserModel or TeamMember)
                 Token = newRefreshToken,
                 Expires = DateTime.UtcNow.AddDays(7),
                 Created = DateTime.UtcNow
@@ -281,7 +320,7 @@ namespace ProbuildBackend.Controllers
 
             return Ok(new
             {
-                token = newAccessToken,
+                token = newAccessTokenString,
                 refreshToken = newRefreshToken
             });
         }
@@ -596,9 +635,22 @@ namespace ProbuildBackend.Controllers
                signingCredentials: creds
            );
 
+            var refreshToken = GenerateRefreshToken();
+            var refreshTokenEntity = new RefreshToken
+            {
+                UserId = firstMember.Id, // Using TeamMember's Id
+                Token = refreshToken,
+                Expires = DateTime.UtcNow.AddDays(7),
+                Created = DateTime.UtcNow
+            };
+
+            _context.RefreshTokens.Add(refreshTokenEntity);
+            await _context.SaveChangesAsync();
+
            return Ok(new
            {
-               token = new JwtSecurityTokenHandler().WriteToken(token)
+               token = new JwtSecurityTokenHandler().WriteToken(token),
+               refreshToken = refreshToken
            });
        }
     }

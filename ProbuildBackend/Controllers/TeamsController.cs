@@ -114,6 +114,17 @@ namespace ProbuildBackend.Controllers
             return Ok(teamMembers);
         }
 
+        [HttpGet("members/{id}")]
+        public async Task<IActionResult> GetTeamMember(string id)
+        {
+            var teamMember = await _context.TeamMembers.FindAsync(id);
+            if (teamMember == null)
+            {
+                return NotFound();
+            }
+            return Ok(teamMember);
+        }
+        
         [HttpDelete("members/{id}")]
         public async Task<IActionResult> RemoveMember(string id)
         {
@@ -135,6 +146,30 @@ namespace ProbuildBackend.Controllers
             await _context.SaveChangesAsync();
 
             return NoContent();
+        }
+
+        [HttpGet("my-teams")]
+        public async Task<IActionResult> GetMyTeams()
+        {
+            var userEmail = User.FindFirstValue(ClaimTypes.Email);
+            if (userEmail == null)
+            {
+                return Unauthorized();
+            }
+
+            var teamMemberships = await _context.TeamMembers
+                .Where(tm => tm.Email == userEmail)
+                .Include(tm => tm.Inviter)
+                .ToListAsync();
+
+            var teams = teamMemberships.Select(tm => new TeamDto
+            {
+                Id = tm.Id,
+                InviterId = tm.InviterId,
+                InviterName = tm.Inviter.UserName
+            }).ToList();
+
+            return Ok(teams);
         }
     }
 }
