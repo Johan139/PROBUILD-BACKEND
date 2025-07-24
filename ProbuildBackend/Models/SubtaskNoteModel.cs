@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace ProbuildBackend.Models
+﻿namespace ProbuildBackend.Models
 {
     public class SubtaskNoteModel
     {
@@ -18,7 +16,8 @@ namespace ProbuildBackend.Models
 
         public DateTime? ModifiedAt { get; set; } // Nullable for when the note hasn't been edited
 
-        public bool? Approved { get; set; }
-        public bool? Rejected { get; set; }
+        public bool Approved { get; set; }
+        public bool Rejected { get; set; }
+        public bool Archived { get; set; }
     }
 }

@@ -879,7 +879,7 @@ namespace ProbuildBackend.Controllers
                 var notes = await (
      from note in _context.SubtaskNote
      join job in _context.Jobs on note.JobId equals job.Id
-     where assignedNotes.Contains(note.Id)
+     where assignedNotes.Contains(note.Id) && !note.Archived
      select new
      {
          note.Id,
@@ -921,6 +921,72 @@ namespace ProbuildBackend.Controllers
                 return StatusCode(500, new { error = "Failed to fetch user-assigned notes", details = ex.Message });
             }
         }
+
+        [HttpGet("notes/archived/{userId}")]
+        public async Task<ActionResult<IEnumerable<object>>> GetArchivedNotes(string userId)
+        {
+            try
+            {
+                var assignedNotes = await _context.SubtaskNoteUser
+                    .Where(link => link.UserId == userId)
+                    .Select(link => link.SubtaskNoteId)
+                    .ToListAsync();
+
+                if (!assignedNotes.Any())
+                    return Ok(new List<object>());
+
+                var notes = await(
+                    from note in _context.SubtaskNote
+                    join job in _context.Jobs on note.JobId equals job.Id
+                    where assignedNotes.Contains(note.Id) && note.Archived
+                    select new
+                    {
+                        note.Id,
+                        note.JobId,
+                        job.ProjectName,
+                        note.JobSubtaskId,
+                        note.NoteText,
+                        note.CreatedByUserId,
+                        note.CreatedAt,
+                        note.ModifiedAt,
+                        note.Approved,
+                        note.Rejected,
+                        note.Archived
+                    }
+                ).ToListAsync();
+
+                var groupedNotes = (from note in notes
+                                    join subtask in _context.JobSubtasks
+                                    on note.JobSubtaskId equals subtask.Id
+                                    group new { note, subtask } by new { note.JobId, note.JobSubtaskId } into g
+                                    select new
+                                    {
+                                        JobId = g.Key.JobId,
+                                        JobSubtaskId = g.Key.JobSubtaskId,
+                                        ProjectName = g.First().note.ProjectName,
+                                        CreatedAt = g.Min(x => x.note.CreatedAt),
+                                        SubtaskName = g.First().subtask.Task,
+                                        Notes = g.Select(x => new
+                                        {
+                                            x.note.Id,
+                                            x.note.NoteText,
+                                            x.note.CreatedByUserId,
+                                            x.note.CreatedAt,
+                                            x.note.ModifiedAt,
+                                            x.note.Approved,
+                                            x.note.Rejected,
+                                            x.note.Archived
+                                        }).ToList()
+                                    }).ToList();
+
+                return Ok(groupedNotes);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to fetch archived notes", details = ex.Message });
+            }
+        }
+
         [HttpPost("UpdateNoteStatus")]
         public async Task<IActionResult> UpdateNoteStatus([FromForm] SubtaskNoteModel noteUpdate)
         {
@@ -928,7 +994,7 @@ namespace ProbuildBackend.Controllers
             {
 
 
-            var note = await _context.SubtaskNote.Where(m => m.JobSubtaskId == noteUpdate.JobSubtaskId && (m.Approved != true && m.Rejected != true)).ToListAsync();
+            var note = await _context.SubtaskNote.Where(m => m.JobSubtaskId == noteUpdate.JobSubtaskId && (!m.Approved && !m.Rejected)).ToListAsync();
             if (note == null) return NotFound();
                 foreach (var item in note)
                 {
@@ -937,7 +1003,7 @@ namespace ProbuildBackend.Controllers
                     item.ModifiedAt = DateTime.UtcNow;
                 }
                 await _context.SaveChangesAsync();
-                if ((bool)noteUpdate.Approved)
+                if (noteUpdate.Approved)
                 {
                     var subtask = await _context.JobSubtasks.FindAsync(noteUpdate.JobSubtaskId);
                     subtask.Status = "Completed";
@@ -995,6 +1061,29 @@ namespace ProbuildBackend.Controllers
 
                 throw;
             }
+        }
+
+        [HttpPost("notes/{noteId}/archive")]
+        public async Task<IActionResult> ArchiveNote(int noteId)
+        {
+            var note = await _context.SubtaskNote.FindAsync(noteId);
+
+            if (note == null)
+            {
+                return NotFound("Note not found.");
+            }
+
+            if (!note.Approved && !note.Rejected)
+            {
+                return BadRequest("Only approved or rejected notes can be archived.");
+            }
+
+            note.Archived = true;
+            note.ModifiedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+
+            return NoContent();
         }
 
         [HttpGet("GetNoteDocuments/{noteId}")]
