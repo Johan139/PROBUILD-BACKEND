@@ -846,7 +846,7 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var jobs = await _context.Jobs.Where(job => job.UserId == userId).ToListAsync();
+                var jobs = await _context.Jobs.Where(job => job.UserId == userId && job.Status != "ARCHIVED").ToListAsync();
 
                 if (jobs == null || !jobs.Any())
                 {
@@ -882,14 +882,17 @@ namespace ProbuildBackend.Controllers
      where assignedNotes.Contains(note.Id) && !note.Archived
      select new
      {
-         note.Id,
-         note.JobId,
-         job.ProjectName,
-         note.JobSubtaskId,
-         note.NoteText,
-         note.CreatedByUserId,
-         note.CreatedAt,
-         note.ModifiedAt
+       note.Id,
+       note.JobId,
+       job.ProjectName,
+       note.JobSubtaskId,
+       note.NoteText,
+       note.CreatedByUserId,
+       note.CreatedAt,
+       note.ModifiedAt,
+       note.Approved,
+       note.Rejected,
+       note.Archived
      }
  ).ToListAsync();
 
@@ -906,11 +909,14 @@ namespace ProbuildBackend.Controllers
                                                     SubtaskName = g.First().subtask.Task,
                                                     Notes = g.Select(x => new
                                                     {
-                                                        x.note.Id,
-                                                        x.note.NoteText,
-                                                        x.note.CreatedByUserId,
-                                                        x.note.CreatedAt,
-                                                        x.note.ModifiedAt
+                                                      x.note.Id,
+                                                      x.note.NoteText,
+                                                      x.note.CreatedByUserId,
+                                                      x.note.CreatedAt,
+                                                      x.note.ModifiedAt,
+                                                      x.note.Approved,
+                                                      x.note.Rejected,
+                                                      x.note.Archived
                                                     }).ToList()
                                                 }).ToList();
 
@@ -1000,6 +1006,7 @@ namespace ProbuildBackend.Controllers
                 {
                     item.Approved = noteUpdate.Approved;
                     item.Rejected = noteUpdate.Rejected;
+                    item.Archived = noteUpdate.Archived;
                     item.ModifiedAt = DateTime.UtcNow;
                 }
                 await _context.SaveChangesAsync();
@@ -1085,6 +1092,86 @@ namespace ProbuildBackend.Controllers
 
             return NoContent();
         }
+
+        [HttpPut("{jobId}/archive")]
+        public async Task<IActionResult> ArchiveJob(int jobId)
+        {
+            var job = await _context.Jobs.FindAsync(jobId);
+
+            if (job == null)
+            {
+                return NotFound();
+            }
+
+            var subtasks = await _context.JobSubtasks
+                .Where(st => st.JobId == jobId && !st.Deleted)
+                .ToListAsync();
+
+            var completedCount = subtasks.Count(st => st.Status == "Completed");
+            var totalCount = subtasks.Count;
+            var progress = totalCount > 0 ? (int)Math.Round((double)completedCount / totalCount * 100) : 0;
+
+            if (progress < 100)
+            {
+                return BadRequest("Job progress must be 100% to archive.");
+            }
+
+            job.Status = "ARCHIVED";
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+
+        [HttpGet("archived")]
+        public async Task<ActionResult<IEnumerable<JobDto>>> GetArchivedJobs()
+        {
+            var jobs = await _context.Jobs
+                .Where(j => j.Status == "ARCHIVED")
+                .Select(j => new JobDto
+                {
+                    JobId = j.Id,
+                    ProjectName = j.ProjectName,
+                    JobType = j.JobType,
+                    Status = j.Status,
+                    // Note: CompletionDate is not in the JobModel, so it's omitted.
+                })
+                .ToListAsync();
+
+            return Ok(jobs);
+        }
+
+        [HttpGet("dashboard")]
+        public async Task<ActionResult<IEnumerable<JobDto>>> GetDashboardJobs()
+        {
+            var jobs = await _context.Jobs
+                .Where(j => j.Status != "ARCHIVED")
+                .ToListAsync();
+
+            var jobDtos = new List<JobDto>();
+
+            foreach (var job in jobs)
+            {
+                var subtasks = await _context.JobSubtasks
+                    .Where(st => st.JobId == job.Id && !st.Deleted)
+                    .ToListAsync();
+
+                var completedCount = subtasks.Count(st => st.Status == "Completed");
+                var totalCount = subtasks.Count;
+                var progress = totalCount > 0 ? (int)Math.Round((double)completedCount / totalCount * 100) : 0;
+
+                jobDtos.Add(new JobDto
+                {
+                    JobId = job.Id,
+                    ProjectName = job.ProjectName,
+                    JobType = job.JobType,
+                    Status = job.Status,
+                    Progress = progress,
+                });
+            }
+
+            return Ok(jobDtos);
+        }
+
 
         [HttpGet("GetNoteDocuments/{noteId}")]
         public async Task<IActionResult> GetNoteDocuments(int noteId)

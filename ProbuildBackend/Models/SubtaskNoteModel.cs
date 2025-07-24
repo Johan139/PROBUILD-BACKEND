@@ -1,4 +1,6 @@
-﻿namespace ProbuildBackend.Models
+﻿using System;
+
+namespace ProbuildBackend.Models
 {
     public class SubtaskNoteModel
     {
@@ -19,5 +21,6 @@
         public bool Approved { get; set; }
         public bool Rejected { get; set; }
         public bool Archived { get; set; }
+        public string Status => Archived ? "Archived" : Approved ? "Approved" : Rejected ? "Rejected" : "Pending";
     }
 }
