@@ -76,7 +76,7 @@ namespace ProbuildBackend.Controllers
                     State = model.State,
                     City = model.City,
                     SubscriptionPackage = model.SubscriptionPackage,
-                    DateCreated = DateTime.Now
+                    DateCreated = DateTime.UtcNow
                 };
 
                 var result = await _userManager.CreateAsync(user, model.Password);
@@ -120,7 +120,7 @@ namespace ProbuildBackend.Controllers
         public async Task<ActionResult> HasActiveSubscription(string userId)
         {
             var hasActive = await _context.PaymentRecords
-                .AnyAsync(p => p.UserId == userId && p.Status == "Success" && p.ValidUntil > DateTime.Now);
+                .AnyAsync(p => p.UserId == userId && p.Status == "Success" && p.ValidUntil > DateTime.UtcNow);
 
             return Ok(new { hasActive });
         }
@@ -299,7 +299,7 @@ namespace ProbuildBackend.Controllers
                     issuer: _configuration["Jwt:Issuer"],
                     audience: _configuration["Jwt:Audience"],
                     claims: claims,
-                    expires: DateTime.Now.AddMinutes(30),
+                    expires: DateTime.UtcNow.AddMinutes(30),
                     signingCredentials: creds
                 );
                 newAccessTokenString = new JwtSecurityTokenHandler().WriteToken(newAccessToken);
@@ -384,7 +384,7 @@ namespace ProbuildBackend.Controllers
                 issuer: _configuration["Jwt:Issuer"],
                 audience: _configuration["Jwt:Audience"],
                 claims: claims,
-                expires: DateTime.Now.AddMinutes(30),
+                expires: DateTime.UtcNow.AddMinutes(30),
                 signingCredentials: creds);
 
             return new JwtSecurityTokenHandler().WriteToken(token);
@@ -631,7 +631,7 @@ namespace ProbuildBackend.Controllers
                issuer: _configuration["Jwt:Issuer"],
                audience: _configuration["Jwt:Audience"],
                claims: claims,
-               expires: DateTime.Now.AddMinutes(30),
+               expires: DateTime.UtcNow.AddMinutes(30),
                signingCredentials: creds
            );
 

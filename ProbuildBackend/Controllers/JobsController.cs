@@ -1073,20 +1073,27 @@ namespace ProbuildBackend.Controllers
         [HttpPost("notes/{noteId}/archive")]
         public async Task<IActionResult> ArchiveNote(int noteId)
         {
-            var note = await _context.SubtaskNote.FindAsync(noteId);
+            var noteToArchive = await _context.SubtaskNote.FindAsync(noteId);
 
-            if (note == null)
+            if (noteToArchive == null)
             {
                 return NotFound("Note not found.");
             }
 
-            if (!note.Approved && !note.Rejected)
+            if (!noteToArchive.Approved && !noteToArchive.Rejected)
             {
                 return BadRequest("Only approved or rejected notes can be archived.");
             }
 
-            note.Archived = true;
-            note.ModifiedAt = DateTime.UtcNow;
+            var notesToUpdate = await _context.SubtaskNote
+                .Where(n => n.JobSubtaskId == noteToArchive.JobSubtaskId)
+                .ToListAsync();
+
+            foreach (var note in notesToUpdate)
+            {
+                note.Archived = true;
+                note.ModifiedAt = DateTime.UtcNow;
+            }
 
             await _context.SaveChangesAsync();
 
