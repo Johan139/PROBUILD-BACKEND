@@ -41,11 +41,14 @@ namespace ProbuildBackend.Controllers
         [HttpPost("members")]
         public async Task<IActionResult> InviteMember([FromBody] InviteTeamMemberDto dto)
         {
-            var inviterId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (inviterId == null)
+            var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (currentUserId == null)
             {
                 return Unauthorized();
             }
+
+            var currentUserAsTeamMember = await _context.TeamMembers.FirstOrDefaultAsync(tm => tm.Id == currentUserId);
+            var inviterId = currentUserAsTeamMember?.InviterId ?? currentUserId;
 
             var inviter = await _userManager.FindByIdAsync(inviterId);
             if (inviter == null)
@@ -129,14 +132,17 @@ namespace ProbuildBackend.Controllers
         [HttpGet("members")]
         public async Task<IActionResult> GetTeamMembers()
         {
-            var inviterId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (inviterId == null)
+            var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (currentUserId == null)
             {
                 return Unauthorized();
             }
 
+            var currentUserAsTeamMember = await _context.TeamMembers.FirstOrDefaultAsync(tm => tm.Id == currentUserId);
+            var inviterIdToUse = currentUserAsTeamMember?.InviterId ?? currentUserId;
+
             var teamMembers = await _context.TeamMembers
-                .Where(tm => tm.InviterId == inviterId)
+                .Where(tm => tm.InviterId == inviterIdToUse)
                 .ToListAsync();
 
             return Ok(teamMembers);
@@ -323,9 +329,7 @@ namespace ProbuildBackend.Controllers
                     defaultPermissions.AddRange(new[] { "CreateSubtaskNotes", "ManageSubtaskNotes" });
                     break;
                 case "Chief Estimator":
-                    defaultPermissions.AddRange(new[] {
-                        "CreateJobs"
-                    });
+                    // No default permissions
                     break;
             }
 
