@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.SignalR;
 using ProbuildBackend.Middleware;
+using ProbuildBackend.Helpers;
 
 namespace ProbuildBackend.Controllers
 {
@@ -40,7 +41,7 @@ namespace ProbuildBackend.Controllers
         [HttpPost("members")]
         public async Task<IActionResult> InviteMember([FromBody] InviteTeamMemberDto dto)
         {
-            var inviterId = User.FindFirstValue("UserId");
+            var inviterId = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (inviterId == null)
             {
                 return Unauthorized();
@@ -96,6 +97,8 @@ namespace ProbuildBackend.Controllers
                 _context.TeamMembers.Add(teamMemberToInvite);
             }
 
+            await AssignDefaultPermissions(teamMemberToInvite);
+
             var protector = _dataProtectionProvider.CreateProtector("TeamMemberInvitation");
             var token = protector.Protect(dto.Email);
             teamMemberToInvite.InvitationToken = token;
@@ -126,7 +129,7 @@ namespace ProbuildBackend.Controllers
         [HttpGet("members")]
         public async Task<IActionResult> GetTeamMembers()
         {
-            var inviterId = User.FindFirstValue("UserId");
+            var inviterId = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (inviterId == null)
             {
                 return Unauthorized();
@@ -163,7 +166,7 @@ namespace ProbuildBackend.Controllers
         [HttpPatch("members/{id}/deactivate")]
         public async Task<IActionResult> DeactivateMember(string id)
         {
-            var inviterId = User.FindFirstValue("UserId");
+            var inviterId = User.FindFirstValue(ClaimTypes.NameIdentifier);
             var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(m => m.Id == id && m.InviterId == inviterId);
 
             if (teamMember == null)
@@ -184,7 +187,7 @@ namespace ProbuildBackend.Controllers
         public async Task<IActionResult> ReactivateTeamMember(string id)
         {
             // 1. Get the current user's ID
-            var inviterId = User.FindFirstValue("UserId");
+            var inviterId = User.FindFirstValue(ClaimTypes.NameIdentifier);
             var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(m => m.Id == id && m.InviterId == inviterId);
 
             if (teamMember == null)
@@ -206,7 +209,7 @@ namespace ProbuildBackend.Controllers
         [HttpDelete("members/{id}")]
         public async Task<IActionResult> DeleteMember(string id)
         {
-            var inviterId = User.FindFirstValue("UserId");
+            var inviterId = User.FindFirstValue(ClaimTypes.NameIdentifier);
             var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(m => m.Id == id && m.InviterId == inviterId);
 
             if (teamMember == null)
@@ -215,8 +218,6 @@ namespace ProbuildBackend.Controllers
             }
 
             teamMember.Status = "Deleted";
-            teamMember.TokenExpiration = null;
-            teamMember.InvitationToken = null;
             await _context.SaveChangesAsync();
 
             await _emailSender.SendEmailAsync(teamMember.Email, "Team Member account Deleted", "Your Team Member account has been deleted from the team.");
@@ -246,6 +247,102 @@ namespace ProbuildBackend.Controllers
             }).ToList();
 
             return Ok(teams);
+        }
+
+        [HttpGet("members/{teamMemberId}/permissions")]
+        public async Task<IActionResult> GetTeamMemberPermissions(string teamMemberId)
+        {
+            var teamMember = await _context.TeamMembers
+                .Include(t => t.TeamMemberPermissions)
+                .ThenInclude(tp => tp.Permission)
+                .FirstOrDefaultAsync(t => t.Id == teamMemberId);
+
+            if (teamMember == null)
+            {
+                return NotFound();
+            }
+
+            var permissions = teamMember.TeamMemberPermissions.Select(tp => tp.Permission.PermissionName.ToCamelCase()).ToList();
+            return Ok(permissions);
+        }
+
+        [HttpPut("members/{teamMemberId}/permissions")]
+        public async Task<IActionResult> UpdateTeamMemberPermissions(string teamMemberId, [FromBody] UpdatePermissionsDto dto)
+        {
+            var teamMember = await _context.TeamMembers
+                .Include(t => t.TeamMemberPermissions)
+                .FirstOrDefaultAsync(t => t.Id == teamMemberId);
+
+            if (teamMember == null)
+            {
+                return NotFound();
+            }
+
+            var allPermissions = await _context.Permissions.ToListAsync();
+            var invalidPermissions = dto.Permissions.Except(allPermissions.Select(p => p.PermissionName.ToCamelCase())).ToList();
+            if (invalidPermissions.Any())
+            {
+                return BadRequest(new { message = "Invalid permission names.", invalidPermissions });
+            }
+
+            teamMember.TeamMemberPermissions.Clear();
+
+            foreach (var permissionName in dto.Permissions)
+            {
+                var permission = allPermissions.First(p => p.PermissionName.ToCamelCase() == permissionName);
+                teamMember.TeamMemberPermissions.Add(new TeamMemberPermission
+                {
+                    PermissionId = permission.PermissionId
+                });
+            }
+
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+
+        private async Task AssignDefaultPermissions(TeamMember teamMember)
+        {
+            var defaultPermissions = new List<string>();
+
+            switch (teamMember.Role)
+            {
+                case "Project Manager":
+                    defaultPermissions = await _context.Permissions.Select(p => p.PermissionName).ToListAsync();
+                    break;
+                case "General Superintendent":
+                case "Assistant Superintendent":
+                case "Superintendent":
+                    defaultPermissions.AddRange(new[] {
+                        "CreateJobTasks", "DeleteJobTasks", "EditJobTasks",
+                        "CreateJobSubtasks", "DeleteJobSubtasks", "EditJobSubtasks",
+                        "CreateSubtaskNotes", "ManageSubtaskNotes"
+                    });
+                    break;
+                case "Foreman":
+                    defaultPermissions.AddRange(new[] { "CreateSubtaskNotes", "ManageSubtaskNotes" });
+                    break;
+                case "Chief Estimator":
+                    defaultPermissions.AddRange(new[] {
+                        "CreateJobs"
+                    });
+                    break;
+            }
+
+            if (defaultPermissions.Any())
+            {
+                var permissions = await _context.Permissions
+                    .Where(p => defaultPermissions.Contains(p.PermissionName))
+                    .ToListAsync();
+
+                foreach (var permission in permissions)
+                {
+                    teamMember.TeamMemberPermissions.Add(new TeamMemberPermission
+                    {
+                        PermissionId = permission.PermissionId
+                    });
+                }
+            }
         }
     }
 }

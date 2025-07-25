@@ -38,9 +38,11 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<QuoteExtraCost> QuoteExtraCosts { get; set; }
     public DbSet<RefreshToken> RefreshTokens { get; set; }
     public DbSet<TeamMember> TeamMembers { get; set; }
-
-     protected override void OnModelCreating(ModelBuilder modelBuilder)
-     {
+    public DbSet<Permission> Permissions { get; set; }
+    public DbSet<TeamMemberPermission> TeamMemberPermissions { get; set; }
+ 
+      protected override void OnModelCreating(ModelBuilder modelBuilder)
+      {
         modelBuilder.Entity<NotificationView>().HasNoKey().ToView("vw_Notifications");
 
         modelBuilder.Entity<ProjectModel>()
@@ -214,6 +216,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .HasForeignKey(ec => ec.QuoteId)
             .OnDelete(DeleteBehavior.Cascade);
 
+
          modelBuilder.Entity<Quote>()
            .HasOne(q => q.Logo)
            .WithMany()
@@ -223,6 +226,19 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
         modelBuilder.Entity<TeamMember>()
             .HasIndex(t => new { t.InviterId, t.Email })
             .IsUnique();
+
+       modelBuilder.Entity<TeamMemberPermission>()
+           .HasKey(tp => new { tp.TeamMemberId, tp.PermissionId });
+
+       modelBuilder.Entity<TeamMemberPermission>()
+           .HasOne(tp => tp.TeamMember)
+           .WithMany(t => t.TeamMemberPermissions)
+           .HasForeignKey(tp => tp.TeamMemberId);
+
+       modelBuilder.Entity<TeamMemberPermission>()
+           .HasOne(tp => tp.Permission)
+           .WithMany(p => p.TeamMemberPermissions)
+           .HasForeignKey(tp => tp.PermissionId);
 
         base.OnModelCreating(modelBuilder);
      }

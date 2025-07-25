@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -40,5 +41,7 @@ namespace ProbuildBackend.Models
 
         [ForeignKey("InviterId")]
         public virtual UserModel Inviter { get; set; }
+
+        public ICollection<TeamMemberPermission> TeamMemberPermissions { get; set; }
     }
 }
