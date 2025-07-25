@@ -195,12 +195,6 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .HasKey(ja => new { ja.UserId, ja.JobId });
 
         modelBuilder.Entity<JobAssignmentModel>()
-            .HasOne(ja => ja.User)
-            .WithMany()
-            .HasForeignKey(ja => ja.UserId)
-            .IsRequired();
-
-        modelBuilder.Entity<JobAssignmentModel>()
             .HasOne(ja => ja.Job)
             .WithMany()
             .HasForeignKey(ja => ja.JobId)
@@ -216,8 +210,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .HasForeignKey(ec => ec.QuoteId)
             .OnDelete(DeleteBehavior.Cascade);
 
-
-         modelBuilder.Entity<Quote>()
+        modelBuilder.Entity<Quote>()
            .HasOne(q => q.Logo)
            .WithMany()
            .HasForeignKey(q => q.LogoId)
@@ -227,15 +220,15 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .HasIndex(t => new { t.InviterId, t.Email })
             .IsUnique();
 
-       modelBuilder.Entity<TeamMemberPermission>()
+        modelBuilder.Entity<TeamMemberPermission>()
            .HasKey(tp => new { tp.TeamMemberId, tp.PermissionId });
 
-       modelBuilder.Entity<TeamMemberPermission>()
+        modelBuilder.Entity<TeamMemberPermission>()
            .HasOne(tp => tp.TeamMember)
            .WithMany(t => t.TeamMemberPermissions)
            .HasForeignKey(tp => tp.TeamMemberId);
 
-       modelBuilder.Entity<TeamMemberPermission>()
+        modelBuilder.Entity<TeamMemberPermission>()
            .HasOne(tp => tp.Permission)
            .WithMany(p => p.TeamMemberPermissions)
            .HasForeignKey(tp => tp.PermissionId);

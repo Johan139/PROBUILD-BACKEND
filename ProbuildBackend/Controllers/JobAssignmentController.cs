@@ -109,27 +109,37 @@ namespace ProbuildBackend.Controllers
                 assignedJob.BuildingSize = job.BuildingSize;
                 assignedJob.Status = job.Status;
                 assignedJob.JobUser = new List<JobUser>();
-                foreach (var User in jobAssignmentRow)
+                foreach (var assignment in jobAssignmentRow)
                 {
-                    var user = await _context.Users.Where(u => u.Id == User.UserId).FirstOrDefaultAsync();
-                    if (user == null)
+                    var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == assignment.UserId);
+                    if (user != null)
                     {
-                        assignedJob.JobUser = new List<JobUser>();
-                        JobUser emptyJobUser = new JobUser();
-                        assignedJob.JobUser.Add(emptyJobUser);
-                        continue;
+                        assignedJob.JobUser.Add(new JobUser
+                        {
+                            Id = user.Id,
+                            FirstName = user.FirstName,
+                            LastName = user.LastName,
+                            PhoneNumber = user.PhoneNumber,
+                            JobRole = assignment.JobRole,
+                            UserType = user.UserType
+                        });
                     }
-
-                    JobUser jobUser = new JobUser
+                    else
                     {
-                        Id = user.Id,
-                        FirstName = user.FirstName,
-                        LastName = user.LastName,
-                        PhoneNumber = user.PhoneNumber,
-                        JobRole = User.JobRole,
-                        UserType = user.UserType
-                    };
-                    assignedJob.JobUser.Add(jobUser);
+                        var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(tm => tm.Id == assignment.UserId);
+                        if (teamMember != null)
+                        {
+                            assignedJob.JobUser.Add(new JobUser
+                            {
+                                Id = teamMember.Id,
+                                FirstName = teamMember.FirstName,
+                                LastName = teamMember.LastName,
+                                PhoneNumber = teamMember.PhoneNumber,
+                                JobRole = assignment.JobRole,
+                                UserType = teamMember.Role
+                            });
+                        }
+                    }
                 }
 
                 assignedJobList.Add(assignedJob);
