@@ -41,7 +41,7 @@ namespace ProbuildBackend.Controllers
         [HttpPost("members")]
         public async Task<IActionResult> InviteMember([FromBody] InviteTeamMemberDto dto)
         {
-            var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var currentUserId = User.FindFirstValue("UserId");
             if (currentUserId == null)
             {
                 return Unauthorized();
@@ -132,7 +132,7 @@ namespace ProbuildBackend.Controllers
         [HttpGet("members")]
         public async Task<IActionResult> GetTeamMembers()
         {
-            var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var currentUserId = User.FindFirstValue("UserId");
             if (currentUserId == null)
             {
                 return Unauthorized();
@@ -172,7 +172,7 @@ namespace ProbuildBackend.Controllers
         [HttpPatch("members/{id}/deactivate")]
         public async Task<IActionResult> DeactivateMember(string id)
         {
-            var inviterId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var inviterId = User.FindFirstValue("UserId");
             var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(m => m.Id == id && m.InviterId == inviterId);
 
             if (teamMember == null)
@@ -193,7 +193,7 @@ namespace ProbuildBackend.Controllers
         public async Task<IActionResult> ReactivateTeamMember(string id)
         {
             // 1. Get the current user's ID
-            var inviterId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var inviterId = User.FindFirstValue("UserId");
             var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(m => m.Id == id && m.InviterId == inviterId);
 
             if (teamMember == null)
@@ -215,7 +215,7 @@ namespace ProbuildBackend.Controllers
         [HttpDelete("members/{id}")]
         public async Task<IActionResult> DeleteMember(string id)
         {
-            var inviterId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var inviterId = User.FindFirstValue("UserId");
             var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(m => m.Id == id && m.InviterId == inviterId);
 
             if (teamMember == null)

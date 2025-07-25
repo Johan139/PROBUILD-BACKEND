@@ -861,6 +861,20 @@ namespace ProbuildBackend.Controllers
             }
         }
 
+        [HttpGet("assigned/{userId}")]
+        public async Task<ActionResult<IEnumerable<JobModel>>> GetAssignedJobs(string userId)
+        {
+            var jobs = await _context.JobAssignments
+                .Where(ja => ja.UserId == userId)
+                .Join(_context.Jobs,
+                    ja => ja.JobId,
+                    j => j.Id,
+                    (ja, j) => j)
+                .ToListAsync();
+
+            return Ok(jobs);
+        }
+
         [HttpGet("GetNotesByUserId/{userId}")]
         public async Task<ActionResult<IEnumerable<object>>> GetNotesByUserId(string userId)
         {
