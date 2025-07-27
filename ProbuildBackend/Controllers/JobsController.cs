@@ -1088,9 +1088,7 @@ namespace ProbuildBackend.Controllers
             }
         }
         [HttpGet("notes/assigned/{userId}")]
-        public async Task<ActionResult<IEnumerable<SubtaskNoteModel>>> GetNotesForAssignedJobs(
-            string userId
-        )
+        public async Task<ActionResult<IEnumerable<object>>> GetNotesForAssignedJobs(string userId)
         {
             try
             {
@@ -1102,13 +1100,64 @@ namespace ProbuildBackend.Controllers
 
                 if (!assignedJobIds.Any())
                 {
-                    return Ok(new List<SubtaskNoteModel>());
+                    return Ok(new List<object>());
                 }
 
-                var notes = await _context.SubtaskNote
-                    .Where(n => assignedJobIds.Contains(n.JobId))
-                    .ToListAsync();
-                return Ok(notes);
+                var notesWithDetails = await (
+                    from note in _context.SubtaskNote
+                    join job in _context.Jobs on note.JobId equals job.Id
+                    join subtask in _context.JobSubtasks on note.JobSubtaskId equals subtask.Id
+                    where assignedJobIds.Contains(note.JobId) && !note.Archived
+                    select new
+                    {
+                        note.Id,
+                        note.JobId,
+                        job.ProjectName,
+                        note.JobSubtaskId,
+                        SubtaskName = subtask.Task,
+                        note.NoteText,
+                        note.CreatedByUserId,
+                        note.CreatedAt,
+                        note.ModifiedAt,
+                        note.Approved,
+                        note.Rejected,
+                        note.Archived
+                    }
+                ).ToListAsync();
+
+                var groupedNotes = notesWithDetails
+                    .GroupBy(n => new { n.JobId, n.SubtaskName })
+                    .Select(
+                        g =>
+                            new
+                            {
+                                JobId = g.Key.JobId,
+                                SubtaskName = g.Key.SubtaskName,
+                                ProjectName = g.First().ProjectName,
+                                JobSubtaskId = g.First().JobSubtaskId,
+                                CreatedAt = g.Min(x => x.CreatedAt),
+                                Notes = g.Select(
+                                        x =>
+                                            new
+                                            {
+                                                x.Id,
+                                                x.NoteText,
+                                                x.CreatedByUserId,
+                                                x.CreatedAt,
+                                                x.ModifiedAt,
+                                                x.Approved,
+                                                x.Rejected,
+                                                x.Archived
+                                            }
+                                    )
+                                    .ToList()
+                            }
+                    )
+                    .ToList();
+
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(groupedNotes));
+
+                return Ok(groupedNotes);
             }
             catch (Exception ex)
             {
