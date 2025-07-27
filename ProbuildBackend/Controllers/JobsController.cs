@@ -1,26 +1,15 @@
-﻿using Azure.Storage.Blobs.Models;
-using Azure.Storage.Blobs;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Services;
-using System.Net;
-using static Google.Apis.Requests.BatchRequest;
 using System.IO.Compression;
 using System.Globalization;
 using Hangfire;
-using Org.BouncyCastle.Asn1.X509;
-using Microsoft.AspNetCore.Mvc.TagHelpers;
-using Elastic.Apm.Api;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
-using static iText.StyledXmlParser.Jsoup.Select.Evaluator;
-using static ProbuildBackend.Services.DocumentProcessorService;
 using BomWithCosts = ProbuildBackend.Models.BomWithCosts;
-
 
 namespace ProbuildBackend.Controllers
 {
@@ -47,15 +36,18 @@ namespace ProbuildBackend.Controllers
             IEmailSender emailService,
             IHttpClientFactory httpClientFactory,
             IConfiguration config,
-            WebSocketManager webSocketManager)
+            WebSocketManager webSocketManager
+        )
         {
-            _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
+            _httpContextAccessor =
+                httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
             _context = context;
             _azureBlobservice = azureBlobservice;
             _hubContext = hubContext;
             _documentProcessorService = documentProcessorService;
             _emailService = emailService ?? throw new ArgumentNullException(nameof(emailService));
-            _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
+            _httpClientFactory =
+                httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
             _config = config ?? throw new ArgumentNullException(nameof(config));
             _webSocketManager = webSocketManager;
         }
@@ -137,20 +129,24 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var document = await _context.JobDocuments
-                    .FirstOrDefaultAsync(doc => doc.Id == documentId);
+                var document = await _context.JobDocuments.FirstOrDefaultAsync(
+                    doc => doc.Id == documentId
+                );
 
                 if (document == null)
                 {
                     return NotFound("Document not found.");
                 }
 
-                var (contentStream, contentType, originalFileName) = await _azureBlobservice.GetBlobContentAsync(document.BlobUrl);
+                var (contentStream, contentType, originalFileName) =
+                    await _azureBlobservice.GetBlobContentAsync(document.BlobUrl);
 
                 if (contentType == "application/gzip")
                 {
                     using var decompressedStream = new MemoryStream();
-                    using (var gzipStream = new GZipStream(contentStream, CompressionMode.Decompress))
+                    using (
+                        var gzipStream = new GZipStream(contentStream, CompressionMode.Decompress)
+                    )
                     {
                         await gzipStream.CopyToAsync(decompressedStream);
                     }
@@ -175,12 +171,15 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var (contentStream, contentType, originalFileName) = await _azureBlobservice.GetBlobContentAsync(fileUrl);
+                var (contentStream, contentType, originalFileName) =
+                    await _azureBlobservice.GetBlobContentAsync(fileUrl);
 
                 if (contentType == "application/gzip")
                 {
                     var decompressedStream = new MemoryStream();
-                    using (var gzipStream = new GZipStream(contentStream, CompressionMode.Decompress))
+                    using (
+                        var gzipStream = new GZipStream(contentStream, CompressionMode.Decompress)
+                    )
                     {
                         await gzipStream.CopyToAsync(decompressedStream);
                     }
@@ -211,20 +210,24 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var document = await _context.SubtaskNoteDocument
-                    .FirstOrDefaultAsync(doc => doc.Id == documentId);
+                var document = await _context.SubtaskNoteDocument.FirstOrDefaultAsync(
+                    doc => doc.Id == documentId
+                );
 
                 if (document == null)
                 {
                     return NotFound("Document not found.");
                 }
 
-                var (contentStream, contentType, originalFileName) = await _azureBlobservice.GetBlobContentAsync(document.BlobUrl);
+                var (contentStream, contentType, originalFileName) =
+                    await _azureBlobservice.GetBlobContentAsync(document.BlobUrl);
 
                 if (contentType == "application/gzip")
                 {
                     using var decompressedStream = new MemoryStream();
-                    using (var gzipStream = new GZipStream(contentStream, CompressionMode.Decompress))
+                    using (
+                        var gzipStream = new GZipStream(contentStream, CompressionMode.Decompress)
+                    )
                     {
                         await gzipStream.CopyToAsync(decompressedStream);
                     }
@@ -248,9 +251,7 @@ namespace ProbuildBackend.Controllers
         [HttpGet("documents/{id}")]
         public async Task<ActionResult<IEnumerable<object>>> GetJobDocuments(int id)
         {
-            var documents = await _context.JobDocuments
-                .Where(doc => doc.JobId == id)
-                .ToListAsync();
+            var documents = await _context.JobDocuments.Where(doc => doc.JobId == id).ToListAsync();
 
             if (documents == null || !documents.Any())
             {
@@ -263,24 +264,16 @@ namespace ProbuildBackend.Controllers
                 try
                 {
                     var properties = await _azureBlobservice.GetBlobContentAsync(doc.BlobUrl);
-                    documentDetails.Add(new
-                    {
-                        doc.Id,
-                        doc.JobId,
-                        doc.FileName,
-                        Size = properties.Content.Length
-                    });
+                    documentDetails.Add(
+                        new { doc.Id, doc.JobId, doc.FileName, Size = properties.Content.Length }
+                    );
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Error fetching properties for blob {doc.BlobUrl}: {ex.Message}");
-                    documentDetails.Add(new
-                    {
-                        doc.Id,
-                        doc.JobId,
-                        doc.FileName,
-                        Size = 0L
-                    });
+                    Console.WriteLine(
+                        $"Error fetching properties for blob {doc.BlobUrl}: {ex.Message}"
+                    );
+                    documentDetails.Add(new { doc.Id, doc.JobId, doc.FileName, Size = 0L });
                 }
             }
 
@@ -288,7 +281,9 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpGet("processing-results/{jobId}")]
-        public async Task<ActionResult<IEnumerable<DocumentProcessingResult>>> GetProcessingResults(int jobId)
+        public async Task<ActionResult<IEnumerable<DocumentProcessingResult>>> GetProcessingResults(
+            int jobId
+        )
         {
             try
             {
@@ -305,7 +300,10 @@ namespace ProbuildBackend.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Failed to fetch processing results", details = ex.Message });
+                return StatusCode(
+                    500,
+                    new { error = "Failed to fetch processing results", details = ex.Message }
+                );
             }
         }
 
@@ -337,25 +335,44 @@ namespace ProbuildBackend.Controllers
 
                 if (!isProcessingComplete)
                 {
-                    return Ok(new { IsProcessingComplete = false, Message = "AI is still processing the documents." });
+                    return Ok(
+                        new
+                        {
+                            IsProcessingComplete = false,
+                            Message = "AI is still processing the documents."
+                        }
+                    );
                 }
 
                 if (job.Status == "PROCESSED")
                 {
-                    return Ok(new { IsProcessingComplete = true, Message = "AI processing is complete." });
+                    return Ok(
+                        new { IsProcessingComplete = true, Message = "AI processing is complete." }
+                    );
                 }
                 else if (job.Status == "FAILED")
                 {
-                    return Ok(new { IsProcessingComplete = false, Message = "AI processing failed." });
+                    return Ok(
+                        new { IsProcessingComplete = false, Message = "AI processing failed." }
+                    );
                 }
                 else
                 {
-                    return Ok(new { IsProcessingComplete = false, Message = "AI processing is incomplete or in an unexpected state." });
+                    return Ok(
+                        new
+                        {
+                            IsProcessingComplete = false,
+                            Message = "AI processing is incomplete or in an unexpected state."
+                        }
+                    );
                 }
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Failed to check processing status", details = ex.Message });
+                return StatusCode(
+                    500,
+                    new { error = "Failed to check processing status", details = ex.Message }
+                );
             }
         }
 
@@ -369,7 +386,8 @@ namespace ProbuildBackend.Controllers
                 ".png" => "image/png",
                 ".jpg" => "image/jpeg",
                 ".jpeg" => "image/jpeg",
-                ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                ".docx"
+                  => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 ".doc" => "application/msword",
                 ".xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 ".xls" => "application/vnd.ms-excel",
@@ -377,117 +395,144 @@ namespace ProbuildBackend.Controllers
             };
         }
 
-
         [HttpPost]
         [RequestSizeLimit(200 * 1024 * 1024)]
         public async Task<IActionResult> PostJob([FromForm] JobDto jobRequest)
         {
             var strategy = _context.Database.CreateExecutionStrategy();
-            return await strategy.ExecuteAsync(async () =>
-            {
-                using var transaction = await _context.Database.BeginTransactionAsync();
-                try
+            return await strategy.ExecuteAsync(
+                async () =>
                 {
-                    var job = new JobModel
+                    using var transaction = await _context.Database.BeginTransactionAsync();
+                    try
                     {
-                        ProjectName = jobRequest.ProjectName,
-                        JobType = jobRequest.JobType,
-                        Qty = jobRequest.Qty,
-                        DesiredStartDate = jobRequest.DesiredStartDate,
-                        WallStructure = jobRequest.WallStructure,
-                        WallStructureSubtask = jobRequest.WallStructureSubtask,
-                        WallInsulation = jobRequest.WallInsulation,
-                        WallInsulationSubtask = jobRequest.WallInsulationSubtask,
-                        RoofStructure = jobRequest.RoofStructure,
-                        RoofStructureSubtask = jobRequest.RoofStructureSubtask,
-                        RoofTypeSubtask = jobRequest.RoofTypeSubtask,
-                        RoofInsulation = jobRequest.RoofInsulation,
-                        Foundation = jobRequest.Foundation,
-                        FoundationSubtask = jobRequest.FoundationSubtask,
-                        Finishes = jobRequest.Finishes,
-                        FinishesSubtask = jobRequest.FinishesSubtask,
-                        ElectricalSupplyNeeds = jobRequest.ElectricalSupplyNeeds,
-                        ElectricalSupplyNeedsSubtask = jobRequest.ElectricalSupplyNeedsSubtask,
-                        Stories = jobRequest.Stories,
-                        BuildingSize = jobRequest.BuildingSize,
-                        OperatingArea = jobRequest.OperatingArea,
-                        UserId = jobRequest.UserId,
-                        Status = jobRequest.Status
-                    };
-
-                    _context.Jobs.Add(job);
-                    await _context.SaveChangesAsync();
-
-                    var clientModel = new ClientDetailsModel()
-                    {
-                        FirstName = jobRequest.FirstName,
-                        LastName = jobRequest.LastName,
-                        Email = jobRequest.Email,
-                        CompanyName = jobRequest.CompanyName,
-                        Phone = jobRequest.Phone,
-                        Position = jobRequest.Position,
-                        CreatedAt = DateTime.Now,
-                        JobId = job.Id
-                    };
-
-                    _context.ClientDetails.Add(clientModel);
-                   await _context.SaveChangesAsync();
-
-                    if (!string.IsNullOrEmpty(jobRequest.Address))
-                    {
-                        decimal lat = Math.Round(Convert.ToDecimal(jobRequest.Latitude, CultureInfo.InvariantCulture), 6);
-                        decimal lon = Math.Round(Convert.ToDecimal(jobRequest.Longitude, CultureInfo.InvariantCulture), 6);
-                        var address = new AddressModel
+                        var job = new JobModel
                         {
-                            FormattedAddress = jobRequest.Address,
-                            StreetNumber = jobRequest.StreetNumber,
-                            StreetName = jobRequest.StreetName,
-                            City = jobRequest.City,
-                            State = jobRequest.State,
-                            PostalCode = jobRequest.PostalCode,
-                            Country = jobRequest.Country,
-                            Latitude = lat,
-                            Longitude = lon,
-                            GooglePlaceId = jobRequest.GooglePlaceId,
-                            CreatedAt = DateTime.UtcNow,
-                            UpdatedAt = DateTime.UtcNow,
+                            ProjectName = jobRequest.ProjectName,
+                            JobType = jobRequest.JobType,
+                            Qty = jobRequest.Qty,
+                            DesiredStartDate = jobRequest.DesiredStartDate,
+                            WallStructure = jobRequest.WallStructure,
+                            WallStructureSubtask = jobRequest.WallStructureSubtask,
+                            WallInsulation = jobRequest.WallInsulation,
+                            WallInsulationSubtask = jobRequest.WallInsulationSubtask,
+                            RoofStructure = jobRequest.RoofStructure,
+                            RoofStructureSubtask = jobRequest.RoofStructureSubtask,
+                            RoofTypeSubtask = jobRequest.RoofTypeSubtask,
+                            RoofInsulation = jobRequest.RoofInsulation,
+                            Foundation = jobRequest.Foundation,
+                            FoundationSubtask = jobRequest.FoundationSubtask,
+                            Finishes = jobRequest.Finishes,
+                            FinishesSubtask = jobRequest.FinishesSubtask,
+                            ElectricalSupplyNeeds = jobRequest.ElectricalSupplyNeeds,
+                            ElectricalSupplyNeedsSubtask = jobRequest.ElectricalSupplyNeedsSubtask,
+                            Stories = jobRequest.Stories,
+                            BuildingSize = jobRequest.BuildingSize,
+                            OperatingArea = jobRequest.OperatingArea,
+                            UserId = jobRequest.UserId,
+                            Status = jobRequest.Status
+                        };
+
+                        _context.Jobs.Add(job);
+                        await _context.SaveChangesAsync();
+
+                        var clientModel = new ClientDetailsModel()
+                        {
+                            FirstName = jobRequest.FirstName,
+                            LastName = jobRequest.LastName,
+                            Email = jobRequest.Email,
+                            CompanyName = jobRequest.CompanyName,
+                            Phone = jobRequest.Phone,
+                            Position = jobRequest.Position,
+                            CreatedAt = DateTime.Now,
                             JobId = job.Id
                         };
 
-                        _context.JobAddresses.Add(address);
+                        _context.ClientDetails.Add(clientModel);
                         await _context.SaveChangesAsync();
-                    }
 
-                    List<string> documentUrls = new List<string>();
-                    if (!string.IsNullOrEmpty(jobRequest.SessionId))
-                    {
-                        var documents = await _context.JobDocuments
-                            .Where(doc => doc.SessionId == jobRequest.SessionId && doc.JobId == null)
-                            .ToListAsync();
-
-                        foreach (var doc in documents)
+                        if (!string.IsNullOrEmpty(jobRequest.Address))
                         {
-                            doc.JobId = job.Id;
-                            documentUrls.Add(doc.BlobUrl);
+                            decimal lat = Math.Round(
+                                Convert.ToDecimal(
+                                    jobRequest.Latitude,
+                                    CultureInfo.InvariantCulture
+                                ),
+                                6
+                            );
+                            decimal lon = Math.Round(
+                                Convert.ToDecimal(
+                                    jobRequest.Longitude,
+                                    CultureInfo.InvariantCulture
+                                ),
+                                6
+                            );
+                            var address = new AddressModel
+                            {
+                                FormattedAddress = jobRequest.Address,
+                                StreetNumber = jobRequest.StreetNumber,
+                                StreetName = jobRequest.StreetName,
+                                City = jobRequest.City,
+                                State = jobRequest.State,
+                                PostalCode = jobRequest.PostalCode,
+                                Country = jobRequest.Country,
+                                Latitude = lat,
+                                Longitude = lon,
+                                GooglePlaceId = jobRequest.GooglePlaceId,
+                                CreatedAt = DateTime.UtcNow,
+                                UpdatedAt = DateTime.UtcNow,
+                                JobId = job.Id
+                            };
+
+                            _context.JobAddresses.Add(address);
+                            await _context.SaveChangesAsync();
                         }
-                        await _context.SaveChangesAsync();
+
+                        List<string> documentUrls = new List<string>();
+                        if (!string.IsNullOrEmpty(jobRequest.SessionId))
+                        {
+                            var documents = await _context.JobDocuments
+                                .Where(
+                                    doc =>
+                                        doc.SessionId == jobRequest.SessionId && doc.JobId == null
+                                )
+                                .ToListAsync();
+
+                            foreach (var doc in documents)
+                            {
+                                doc.JobId = job.Id;
+                                documentUrls.Add(doc.BlobUrl);
+                            }
+                            await _context.SaveChangesAsync();
+                        }
+
+                        await transaction.CommitAsync();
+
+                        if (documentUrls.Any())
+                        {
+                            string connectionId =
+                                _httpContextAccessor.HttpContext?.Connection.Id ?? string.Empty;
+                            BackgroundJob.Enqueue(
+                                () =>
+                                    _documentProcessorService.ProcessDocumentsForJobAsync(
+                                        job.Id,
+                                        documentUrls,
+                                        connectionId
+                                    )
+                            );
+                        }
+                        return Ok(jobRequest);
                     }
-
-                    await transaction.CommitAsync();
-
-                    if (documentUrls.Any())
+                    catch (Exception ex)
                     {
-                        string connectionId = _httpContextAccessor.HttpContext?.Connection.Id ?? string.Empty;
-                        BackgroundJob.Enqueue(() => _documentProcessorService.ProcessDocumentsForJobAsync(job.Id, documentUrls, connectionId));
+                        await transaction.RollbackAsync();
+                        return StatusCode(
+                            500,
+                            new { error = "Failed to create job", details = ex.Message }
+                        );
                     }
-                    return Ok(jobRequest);
                 }
-                catch (Exception ex)
-                {
-                    await transaction.RollbackAsync();
-                    return StatusCode(500, new { error = "Failed to create job", details = ex.Message });
-                }
-            });
+            );
         }
 
         [HttpPost("UploadImage")]
@@ -523,14 +568,22 @@ namespace ProbuildBackend.Controllers
                     }
                 }
 
-                string connectionId = jobRequest.connectionId ?? _httpContextAccessor.HttpContext?.Connection.Id
+                string connectionId =
+                    jobRequest.connectionId
+                    ?? _httpContextAccessor.HttpContext?.Connection.Id
                     ?? throw new InvalidOperationException("No valid connectionId provided.");
 
                 Console.WriteLine($"Received connectionId from client: {connectionId}");
 
-                uploadedFileUrls = await _azureBlobservice.UploadFiles(jobRequest.Blueprint, _hubContext, connectionId);
+                uploadedFileUrls = await _azureBlobservice.UploadFiles(
+                    jobRequest.Blueprint,
+                    _hubContext,
+                    connectionId
+                );
 
-                foreach (var (file, url) in jobRequest.Blueprint.Zip(uploadedFileUrls, (f, u) => (f, u)))
+                foreach (
+                    var (file, url) in jobRequest.Blueprint.Zip(uploadedFileUrls, (f, u) => (f, u))
+                )
                 {
                     string blobFileName = Path.GetFileName(new Uri(url).LocalPath);
 
@@ -566,7 +619,10 @@ namespace ProbuildBackend.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Failed to upload files", details = ex.Message });
+                return StatusCode(
+                    500,
+                    new { error = "Failed to upload files", details = ex.Message }
+                );
             }
         }
 
@@ -603,14 +659,22 @@ namespace ProbuildBackend.Controllers
                     }
                 }
 
-                string connectionId = jobRequest.connectionId ?? _httpContextAccessor.HttpContext?.Connection.Id
+                string connectionId =
+                    jobRequest.connectionId
+                    ?? _httpContextAccessor.HttpContext?.Connection.Id
                     ?? throw new InvalidOperationException("No valid connectionId provided.");
 
                 Console.WriteLine($"Received connectionId from client: {connectionId}");
 
-                uploadedFileUrls = await _azureBlobservice.UploadFiles(jobRequest.Blueprint, _hubContext, connectionId);
+                uploadedFileUrls = await _azureBlobservice.UploadFiles(
+                    jobRequest.Blueprint,
+                    _hubContext,
+                    connectionId
+                );
 
-                foreach (var (file, url) in jobRequest.Blueprint.Zip(uploadedFileUrls, (f, u) => (f, u)))
+                foreach (
+                    var (file, url) in jobRequest.Blueprint.Zip(uploadedFileUrls, (f, u) => (f, u))
+                )
                 {
                     string blobFileName = Path.GetFileName(new Uri(url).LocalPath);
 
@@ -644,7 +708,10 @@ namespace ProbuildBackend.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Failed to upload files", details = ex.Message });
+                return StatusCode(
+                    500,
+                    new { error = "Failed to upload files", details = ex.Message }
+                );
             }
         }
 
@@ -656,35 +723,33 @@ namespace ProbuildBackend.Controllers
                 bool isNew = true;
                 int jobID = 0;
 
-            foreach (var subtask in subtasks.Subtasks)
-            {
+                foreach (var subtask in subtasks.Subtasks)
+                {
                     jobID = subtask.JobId;
-                if (subtask.Id > 0)
-                {
-                        isNew = false;
-                    // UPDATE
-                    var existing = await _context.JobSubtasks.FindAsync(subtask.Id);
-                    if (existing != null)
+                    if (subtask.Id > 0)
                     {
-                        existing.Task = subtask.Task;
-                        existing.Days = subtask.Days;
-                        existing.StartDate = subtask.StartDate;
-                        existing.EndDate = subtask.EndDate;
-                        existing.Status = subtask.Status;
-                        existing.GroupTitle = subtask.GroupTitle;
-                        existing.Deleted = subtask.Deleted;
-
+                        isNew = false;
+                        // UPDATE
+                        var existing = await _context.JobSubtasks.FindAsync(subtask.Id);
+                        if (existing != null)
+                        {
+                            existing.Task = subtask.Task;
+                            existing.Days = subtask.Days;
+                            existing.StartDate = subtask.StartDate;
+                            existing.EndDate = subtask.EndDate;
+                            existing.Status = subtask.Status;
+                            existing.GroupTitle = subtask.GroupTitle;
+                            existing.Deleted = subtask.Deleted;
+                        }
                     }
-                }
-                else
-                {
+                    else
+                    {
                         // INSERT
 
-                    _context.JobSubtasks.Add(subtask);
-
+                        _context.JobSubtasks.Add(subtask);
+                    }
                 }
-            }
-            if(isNew)
+                if (isNew)
                 {
                     var acceptance = new JobsTermsAgreement()
                     {
@@ -695,39 +760,42 @@ namespace ProbuildBackend.Controllers
                     _context.JobsTermsAgreement.Add(acceptance);
                 }
 
-            await _context.SaveChangesAsync();
-
-            // After saving subtasks, send notifications
-            var job = await _context.Jobs.FindAsync(jobID);
-            if (job != null)
-            {
-                var assignments = await _context.JobAssignments
-                    .Where(a => a.JobId == jobID)
-                    .ToListAsync();
-
-                var userIds = assignments.Select(a => a.UserId).ToList();
-                var message = $"An item on the timeline for project {job.ProjectName} has been moved.";
-
-                var notification = new NotificationModel
-                {
-                    Message = message,
-                    Recipients = userIds,
-                    Timestamp = DateTime.UtcNow,
-                    JobId = job.Id,
-                    SenderId = subtasks.UserId
-                };
-
-                _context.Notifications.Add(notification);
                 await _context.SaveChangesAsync();
 
-                await _webSocketManager.BroadcastMessageAsync(notification.Message, notification.Recipients);
-            }
+                // After saving subtasks, send notifications
+                var job = await _context.Jobs.FindAsync(jobID);
+                if (job != null)
+                {
+                    var assignments = await _context.JobAssignments
+                        .Where(a => a.JobId == jobID)
+                        .ToListAsync();
 
-            return Ok("Subtasks processed");
+                    var userIds = assignments.Select(a => a.UserId).ToList();
+                    var message =
+                        $"An item on the timeline for project {job.ProjectName} has been moved.";
+
+                    var notification = new NotificationModel
+                    {
+                        Message = message,
+                        Recipients = userIds,
+                        Timestamp = DateTime.UtcNow,
+                        JobId = job.Id,
+                        SenderId = subtasks.UserId
+                    };
+
+                    _context.Notifications.Add(notification);
+                    await _context.SaveChangesAsync();
+
+                    await _webSocketManager.BroadcastMessageAsync(
+                        notification.Message,
+                        notification.Recipients
+                    );
+                }
+
+                return Ok("Subtasks processed");
             }
             catch (Exception ex)
             {
-
                 throw;
             }
         }
@@ -736,18 +804,17 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-            var subtasks = await _context.JobSubtasks
-                .Where(st => st.JobId == jobId && st.Deleted == false)
-                .ToListAsync();
+                var subtasks = await _context.JobSubtasks
+                    .Where(st => st.JobId == jobId && st.Deleted == false)
+                    .ToListAsync();
 
-            if (!subtasks.Any())
+                if (!subtasks.Any())
                     return Ok(new List<JobSubtasksModel>());
 
                 return Ok(subtasks);
             }
             catch (Exception ex)
             {
-
                 throw;
             }
         }
@@ -783,7 +850,10 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPut("{jobId}/address")]
-        public async Task<IActionResult> UpdateJobAddress(int jobId, [FromBody] UpdateJobAddressDto addressDto)
+        public async Task<IActionResult> UpdateJobAddress(
+            int jobId,
+            [FromBody] UpdateJobAddressDto addressDto
+        )
         {
             var job = await _context.Jobs.FindAsync(jobId);
             if (job == null)
@@ -794,11 +864,7 @@ namespace ProbuildBackend.Controllers
             var address = await _context.JobAddresses.FirstOrDefaultAsync(a => a.JobId == jobId);
             if (address == null)
             {
-                address = new AddressModel
-                {
-                    JobId = jobId,
-                    CreatedAt = DateTime.UtcNow
-                };
+                address = new AddressModel { JobId = jobId, CreatedAt = DateTime.UtcNow };
                 _context.JobAddresses.Add(address);
             }
             address.StreetNumber = addressDto.StreetNumber;
@@ -835,7 +901,9 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("DeleteTemporaryFiles")]
-        public async Task<IActionResult> DeleteTemporaryFiles([FromBody] DeleteTemporaryFilesRequest request)
+        public async Task<IActionResult> DeleteTemporaryFiles(
+            [FromBody] DeleteTemporaryFilesRequest request
+        )
         {
             await _azureBlobservice.DeleteTemporaryFiles(request.BlobUrls);
             return Ok();
@@ -846,7 +914,9 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var jobs = await _context.Jobs.Where(job => job.UserId == userId && job.Status != "ARCHIVED").ToListAsync();
+                var jobs = await _context.Jobs
+                    .Where(job => job.UserId == userId && job.Status != "ARCHIVED")
+                    .ToListAsync();
 
                 if (jobs == null || !jobs.Any())
                 {
@@ -866,10 +936,7 @@ namespace ProbuildBackend.Controllers
         {
             var jobs = await _context.JobAssignments
                 .Where(ja => ja.UserId == userId)
-                .Join(_context.Jobs,
-                    ja => ja.JobId,
-                    j => j.Id,
-                    (ja, j) => j)
+                .Join(_context.Jobs, ja => ja.JobId, j => j.Id, (ja, j) => j)
                 .ToListAsync();
 
             return Ok(jobs);
@@ -888,57 +955,63 @@ namespace ProbuildBackend.Controllers
                 if (!assignedNotes.Any())
                     return NotFound("No notes assigned to this user.");
 
-
-
                 var notes = await (
-     from note in _context.SubtaskNote
-     join job in _context.Jobs on note.JobId equals job.Id
-     where assignedNotes.Contains(note.Id) && !note.Archived
-     select new
-     {
-       note.Id,
-       note.JobId,
-       job.ProjectName,
-       note.JobSubtaskId,
-       note.NoteText,
-       note.CreatedByUserId,
-       note.CreatedAt,
-       note.ModifiedAt,
-       note.Approved,
-       note.Rejected,
-       note.Archived
-     }
- ).ToListAsync();
+                    from note in _context.SubtaskNote
+                    join job in _context.Jobs on note.JobId equals job.Id
+                    where assignedNotes.Contains(note.Id) && !note.Archived
+                    select new
+                    {
+                        note.Id,
+                        note.JobId,
+                        job.ProjectName,
+                        note.JobSubtaskId,
+                        note.NoteText,
+                        note.CreatedByUserId,
+                        note.CreatedAt,
+                        note.ModifiedAt,
+                        note.Approved,
+                        note.Rejected,
+                        note.Archived
+                    }
+                ).ToListAsync();
 
-                var groupedNotes = (from note in notes
-                                                join subtask in _context.JobSubtasks
-                                                on note.JobSubtaskId equals subtask.Id
-                                                group new { note, subtask } by new { note.JobId, note.JobSubtaskId } into g
-                                                select new
-                                                {
-                                                    JobId = g.Key.JobId,
-                                                    JobSubtaskId = g.Key.JobSubtaskId,
-                                                    ProjectName = g.First().note.ProjectName,
-                                                    CreatedAt = g.Min(x => x.note.CreatedAt),
-                                                    SubtaskName = g.First().subtask.Task,
-                                                    Notes = g.Select(x => new
-                                                    {
-                                                      x.note.Id,
-                                                      x.note.NoteText,
-                                                      x.note.CreatedByUserId,
-                                                      x.note.CreatedAt,
-                                                      x.note.ModifiedAt,
-                                                      x.note.Approved,
-                                                      x.note.Rejected,
-                                                      x.note.Archived
-                                                    }).ToList()
-                                                }).ToList();
+                var groupedNotes = (
+                    from note in notes
+                    join subtask in _context.JobSubtasks on note.JobSubtaskId equals subtask.Id
+                    group new { note, subtask } by new { note.JobId, note.JobSubtaskId } into g
+                    select new
+                    {
+                        JobId = g.Key.JobId,
+                        JobSubtaskId = g.Key.JobSubtaskId,
+                        ProjectName = g.First().note.ProjectName,
+                        CreatedAt = g.Min(x => x.note.CreatedAt),
+                        SubtaskName = g.First().subtask.Task,
+                        Notes = g.Select(
+                                x =>
+                                    new
+                                    {
+                                        x.note.Id,
+                                        x.note.NoteText,
+                                        x.note.CreatedByUserId,
+                                        x.note.CreatedAt,
+                                        x.note.ModifiedAt,
+                                        x.note.Approved,
+                                        x.note.Rejected,
+                                        x.note.Archived
+                                    }
+                            )
+                            .ToList()
+                    }
+                ).ToList();
 
                 return Ok(groupedNotes);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Failed to fetch user-assigned notes", details = ex.Message });
+                return StatusCode(
+                    500,
+                    new { error = "Failed to fetch user-assigned notes", details = ex.Message }
+                );
             }
         }
 
@@ -955,7 +1028,7 @@ namespace ProbuildBackend.Controllers
                 if (!assignedNotes.Any())
                     return Ok(new List<object>());
 
-                var notes = await(
+                var notes = await (
                     from note in _context.SubtaskNote
                     join job in _context.Jobs on note.JobId equals job.Id
                     where assignedNotes.Contains(note.Id) && note.Archived
@@ -975,35 +1048,74 @@ namespace ProbuildBackend.Controllers
                     }
                 ).ToListAsync();
 
-                var groupedNotes = (from note in notes
-                                    join subtask in _context.JobSubtasks
-                                    on note.JobSubtaskId equals subtask.Id
-                                    group new { note, subtask } by new { note.JobId, note.JobSubtaskId } into g
-                                    select new
+                var groupedNotes = (
+                    from note in notes
+                    join subtask in _context.JobSubtasks on note.JobSubtaskId equals subtask.Id
+                    group new { note, subtask } by new { note.JobId, note.JobSubtaskId } into g
+                    select new
+                    {
+                        JobId = g.Key.JobId,
+                        JobSubtaskId = g.Key.JobSubtaskId,
+                        ProjectName = g.First().note.ProjectName,
+                        CreatedAt = g.Min(x => x.note.CreatedAt),
+                        SubtaskName = g.First().subtask.Task,
+                        Notes = g.Select(
+                                x =>
+                                    new
                                     {
-                                        JobId = g.Key.JobId,
-                                        JobSubtaskId = g.Key.JobSubtaskId,
-                                        ProjectName = g.First().note.ProjectName,
-                                        CreatedAt = g.Min(x => x.note.CreatedAt),
-                                        SubtaskName = g.First().subtask.Task,
-                                        Notes = g.Select(x => new
-                                        {
-                                            x.note.Id,
-                                            x.note.NoteText,
-                                            x.note.CreatedByUserId,
-                                            x.note.CreatedAt,
-                                            x.note.ModifiedAt,
-                                            x.note.Approved,
-                                            x.note.Rejected,
-                                            x.note.Archived
-                                        }).ToList()
-                                    }).ToList();
+                                        x.note.Id,
+                                        x.note.NoteText,
+                                        x.note.CreatedByUserId,
+                                        x.note.CreatedAt,
+                                        x.note.ModifiedAt,
+                                        x.note.Approved,
+                                        x.note.Rejected,
+                                        x.note.Archived
+                                    }
+                            )
+                            .ToList()
+                    }
+                ).ToList();
 
                 return Ok(groupedNotes);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Failed to fetch archived notes", details = ex.Message });
+                return StatusCode(
+                    500,
+                    new { error = "Failed to fetch archived notes", details = ex.Message }
+                );
+            }
+        }
+        [HttpGet("notes/assigned/{userId}")]
+        public async Task<ActionResult<IEnumerable<SubtaskNoteModel>>> GetNotesForAssignedJobs(
+            string userId
+        )
+        {
+            try
+            {
+                var assignedJobIds = await _context.JobAssignments
+                    .Where(ja => ja.UserId == userId)
+                    .Select(ja => ja.JobId)
+                    .Distinct()
+                    .ToListAsync();
+
+                if (!assignedJobIds.Any())
+                {
+                    return Ok(new List<SubtaskNoteModel>());
+                }
+
+                var notes = await _context.SubtaskNote
+                    .Where(n => assignedJobIds.Contains(n.JobId))
+                    .ToListAsync();
+                return Ok(notes);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(
+                    500,
+                    new { error = "Failed to fetch notes for assigned jobs", details = ex.Message }
+                );
             }
         }
 
@@ -1012,10 +1124,15 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-
-
-            var note = await _context.SubtaskNote.Where(m => m.JobSubtaskId == noteUpdate.JobSubtaskId && (!m.Approved && !m.Rejected)).ToListAsync();
-            if (note == null) return NotFound();
+                var note = await _context.SubtaskNote
+                    .Where(
+                        m =>
+                            m.JobSubtaskId == noteUpdate.JobSubtaskId
+                            && (!m.Approved && !m.Rejected)
+                    )
+                    .ToListAsync();
+                if (note == null)
+                    return NotFound();
                 foreach (var item in note)
                 {
                     item.Approved = noteUpdate.Approved;
@@ -1048,11 +1165,9 @@ namespace ProbuildBackend.Controllers
                     };
                     _context.SubtaskNoteUser.Add(usernote);
                     await _context.SaveChangesAsync();
-
                 }
                 else
                 {
-
                     var noteResponse = new SubtaskNoteModel
                     {
                         JobId = noteUpdate.JobId,
@@ -1072,14 +1187,12 @@ namespace ProbuildBackend.Controllers
                     };
                     _context.SubtaskNoteUser.Add(usernote);
                     await _context.SaveChangesAsync();
-
                 }
 
-                    return Ok(note);
+                return Ok(note);
             }
             catch (Exception ex)
             {
-
                 throw;
             }
         }
@@ -1130,7 +1243,8 @@ namespace ProbuildBackend.Controllers
 
             var completedCount = subtasks.Count(st => st.Status == "Completed");
             var totalCount = subtasks.Count;
-            var progress = totalCount > 0 ? (int)Math.Round((double)completedCount / totalCount * 100) : 0;
+            var progress =
+                totalCount > 0 ? (int)Math.Round((double)completedCount / totalCount * 100) : 0;
 
             if (progress < 100)
             {
@@ -1148,14 +1262,17 @@ namespace ProbuildBackend.Controllers
         {
             var jobs = await _context.Jobs
                 .Where(j => j.Status == "ARCHIVED")
-                .Select(j => new JobDto
-                {
-                    JobId = j.Id,
-                    ProjectName = j.ProjectName,
-                    JobType = j.JobType,
-                    Status = j.Status,
-                    // Note: CompletionDate is not in the JobModel, so it's omitted.
-                })
+                .Select(
+                    j =>
+                        new JobDto
+                        {
+                            JobId = j.Id,
+                            ProjectName = j.ProjectName,
+                            JobType = j.JobType,
+                            Status = j.Status,
+                            // Note: CompletionDate is not in the JobModel, so it's omitted.
+                        }
+                )
                 .ToListAsync();
 
             return Ok(jobs);
@@ -1164,9 +1281,7 @@ namespace ProbuildBackend.Controllers
         [HttpGet("dashboard")]
         public async Task<ActionResult<IEnumerable<JobDto>>> GetDashboardJobs()
         {
-            var jobs = await _context.Jobs
-                .Where(j => j.Status != "ARCHIVED")
-                .ToListAsync();
+            var jobs = await _context.Jobs.Where(j => j.Status != "ARCHIVED").ToListAsync();
 
             var jobDtos = new List<JobDto>();
 
@@ -1178,21 +1293,23 @@ namespace ProbuildBackend.Controllers
 
                 var completedCount = subtasks.Count(st => st.Status == "Completed");
                 var totalCount = subtasks.Count;
-                var progress = totalCount > 0 ? (int)Math.Round((double)completedCount / totalCount * 100) : 0;
+                var progress =
+                    totalCount > 0 ? (int)Math.Round((double)completedCount / totalCount * 100) : 0;
 
-                jobDtos.Add(new JobDto
-                {
-                    JobId = job.Id,
-                    ProjectName = job.ProjectName,
-                    JobType = job.JobType,
-                    Status = job.Status,
-                    Progress = progress,
-                });
+                jobDtos.Add(
+                    new JobDto
+                    {
+                        JobId = job.Id,
+                        ProjectName = job.ProjectName,
+                        JobType = job.JobType,
+                        Status = job.Status,
+                        Progress = progress,
+                    }
+                );
             }
 
             return Ok(jobDtos);
         }
-
 
         [HttpGet("GetNoteDocuments/{noteId}")]
         public async Task<IActionResult> GetNoteDocuments(int noteId)
@@ -1212,24 +1329,16 @@ namespace ProbuildBackend.Controllers
                 try
                 {
                     var properties = await _azureBlobservice.GetBlobContentAsync(doc.BlobUrl);
-                    documentDetails.Add(new
-                    {
-                        doc.Id,
-                        doc.NoteId,
-                        doc.FileName,
-                        Size = properties.Content.Length
-                    });
+                    documentDetails.Add(
+                        new { doc.Id, doc.NoteId, doc.FileName, Size = properties.Content.Length }
+                    );
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Error fetching properties for blob {doc.BlobUrl}: {ex.Message}");
-                    documentDetails.Add(new
-                    {
-                        doc.Id,
-                        doc.NoteId,
-                        doc.FileName,
-                        Size = 0L
-                    });
+                    Console.WriteLine(
+                        $"Error fetching properties for blob {doc.BlobUrl}: {ex.Message}"
+                    );
+                    documentDetails.Add(new { doc.Id, doc.NoteId, doc.FileName, Size = 0L });
                 }
             }
 
@@ -1239,9 +1348,11 @@ namespace ProbuildBackend.Controllers
         [HttpPost("SaveSubtaskNote")]
         public async Task<IActionResult> SaveSubtaskNote([FromForm] SubtaskNoteDTO request)
         {
-
             List<string> useridEmail = new List<string>();
-            if (string.IsNullOrWhiteSpace(request.NoteText) || string.IsNullOrWhiteSpace(request.CreatedByUserId))
+            if (
+                string.IsNullOrWhiteSpace(request.NoteText)
+                || string.IsNullOrWhiteSpace(request.CreatedByUserId)
+            )
                 return BadRequest("Note text and user ID are required.");
 
             var note = new SubtaskNoteModel
@@ -1271,13 +1382,10 @@ namespace ProbuildBackend.Controllers
 
                 await _context.SaveChangesAsync();
             }
-            var Jobs = await _context.Jobs
-            .Where(d => d.Id == note.JobId)
-            .ToListAsync();
+            var Jobs = await _context.Jobs.Where(d => d.Id == note.JobId).ToListAsync();
             foreach (var item in Jobs)
             {
-
-            var usernote = new SubtaskNoteUserModel
+                var usernote = new SubtaskNoteUserModel
                 {
                     SubtaskNoteId = note.Id,
                     UserId = item.UserId
@@ -1289,12 +1397,11 @@ namespace ProbuildBackend.Controllers
             await _context.SaveChangesAsync();
             foreach (var item in useridEmail)
             {
-                var userEmail = await _context.Users
-                .Where(d => d.Id == item)
-                .ToListAsync();
+                var userEmail = await _context.Users.Where(d => d.Id == item).ToListAsync();
 
                 var subject = $"New task requires an action";
-                var body = $@"<p>A note has been placed for a subtask which requires action. Please check dashboard.</p>";
+                var body =
+                    $@"<p>A note has been placed for a subtask which requires action. Please check dashboard.</p>";
 
                 try
                 {
@@ -1307,12 +1414,13 @@ namespace ProbuildBackend.Controllers
                 }
             }
 
-
-            return Ok(new
-            {
-                message = "Note and any uploaded files saved successfully.",
-                noteId = note.Id
-            });
+            return Ok(
+                new
+                {
+                    message = "Note and any uploaded files saved successfully.",
+                    noteId = note.Id
+                }
+            );
         }
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteJob(int id)
@@ -1345,10 +1453,12 @@ namespace ProbuildBackend.Controllers
                 decimal longitude = decimal.Parse(lon, CultureInfo.InvariantCulture);
 
                 var client = _httpClientFactory.CreateClient();
-                var apiKey = Environment.GetEnvironmentVariable("MapsAPI")
+                var apiKey =
+                    Environment.GetEnvironmentVariable("MapsAPI")
                     ?? _config["GoogleMapsAPI:APIKey"];
 
-                var url = $"https://weather.googleapis.com/v1/forecast/days:lookup?key={apiKey}&location.latitude={latitude.ToString(CultureInfo.InvariantCulture)}&location.longitude={longitude.ToString(CultureInfo.InvariantCulture)}&unitsSystem=METRIC&days=10&pageSize=10";
+                var url =
+                    $"https://weather.googleapis.com/v1/forecast/days:lookup?key={apiKey}&location.latitude={latitude.ToString(CultureInfo.InvariantCulture)}&location.longitude={longitude.ToString(CultureInfo.InvariantCulture)}&unitsSystem=METRIC&days=10&pageSize=10";
 
                 var response = await client.GetAsync(url);
                 var content = await response.Content.ReadAsStringAsync();
@@ -1363,7 +1473,9 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("NotifyTimelineUpdate")]
-        public async Task<IActionResult> NotifyTimelineUpdate([FromBody] NotifyTimelineUpdateRequest request)
+        public async Task<IActionResult> NotifyTimelineUpdate(
+            [FromBody] NotifyTimelineUpdateRequest request
+        )
         {
             if (request == null)
             {
@@ -1394,7 +1506,8 @@ namespace ProbuildBackend.Controllers
                 {
                     var notification = new NotificationModel
                     {
-                        Message = $"Task '{subtask.Task}' in job '{job.ProjectName}' has been updated.",
+                        Message =
+                            $"Task '{subtask.Task}' in job '{job.ProjectName}' has been updated.",
                         JobId = job.Id,
                         UserId = null, // Set to null as Recipients is the source of truth
                         SenderId = request.SenderId,
