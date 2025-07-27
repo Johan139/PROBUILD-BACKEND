@@ -1155,8 +1155,6 @@ namespace ProbuildBackend.Controllers
                     )
                     .ToList();
 
-                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(groupedNotes));
-
                 return Ok(groupedNotes);
             }
             catch (Exception ex)
@@ -1164,6 +1162,85 @@ namespace ProbuildBackend.Controllers
                 return StatusCode(
                     500,
                     new { error = "Failed to fetch notes for assigned jobs", details = ex.Message }
+                );
+            }
+        }
+
+        [HttpGet("notes/archived/assigned/{userId}")]
+        public async Task<ActionResult<IEnumerable<object>>> GetArchivedNotesForAssignedJobs(string userId)
+        {
+            try
+            {
+                var assignedJobIds = await _context.JobAssignments
+                    .Where(ja => ja.UserId == userId)
+                    .Select(ja => ja.JobId)
+                    .Distinct()
+                    .ToListAsync();
+
+                if (!assignedJobIds.Any())
+                {
+                    return Ok(new List<object>());
+                }
+
+                var notesWithDetails = await (
+                    from note in _context.SubtaskNote
+                    join job in _context.Jobs on note.JobId equals job.Id
+                    join subtask in _context.JobSubtasks on note.JobSubtaskId equals subtask.Id
+                    where assignedJobIds.Contains(note.JobId) && note.Archived
+                    select new
+                    {
+                        note.Id,
+                        note.JobId,
+                        job.ProjectName,
+                        note.JobSubtaskId,
+                        SubtaskName = subtask.Task,
+                        note.NoteText,
+                        note.CreatedByUserId,
+                        note.CreatedAt,
+                        note.ModifiedAt,
+                        note.Approved,
+                        note.Rejected,
+                        note.Archived
+                    }
+                ).ToListAsync();
+
+                var groupedNotes = notesWithDetails
+                    .GroupBy(n => new { n.JobId, n.SubtaskName })
+                    .Select(
+                        g =>
+                            new
+                            {
+                                JobId = g.Key.JobId,
+                                SubtaskName = g.Key.SubtaskName,
+                                ProjectName = g.First().ProjectName,
+                                JobSubtaskId = g.First().JobSubtaskId,
+                                CreatedAt = g.Min(x => x.CreatedAt),
+                                Notes = g.Select(
+                                        x =>
+                                            new
+                                            {
+                                                x.Id,
+                                                x.NoteText,
+                                                x.CreatedByUserId,
+                                                x.CreatedAt,
+                                                x.ModifiedAt,
+                                                x.Approved,
+                                                x.Rejected,
+                                                x.Archived
+                                            }
+                                    )
+                                    .ToList()
+                            }
+                    )
+                    .ToList();
+                    
+                return Ok(groupedNotes);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(
+                    500,
+                    new { error = "Failed to fetch archived notes for assigned jobs", details = ex.Message }
                 );
             }
         }
