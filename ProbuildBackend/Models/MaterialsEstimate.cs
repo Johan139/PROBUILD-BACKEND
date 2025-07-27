@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-
 namespace ProbuildBackend.Models
 {
     public class MaterialsEstimate

@@ -1,9 +1,5 @@
 using Azure.Storage.Blobs;
-using Microsoft.Extensions.Configuration;
-using System;
 using System.Collections.Concurrent;
-using System.IO;
-using System.Threading.Tasks;
 
 public class PromptManagerService : IPromptManagerService
 {

@@ -1,5 +1,4 @@
 ﻿using Microsoft.AspNetCore.Identity;
-using ProbuildBackend.Models;
 
 namespace ProbuildBackend.Models {
     public class UserModel : IdentityUser

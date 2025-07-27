@@ -1,10 +1,7 @@
-﻿using Elastic.Apm.Api;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
-using ProbuildBackend.Services;
 using Stripe;
 using Stripe.Checkout;
 

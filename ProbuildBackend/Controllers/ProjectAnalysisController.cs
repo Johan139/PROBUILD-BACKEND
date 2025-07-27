@@ -1,13 +1,7 @@
 // ProbuildBackend/Controllers/ProjectAnalysisController.cs
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
-using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Text.Json;
-using System.Threading.Tasks;
 
 [ApiController]
 [Route("api/[controller]")]

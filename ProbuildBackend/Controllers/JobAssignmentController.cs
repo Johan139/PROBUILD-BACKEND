@@ -1,11 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Models;
-using Microsoft.AspNetCore.SignalR;
-using ProbuildBackend.Middleware;
-using ProbuildBackend.Services;
 using Microsoft.EntityFrameworkCore;
-using Elastic.Apm.Api;
 
 namespace ProbuildBackend.Controllers
 {

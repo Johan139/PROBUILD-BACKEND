@@ -1,6 +1,4 @@
-﻿using Elastic.Apm.Api;
-
-namespace ProbuildBackend.Models
+﻿namespace ProbuildBackend.Models
 {
     public class JobAssignmentModel
     {

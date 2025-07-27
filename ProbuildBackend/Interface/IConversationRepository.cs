@@ -1,8 +1,4 @@
 // ProbuildBackend/Interface/IConversationRepository.cs
-using ProbuildBackend.Models;
-using System.Collections.Generic;
-using System.Threading.Tasks;
-
 public interface IConversationRepository
 {
     Task<Conversation?> GetConversationAsync(string conversationId);

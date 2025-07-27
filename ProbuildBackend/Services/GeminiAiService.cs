@@ -1,15 +1,8 @@
 using GenerativeAI;
 using GenerativeAI.Types;
-using Microsoft.Extensions.Configuration;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Services;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text.Json;
-using System.Threading.Tasks;
 
 public class GeminiAiService : IAiService
 {

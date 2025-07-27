@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace ProbuildBackend.Models
+﻿namespace ProbuildBackend.Models
 {
     public class SubtaskNoteModel
     {

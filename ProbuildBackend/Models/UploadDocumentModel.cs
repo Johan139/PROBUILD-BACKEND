@@ -1,7 +1,4 @@
-﻿using ProbuildBackend.Services;
-using static ProbuildBackend.Services.DocumentProcessorService;
-
-namespace ProbuildBackend.Models
+﻿namespace ProbuildBackend.Models
 {
     public class UploadDocumentModel
     {

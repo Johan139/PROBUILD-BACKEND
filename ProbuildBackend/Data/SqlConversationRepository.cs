@@ -1,13 +1,7 @@
 // ProbuildBackend/Data/SqlConversationRepository.cs
 using Dapper;
 using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.Configuration;
-using ProbuildBackend.Models;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 
 public class SqlConversationRepository : IConversationRepository
 {
