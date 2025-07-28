@@ -85,26 +85,49 @@ namespace ProbuildBackend.Controllers
         [HttpGet("GetAssignedUsers/{userId}")]
         public async Task<ActionResult<List<JobAssignmentDto>>> GetAllJobAssignment(string userId)
         {
-            List<JobAssignmentDto> assignedJobList = new List<JobAssignmentDto>();
-            var jobList = await _context.Jobs.Where(u => u.UserId == userId).ToListAsync();
-            if (jobList == null)
-                return NotFound();
+            var isTeamMember = await _context.TeamMembers.AnyAsync(tm => tm.Id == userId);
 
-            foreach (var job in jobList)
+            List<JobModel> jobsToProcess;
+
+            if (isTeamMember)
+            {
+                var assignedJobIds = await _context.JobAssignments
+                    .Where(ja => ja.UserId == userId)
+                    .Select(ja => ja.JobId)
+                    .Distinct()
+                    .ToListAsync();
+
+                jobsToProcess = await _context.Jobs
+                    .Where(j => assignedJobIds.Contains(j.Id))
+                    .ToListAsync();
+            }
+            else
+            {
+                jobsToProcess = await _context.Jobs.Where(j => j.UserId == userId).ToListAsync();
+            }
+
+            if (!jobsToProcess.Any())
+            {
+                return Ok(new List<JobAssignmentDto>());
+            }
+
+            var assignedJobList = new List<JobAssignmentDto>();
+            foreach (var job in jobsToProcess)
             {
                 var jobAssignmentRow = await _context.JobAssignments.Where(u => u.JobId == job.Id).ToListAsync();
-                if (jobAssignmentRow == null)
-                    return NotFound();
+                if (jobAssignmentRow == null) continue;
 
-                JobAssignmentDto assignedJob = new JobAssignmentDto();
-                assignedJob.Id = job.Id;
-                assignedJob.ProjectName = job.ProjectName;
-                assignedJob.Address = job.Address;
-                assignedJob.Status = job.Status;
-                assignedJob.Stories = job.Stories;
-                assignedJob.BuildingSize = job.BuildingSize;
-                assignedJob.Status = job.Status;
-                assignedJob.JobUser = new List<JobUser>();
+                var assignedJob = new JobAssignmentDto
+                {
+                    Id = job.Id,
+                    ProjectName = job.ProjectName,
+                    Address = job.Address,
+                    Status = job.Status,
+                    Stories = job.Stories,
+                    BuildingSize = job.BuildingSize,
+                    JobUser = new List<JobUser>()
+                };
+
                 foreach (var assignment in jobAssignmentRow)
                 {
                     var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == assignment.UserId);
@@ -137,10 +160,9 @@ namespace ProbuildBackend.Controllers
                         }
                     }
                 }
-
                 assignedJobList.Add(assignedJob);
             }
-            return assignedJobList;
+            return Ok(assignedJobList);
         }
 
         [HttpPost("DeleteAssignment")]

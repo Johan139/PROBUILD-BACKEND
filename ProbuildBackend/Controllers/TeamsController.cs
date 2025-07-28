@@ -111,7 +111,16 @@ namespace ProbuildBackend.Controllers
             var callbackUrl = $"{frontendUrl}/register?token={Uri.EscapeDataString(token)}";
             var emailMessage = $"You have been invited to join a team by {inviterFullName}. Please <a href='{callbackUrl}'>click here</a> to register.";
 
-            await _emailSender.SendEmailAsync(dto.Email, emailSubject, emailMessage);
+            try
+            {
+                await _emailSender.SendEmailAsync(dto.Email, emailSubject, emailMessage);
+                Console.WriteLine($"Invitation email sent to {dto.Email}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error sending invitation email to {dto.Email}: {ex.Message}");
+                return StatusCode(500, "Failed to send invitation email.");
+            }
 
             var notification = new NotificationModel
             {
@@ -167,6 +176,28 @@ namespace ProbuildBackend.Controllers
                 return NotFound();
             }
             return Ok(teamMember);
+        }
+
+        [HttpGet("members/profile/{id}")]
+        public async Task<IActionResult> GetTeamMemberProfile(string id)
+        {
+            var teamMember = await _context.TeamMembers.FindAsync(id);
+            if (teamMember == null)
+            {
+                return NotFound();
+            }
+
+            var userProfile = new UserModel
+            {
+                Id = teamMember.Id,
+                FirstName = teamMember.FirstName,
+                LastName = teamMember.LastName,
+                Email = teamMember.Email,
+                PhoneNumber = teamMember.PhoneNumber,
+                UserType = teamMember.Role
+            };
+
+            return Ok(userProfile);
         }
 
         [HttpPatch("members/{id}/deactivate")]
