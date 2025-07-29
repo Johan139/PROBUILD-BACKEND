@@ -168,8 +168,12 @@ builder.Services.AddScoped<IPromptManagerService, PromptManagerService>();
 builder.Services.AddScoped<IAiService, GeminiAiService>();
 builder.Services.AddScoped<IProjectAnalysisOrchestrator, ProjectAnalysisOrchestrator>();
 builder.Services.AddScoped<IComprehensiveAnalysisService, ComprehensiveAnalysisService>();
+builder.Services.AddScoped<ChatService>();
 
 builder.Services.AddScoped<IPdfImageConverter, PdfImageConverter>(); // Add this line
+builder.Services.AddScoped<IPdfTextExtractionService, PdfTextExtractionService>();
+builder.Services.AddScoped<IRenovationAnalysisService, RenovationAnalysisService>();
+builder.Services.AddScoped<IComparisonAnalysisService, ComparisonAnalysisService>();
 builder.Services.Configure<OcrSettings>(configuration.GetSection("OcrSettings"));
 builder.Services.AddScoped(sp => sp.GetRequiredService<IOptions<OcrSettings>>().Value);
 

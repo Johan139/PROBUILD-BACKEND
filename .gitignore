@@ -368,6 +368,9 @@ FodyWeavers.xsd
 /.sonarqube
 /.scannerwork
 sonar-project.properties
+
+.vscode/
+
 /ProbuildBackend/Migrations
 /ProbuildBackend/.sonarqube
 /ProbuildBackend/.scannerwork

@@ -1,4 +1,3 @@
-// ProbuildBackend/Controllers/ProjectAnalysisController.cs
 using Microsoft.AspNetCore.Mvc;
 using ProbuildBackend.Models;
 using System.Text.Json;
@@ -17,7 +16,7 @@ public class ProjectAnalysisController : ControllerBase
     [HttpPost("start")]
     public async Task<IActionResult> StartAnalysis([FromForm] StartAnalysisRequest request)
     {
-        // TODO: Replace with your actual user authentication logic
+        // TODO: Replace with actual user authentication logic
         var userId = "default-user"; 
         
         var imageByteList = new List<byte[]>();
@@ -38,7 +37,7 @@ public class ProjectAnalysisController : ControllerBase
             return BadRequest("Invalid JobDetails JSON.");
         }
 
-        // Consider using a background job service here for long-running tasks
+        // Consider background job service here for long-running tasks
         var conversationId = await _orchestrator.StartFullAnalysisAsync(userId, imageByteList, jobDetails);
 
         return Ok(new { Message = "Analysis started successfully. The results are being compiled.", ConversationId = conversationId });

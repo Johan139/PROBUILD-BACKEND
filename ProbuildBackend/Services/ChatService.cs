@@ -1,0 +1,152 @@
+// ProbuildBackend/Services/ChatService.cs
+using ProbuildBackend.Interface;
+using Microsoft.AspNetCore.Identity;
+using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
+using System.IO;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using ProbuildBackend.Models;
+
+namespace ProbuildBackend.Services
+{
+    public class ChatService
+    {
+        private readonly IConversationRepository _conversationRepository;
+        private readonly IPromptManagerService _promptManager;
+        private readonly IAiService _aiService;
+        private readonly UserManager<UserModel> _userManager;
+        private readonly IWebHostEnvironment _hostingEnvironment;
+        private readonly List<PromptMapping> _promptMappings;
+
+
+        public ChatService(
+            IConversationRepository conversationRepository,
+            IPromptManagerService promptManager,
+            IAiService aiService,
+            UserManager<UserModel> userManager,
+            IWebHostEnvironment hostingEnvironment)
+        {
+            _conversationRepository = conversationRepository;
+            _promptManager = promptManager;
+            _aiService = aiService;
+            _userManager = userManager;
+            _hostingEnvironment = hostingEnvironment;
+            _promptMappings = LoadPromptMappings();
+        }
+
+        private List<PromptMapping> LoadPromptMappings()
+        {
+            var filePath = Path.Combine(_hostingEnvironment.ContentRootPath, "Config", "prompt_mapping.json");
+            var json = File.ReadAllText(filePath);
+            return JsonSerializer.Deserialize<List<PromptMapping>>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+
+
+        public async Task<List<object>> GetAvailablePromptsAsync(string userId)
+        {
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null)
+            {
+                return new List<object>();
+            }
+
+            if (user.UserType == "GENERAL_CONTRACTOR")
+            {
+                return _promptMappings
+                    .Select(p => new { promptName = p.TradeName.Replace("_", " "), promptKey = p.PromptFileName })
+                    .GroupBy(p => p.promptKey)
+                    .Select(g => g.First())
+                    .Cast<object>()
+                    .ToList();
+            }
+
+            var trade = user.Trade;
+            if (string.IsNullOrEmpty(trade))
+            {
+                return new List<object>();
+            }
+
+            var prompts = _promptMappings
+                .Where(p => p.TradeName.Equals(trade, System.StringComparison.OrdinalIgnoreCase))
+                .Select(p => new { promptName = $"{trade} Analysis", promptKey = p.PromptFileName })
+                .Cast<object>()
+                .ToList();
+
+            return prompts;
+        }
+
+        public async Task<(Message, string)> StartConversationAsync(string userId, string initialMessage, string promptKey, List<string> blueprintUrls)
+        {
+            var conversationId = await _conversationRepository.CreateConversationAsync(userId, promptKey);
+
+            var userMessage = new Message
+            {
+                ConversationId = conversationId,
+                Role = "user",
+                Content = initialMessage,
+                Timestamp = DateTime.UtcNow
+            };
+            await _conversationRepository.AddMessageAsync(userMessage);
+
+            var prompt = await _promptManager.GetPromptAsync("", promptKey);
+
+            var (initialResponse, _) = await _aiService.StartMultimodalConversationAsync(userId, blueprintUrls, prompt, initialMessage);
+
+            var aiMessage = new Message
+            {
+                ConversationId = conversationId,
+                Role = "assistant",
+                Content = initialResponse,
+                Timestamp = DateTime.UtcNow
+            };
+            await _conversationRepository.AddMessageAsync(aiMessage);
+
+            return (aiMessage, conversationId);
+        }
+
+        public async Task<Message> SendMessageAsync(string conversationId, string messageText, string userId)
+        {
+            var conversation = await _conversationRepository.GetConversationAsync(conversationId);
+            if (conversation == null || conversation.UserId != userId)
+            {
+                // Or handle as an exception
+                throw new UnauthorizedAccessException("User is not authorized to access this conversation.");
+            }
+
+            var userMessage = new Message
+            {
+                ConversationId = conversationId,
+                Role = "user",
+                Content = messageText,
+                Timestamp = DateTime.UtcNow
+            };
+            await _conversationRepository.AddMessageAsync(userMessage);
+
+            // The ContinueConversationAsync method in the AI service handles retrieving history.
+            var (aiResponse, _) = await _aiService.ContinueConversationAsync(conversationId, userId, messageText, null);
+
+            var aiMessage = new Message
+            {
+                ConversationId = conversationId,
+                Role = "assistant",
+                Content = aiResponse,
+                Timestamp = DateTime.UtcNow
+            };
+            await _conversationRepository.AddMessageAsync(aiMessage);
+
+            return aiMessage;
+        }
+
+        public async Task<List<Message>> GetConversationHistoryAsync(string conversationId, string userId)
+        {
+            var conversation = await _conversationRepository.GetConversationAsync(conversationId);
+            if (conversation == null || conversation.UserId != userId)
+            {
+                throw new UnauthorizedAccessException("User is not authorized to access this conversation.");
+            }
+            return await _conversationRepository.GetMessagesAsync(conversationId);
+        }
+    }
+}

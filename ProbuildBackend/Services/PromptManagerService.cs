@@ -18,14 +18,17 @@ public class PromptManagerService : IPromptManagerService
         _blobContainerClient = new BlobContainerClient(connectionString, "probuild-prompts");
     }
 
-    public async Task<string> GetPromptAsync(string promptName)
+    public async Task<string> GetPromptAsync(string folderPath, string fileName)
     {
-        if (_promptCache.TryGetValue(promptName, out var cachedPrompt)) return cachedPrompt;
-        var blobClient = _blobContainerClient.GetBlobClient($"{promptName}.txt");
-        if (!await blobClient.ExistsAsync()) throw new FileNotFoundException($"Prompt '{promptName}.txt' not found in Azure Blob Storage.");
+        var fullBlobName = $"{folderPath}{fileName}";
+        if (_promptCache.TryGetValue(fullBlobName, out var cachedPrompt)) return cachedPrompt;
+
+        var blobClient = _blobContainerClient.GetBlobClient(fullBlobName);
+        if (!await blobClient.ExistsAsync()) throw new FileNotFoundException($"Prompt '{fullBlobName}' not found in Azure Blob Storage.");
+
         var response = await blobClient.DownloadContentAsync();
         var promptText = response.Value.Content.ToString();
-        _promptCache.TryAdd(promptName, promptText);
+        _promptCache.TryAdd(fullBlobName, promptText);
         return promptText;
     }
 }

@@ -24,14 +24,14 @@ public class ProjectAnalysisOrchestrator : IProjectAnalysisOrchestrator
 
     public async Task<string> GenerateRebuttalAsync(string conversationId, string clientQuery)
     {
-        var rebuttalPrompt = await _promptManager.GetPromptAsync("prompt-22-rebuttal") + $"\n\n**Client Query to Address:**\n{clientQuery}";
+        var rebuttalPrompt = await _promptManager.GetPromptAsync("", "prompt-22-rebuttal") + $"\n\n**Client Query to Address:**\n{clientQuery}";
         var (response, _) = await _aiService.ContinueConversationAsync(conversationId, "system-user", rebuttalPrompt, null);
         return response;
     }
 
     public async Task<string> GenerateRevisionAsync(string conversationId, string revisionRequest)
     {
-        var revisionPrompt = await _promptManager.GetPromptAsync("prompt-revision") + $"\n\n**Revision Request:**\n{revisionRequest}";
+        var revisionPrompt = await _promptManager.GetPromptAsync("", "prompt-revision") + $"\n\n**Revision Request:**\n{revisionRequest}";
         var (response, _) = await _aiService.ContinueConversationAsync(conversationId, "system-user", revisionPrompt, null);
         return response;
     }

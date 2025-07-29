@@ -23,7 +23,7 @@ namespace ProbuildBackend.Services
             string? conversationId = null;
 
             // Step 1: Initial Health Check
-            var initialTaskPrompt = await _promptManager.GetPromptAsync("prompt-00-initial-analysis");
+            var initialTaskPrompt = await _promptManager.GetPromptAsync("", "prompt-00-initial-analysis.txt");
             var (initialResponseText, newConversationId) = await _aiService.ContinueConversationAsync(conversationId, userId, initialTaskPrompt + "\n\n" + fullText, null);
             conversationId = newConversationId;
             _logger.LogInformation("Initial fitness check completed for conversation {ConversationId}.", conversationId);
@@ -32,7 +32,7 @@ namespace ProbuildBackend.Services
             if (initialResponseText.Trim().Contains("BLUEPRINT FAILURE", StringComparison.CurrentCultureIgnoreCase))
             {
                 _logger.LogWarning("Blueprint FAILURE detected for conversation {ConversationId}. Halting analysis and generating corrective action report.", conversationId);
-                var failurePromptText = await _promptManager.GetPromptAsync("prompt-failure-corrective-action");
+                var failurePromptText = await _promptManager.GetPromptAsync("", "prompt-failure-corrective-action.txt");
                 var (failureReport, _) = await _aiService.ContinueConversationAsync(conversationId, userId, failurePromptText, null);
                 return failureReport;
             }
@@ -98,8 +98,8 @@ Now, please execute the full analysis based on this information. I will provide 
             _logger.LogInformation("Starting stateful analysis from files for user {UserId}", userId);
 
             // 1. Get Prompts
-            var systemPersonaPrompt = await _promptManager.GetPromptAsync("system-persona");
-            var initialAnalysisPrompt = await _promptManager.GetPromptAsync("prompt-00-initial-analysis");
+            var systemPersonaPrompt = await _promptManager.GetPromptAsync("", "system-persona.txt");
+            var initialAnalysisPrompt = await _promptManager.GetPromptAsync("", "prompt-00-initial-analysis.txt");
 
             // Construct the full initial prompt with job details
             var initialUserPrompt = $"{initialAnalysisPrompt}\n\nHere are the project details:\n" +
@@ -164,7 +164,7 @@ Now, please execute the full analysis based on this information. I will provide 
             foreach (var promptName in promptNames)
             {
                 _logger.LogInformation("Executing step {Step} of {TotalSteps}: {PromptName} for conversation {ConversationId}", step, promptNames.Length, promptName, conversationId);
-                var promptText = await _promptManager.GetPromptAsync(promptName);
+                var promptText = await _promptManager.GetPromptAsync("", $"{promptName}.txt");
                 (lastResponse, _) = await _aiService.ContinueConversationAsync(conversationId, userId, promptText, null);
 
                 stringBuilder.Append("\n\n---\n\n");
