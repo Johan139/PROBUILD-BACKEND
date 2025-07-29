@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-
 // ProbuildBackend/Models/BillOfMaterials.cs (and BomItem.cs)
 // Add these models if they don't exist, for the GenerateBomFromText method.
 public class BillOfMaterials

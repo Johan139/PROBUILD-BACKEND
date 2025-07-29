@@ -1,6 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using ProbuildBackend.Models;
-using Microsoft.EntityFrameworkCore;
 
 namespace ProbuildBackend.Controllers
 {

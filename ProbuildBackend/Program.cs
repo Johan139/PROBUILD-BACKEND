@@ -1,6 +1,5 @@
 ﻿using Elastic.Apm.NetCoreAll;
 using Hangfire;
-using Hangfire.MemoryStorage;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption.ConfigurationModel;
 using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption;

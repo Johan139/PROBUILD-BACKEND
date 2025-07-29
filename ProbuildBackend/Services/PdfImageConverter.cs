@@ -1,13 +1,9 @@
 ﻿using iText.Kernel.Pdf;
-using iText.Kernel.Pdf.Canvas.Parser;
-using iText.Kernel.Pdf.Canvas.Parser.Data;
-using iText.Kernel.Pdf.Canvas.Parser.Listener;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.Processing;
 using ProbuildBackend.Interface;
-using static ProbuildBackend.Services.DocumentProcessorService;
 using ProbuildBackend.Models;
 using ProbuildBackend.Options;
 

@@ -1,8 +1,4 @@
-﻿using FSharp.Data.Runtime.StructuralTypes;
-using ProbuildBackend.Models;
-using System.ComponentModel.DataAnnotations.Schema;
-
-namespace ProbuildBackend.Models
+﻿namespace ProbuildBackend.Models
 {
     public class ProjectModel
     {

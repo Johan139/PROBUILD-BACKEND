@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.SignalR;
 using System.Collections.Concurrent;
 using System.Security.Claims;
-using System.Threading.Tasks;
 
 namespace ProbuildBackend.Middleware
 {

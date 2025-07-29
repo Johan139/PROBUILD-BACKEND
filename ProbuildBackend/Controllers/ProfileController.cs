@@ -1,7 +1,4 @@
-﻿using Elastic.Apm.Api;
-using Hangfire.Common;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Identity.UI.Services;
+﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -10,7 +7,6 @@ using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Services;
 using System.IO.Compression;
-using System.Net;
 
 namespace ProbuildBackend.Controllers
 {

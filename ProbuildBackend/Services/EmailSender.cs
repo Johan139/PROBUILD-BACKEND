@@ -28,7 +28,14 @@ namespace ProbuildBackend.Services
             var from = new EmailAddress(sendgridEmail, "ProBuild");
             var to = new EmailAddress(toEmail);
             var msg = MailHelper.CreateSingleEmail(from, to, subject, "", htmlMessage);
-           var test = await client.SendEmailAsync(msg);
+            var response = await client.SendEmailAsync(msg);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var responseBody = await response.Body.ReadAsStringAsync();
+                Console.WriteLine($"Failed to send email to {toEmail}. Status: {response.StatusCode}. Body: {responseBody}");
+                throw new Exception($"Failed to send email. Status code: {response.StatusCode}. Details: {responseBody}");
+            }
         }
     }
 }

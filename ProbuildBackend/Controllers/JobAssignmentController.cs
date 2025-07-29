@@ -1,11 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Models;
-using Microsoft.AspNetCore.SignalR;
-using ProbuildBackend.Middleware;
-using ProbuildBackend.Services;
 using Microsoft.EntityFrameworkCore;
-using Elastic.Apm.Api;
 
 namespace ProbuildBackend.Controllers
 {
@@ -22,104 +18,151 @@ namespace ProbuildBackend.Controllers
         [HttpPost]
         public async Task<IActionResult> PostJobAssignment([FromBody] JobAssignment assignmentData)
         {
-            JobAssignmentDto assignedJob = new JobAssignmentDto();
-            var jobAssignment = new JobAssignmentModel
-            {
-                UserId = assignmentData.UserId,
-                JobId = assignmentData.JobId,
-                JobRole = assignmentData.JobRole
-            };
-
-            _context.JobAssignments.Add(jobAssignment);
             try
             {
+                var job = await _context.Jobs.FirstOrDefaultAsync(j => j.Id == assignmentData.JobId);
+                if (job == null)
+                {
+                    return NotFound($"Job with ID {assignmentData.JobId} not found.");
+                }
+
+                UserModel user = await _context.Users.FirstOrDefaultAsync(u => u.Id == assignmentData.UserId);
+                TeamMember teamMember = null;
+
+                if (user == null)
+                {
+                    teamMember = await _context.TeamMembers.FirstOrDefaultAsync(tm => tm.Id == assignmentData.UserId);
+                    if (teamMember == null)
+                    {
+                        return NotFound($"User or Team Member with ID {assignmentData.UserId} not found.");
+                    }
+                }
+
+                var jobAssignment = new JobAssignmentModel
+                {
+                    UserId = assignmentData.UserId,
+                    JobId = assignmentData.JobId,
+                    JobRole = assignmentData.JobRole
+                };
+
+                _context.JobAssignments.Add(jobAssignment);
                 await _context.SaveChangesAsync();
 
-                var job = await _context.Jobs.Where(u => u.Id == assignmentData.JobId).FirstOrDefaultAsync();
-                if (job == null)
-                    return NotFound();
-                var user = await _context.Users.Where(u => u.Id == assignmentData.UserId).FirstOrDefaultAsync();
-                if (user == null)
-                    return NotFound();
+                var assignedJob = new JobAssignmentDto
+                {
+                    Id = job.Id,
+                    ProjectName = job.ProjectName,
+                    Address = job.Address,
+                    Status = job.Status,
+                    Stories = job.Stories,
+                    BuildingSize = job.BuildingSize,
+                    JobUser = new List<JobUser>
+                    {
+                        new JobUser
+                        {
+                            Id = user?.Id ?? teamMember.Id,
+                            FirstName = user?.FirstName ?? teamMember.FirstName,
+                            LastName = user?.LastName ?? teamMember.LastName,
+                            PhoneNumber = user?.PhoneNumber ?? teamMember.PhoneNumber,
+                            JobRole = assignmentData.JobRole,
+                            UserType = user?.UserType ?? teamMember.Role
+                        }
+                    }
+                };
 
-                assignedJob.Id = job.Id;
-                assignedJob.ProjectName = job.ProjectName;
-                assignedJob.Address = job.Address;
-                assignedJob.Status = job.Status;
-                assignedJob.Stories = job.Stories;
-                assignedJob.BuildingSize = job.BuildingSize;
-                assignedJob.Status = job.Status;
-                assignedJob.JobUser = new List<JobUser>();
-                JobUser jobUser = new JobUser();
-                jobUser.Id = user.Id;
-                jobUser.FirstName = user.FirstName;
-                jobUser.LastName = user.LastName;
-                jobUser.PhoneNumber = user.PhoneNumber;
-                jobUser.JobRole = assignmentData.JobRole;
-                jobUser.UserType = user.UserType;
-                assignedJob.JobUser.Add(jobUser);
+                return Ok(assignedJob);
             }
-            catch (DbUpdateConcurrencyException)
+            catch (DbUpdateException ex)
             {
-                return Conflict("Duplicate link already exists.");
+                return BadRequest(new { message = "Failed to assign job. Check for duplicate assignments or invalid data.", error = ex.Message });
             }
             catch (Exception ex)
             {
-                return BadRequest(ex);
+                return StatusCode(500, new { message = "An unexpected error occurred.", error = ex.Message });
             }
-
-            return Ok(assignedJob);
         }
 
         [HttpGet("GetAssignedUsers/{userId}")]
         public async Task<ActionResult<List<JobAssignmentDto>>> GetAllJobAssignment(string userId)
         {
-            List<JobAssignmentDto> assignedJobList = new List<JobAssignmentDto>();
-            var jobList = await _context.Jobs.Where(u => u.UserId == userId).ToListAsync();
-            if (jobList == null)
-                return NotFound();
+            var isTeamMember = await _context.TeamMembers.AnyAsync(tm => tm.Id == userId);
 
-            foreach (var job in jobList)
+            List<JobModel> jobsToProcess;
+
+            if (isTeamMember)
+            {
+                var assignedJobIds = await _context.JobAssignments
+                    .Where(ja => ja.UserId == userId)
+                    .Select(ja => ja.JobId)
+                    .Distinct()
+                    .ToListAsync();
+
+                jobsToProcess = await _context.Jobs
+                    .Where(j => assignedJobIds.Contains(j.Id))
+                    .ToListAsync();
+            }
+            else
+            {
+                jobsToProcess = await _context.Jobs.Where(j => j.UserId == userId).ToListAsync();
+            }
+
+            if (!jobsToProcess.Any())
+            {
+                return Ok(new List<JobAssignmentDto>());
+            }
+
+            var assignedJobList = new List<JobAssignmentDto>();
+            foreach (var job in jobsToProcess)
             {
                 var jobAssignmentRow = await _context.JobAssignments.Where(u => u.JobId == job.Id).ToListAsync();
-                if (jobAssignmentRow == null)
-                    return NotFound();
+                if (jobAssignmentRow == null) continue;
 
-                JobAssignmentDto assignedJob = new JobAssignmentDto();
-                assignedJob.Id = job.Id;
-                assignedJob.ProjectName = job.ProjectName;
-                assignedJob.Address = job.Address;
-                assignedJob.Status = job.Status;
-                assignedJob.Stories = job.Stories;
-                assignedJob.BuildingSize = job.BuildingSize;
-                assignedJob.Status = job.Status;
-                assignedJob.JobUser = new List<JobUser>();
-                foreach (var User in jobAssignmentRow)
+                var assignedJob = new JobAssignmentDto
                 {
-                    var user = await _context.Users.Where(u => u.Id == User.UserId).FirstOrDefaultAsync();
-                    if (user == null)
+                    Id = job.Id,
+                    ProjectName = job.ProjectName,
+                    Address = job.Address,
+                    Status = job.Status,
+                    Stories = job.Stories,
+                    BuildingSize = job.BuildingSize,
+                    JobUser = new List<JobUser>()
+                };
+
+                foreach (var assignment in jobAssignmentRow)
+                {
+                    var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == assignment.UserId);
+                    if (user != null)
                     {
-                        assignedJob.JobUser = new List<JobUser>();
-                        JobUser emptyJobUser = new JobUser();
-                        assignedJob.JobUser.Add(emptyJobUser);
-                        continue;
+                        assignedJob.JobUser.Add(new JobUser
+                        {
+                            Id = user.Id,
+                            FirstName = user.FirstName,
+                            LastName = user.LastName,
+                            PhoneNumber = user.PhoneNumber,
+                            JobRole = assignment.JobRole,
+                            UserType = user.UserType
+                        });
                     }
-
-                    JobUser jobUser = new JobUser
+                    else
                     {
-                        Id = user.Id,
-                        FirstName = user.FirstName,
-                        LastName = user.LastName,
-                        PhoneNumber = user.PhoneNumber,
-                        JobRole = User.JobRole,
-                        UserType = user.UserType
-                    };
-                    assignedJob.JobUser.Add(jobUser);
+                        var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(tm => tm.Id == assignment.UserId);
+                        if (teamMember != null)
+                        {
+                            assignedJob.JobUser.Add(new JobUser
+                            {
+                                Id = teamMember.Id,
+                                FirstName = teamMember.FirstName,
+                                LastName = teamMember.LastName,
+                                PhoneNumber = teamMember.PhoneNumber,
+                                JobRole = assignment.JobRole,
+                                UserType = teamMember.Role
+                            });
+                        }
+                    }
                 }
-
                 assignedJobList.Add(assignedJob);
             }
-            return assignedJobList;
+            return Ok(assignedJobList);
         }
 
         [HttpPost("DeleteAssignment")]

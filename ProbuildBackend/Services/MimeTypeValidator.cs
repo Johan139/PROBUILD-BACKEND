@@ -1,6 +1,3 @@
-using System;
-using System.Linq;
-
 public static class MimeTypeValidator
 {
     private static readonly byte[] Jpeg = new byte[] { 0xFF, 0xD8, 0xFF, 0xE0 };
