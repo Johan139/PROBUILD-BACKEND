@@ -121,7 +121,7 @@ public class GeminiAiService : IAiService
     private async Task<List<Content>> BuildHistoryAsync(Conversation conv)
     {
         var recentMessages = await _conversationRepo.GetUnsummarizedMessagesAsync(conv.Id);
-        var systemPrompt = await _promptManager.GetPromptAsync("system-persona");
+        var systemPrompt = await _promptManager.GetPromptAsync("", "system-persona");
 
         var history = new List<Content>
         {
