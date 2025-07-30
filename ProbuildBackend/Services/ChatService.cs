@@ -1,7 +1,11 @@
-// ProbuildBackend/Services/ChatService.cs
 using ProbuildBackend.Interface;
 using Microsoft.AspNetCore.Identity;
 using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
+using System.IO;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 using ProbuildBackend.Models;
 
 namespace ProbuildBackend.Services
@@ -42,13 +46,17 @@ namespace ProbuildBackend.Services
         public async Task<List<object>> GetAvailablePromptsAsync(string userId)
         {
             var user = await _userManager.FindByIdAsync(userId);
+            Console.WriteLine($"DELETE ME: [ChatService] Checking prompts for userId: {userId}");
             if (user == null)
             {
+                Console.WriteLine($"DELETE ME: [ChatService] User with ID {userId} not found.");
                 return new List<object>();
             }
+            Console.WriteLine($"DELETE ME: [ChatService] Found user with UserType: {user.UserType}");
 
             if (user.UserType == "GENERAL_CONTRACTOR")
             {
+                Console.WriteLine("DELETE ME: [ChatService] User is GENERAL_CONTRACTOR, returning all prompts.");
                 return _promptMappings
                     .Select(p => new { promptName = p.TradeName.Replace("_", " "), promptKey = p.PromptFileName })
                     .GroupBy(p => p.promptKey)
@@ -72,7 +80,7 @@ namespace ProbuildBackend.Services
             return prompts;
         }
 
-        public async Task<(Message, string)> StartConversationAsync(string userId, string initialMessage, string promptKey, List<string> blueprintUrls)
+        public async Task<Conversation> StartConversationAsync(string userId, string userType, string initialMessage, string promptKey, List<string> blueprintUrls)
         {
             var conversationId = await _conversationRepository.CreateConversationAsync(userId, promptKey);
 
@@ -85,7 +93,7 @@ namespace ProbuildBackend.Services
             };
             await _conversationRepository.AddMessageAsync(userMessage);
 
-            var prompt = await _promptManager.GetPromptAsync("", promptKey);
+            var prompt = await _promptManager.GetPromptAsync(userType, promptKey);
 
             var (initialResponse, _) = await _aiService.StartMultimodalConversationAsync(userId, blueprintUrls, prompt, initialMessage);
 
@@ -98,7 +106,8 @@ namespace ProbuildBackend.Services
             };
             await _conversationRepository.AddMessageAsync(aiMessage);
 
-            return (aiMessage, conversationId);
+            var conversation = await _conversationRepository.GetConversationAsync(conversationId);
+            return conversation;
         }
 
         public async Task<Message> SendMessageAsync(string conversationId, string messageText, string userId)
@@ -143,7 +152,7 @@ namespace ProbuildBackend.Services
             }
             return await _conversationRepository.GetMessagesAsync(conversationId);
         }
-        
+
         public async Task<IEnumerable<Conversation>> GetUserConversationsAsync(string userId)
         {
           return await _conversationRepository.GetByUserIdAsync(userId);

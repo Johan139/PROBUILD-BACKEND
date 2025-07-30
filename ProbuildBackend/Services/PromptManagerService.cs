@@ -18,8 +18,9 @@ public class PromptManagerService : IPromptManagerService
         _blobContainerClient = new BlobContainerClient(connectionString, "probuild-prompts");
     }
 
-    public async Task<string> GetPromptAsync(string folderPath, string fileName)
+    public async Task<string> GetPromptAsync(string userType, string fileName)
     {
+        var folderPath = $"{userType}/";
         var fullBlobName = $"{folderPath}{fileName}";
         if (_promptCache.TryGetValue(fullBlobName, out var cachedPrompt)) return cachedPrompt;
 
