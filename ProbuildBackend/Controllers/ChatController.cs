@@ -4,6 +4,11 @@ using Microsoft.AspNetCore.Mvc;
 using ProbuildBackend.Services;
 using ProbuildBackend.Models.DTO;
 using System.Security.Claims;
+using ProbuildBackend.Interface;
+using Microsoft.AspNetCore.Http;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace ProbuildBackend.Controllers
 {
@@ -14,11 +19,15 @@ namespace ProbuildBackend.Controllers
     {
         private readonly ChatService _chatService;
         private readonly ILogger<ChatController> _logger;
+        private readonly IComparisonAnalysisService _comparisonAnalysisService;
+        private readonly IRenovationAnalysisService _renovationAnalysisService;
 
-        public ChatController(ChatService chatService, ILogger<ChatController> logger)
+        public ChatController(ChatService chatService, ILogger<ChatController> logger, IComparisonAnalysisService comparisonAnalysisService, IRenovationAnalysisService renovationAnalysisService)
         {
             _chatService = chatService;
             _logger = logger;
+            _comparisonAnalysisService = comparisonAnalysisService;
+            _renovationAnalysisService = renovationAnalysisService;
         }
 
         [HttpGet("my-prompts")]
@@ -105,6 +114,56 @@ namespace ProbuildBackend.Controllers
             var conversations = await _chatService.GetUserConversationsAsync(userId);
             _logger.LogInformation($"DELETE ME: GetMyConversations - Returning {conversations.Count()} conversations");
             return Ok(conversations);
+        }
+
+        [HttpPost("start-renovation-analysis")]
+        public async Task<IActionResult> StartRenovationAnalysis(IFormFileCollection files)
+        {
+            var userId = User.FindFirstValue("UserId");
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized();
+            }
+
+            var request = new RenovationAnalysisRequest { UserId = userId };
+            var result = await _renovationAnalysisService.PerformAnalysisAsync(request, files.ToList());
+            return Ok(result);
+        }
+
+        [HttpPost("start-subcontractor-comparison")]
+        public async Task<IActionResult> StartSubcontractorComparison(IFormFileCollection files)
+        {
+            var userId = User.FindFirstValue("UserId");
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized();
+            }
+
+            var request = new ComparisonAnalysisRequest
+            {
+                UserId = userId,
+                ComparisonType = ComparisonType.Subcontractor
+            };
+            var result = await _comparisonAnalysisService.PerformAnalysisAsync(request, files.ToList());
+            return Ok(result);
+        }
+
+        [HttpPost("start-vendor-comparison")]
+        public async Task<IActionResult> StartVendorComparison(IFormFileCollection files)
+        {
+            var userId = User.FindFirstValue("UserId");
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized();
+            }
+
+            var request = new ComparisonAnalysisRequest
+            {
+                UserId = userId,
+                ComparisonType = ComparisonType.Vendor
+            };
+            var result = await _comparisonAnalysisService.PerformAnalysisAsync(request, files.ToList());
+            return Ok(result);
         }
     }
 
