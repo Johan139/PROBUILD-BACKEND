@@ -2,9 +2,7 @@ using iText.Kernel.Pdf;
 using iText.Kernel.Pdf.Canvas.Parser;
 using iText.Kernel.Pdf.Canvas.Parser.Listener;
 using ProbuildBackend.Interface;
-using System.IO;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace ProbuildBackend.Services
 {

@@ -2,11 +2,6 @@
 using ProbuildBackend.Interface;
 using Microsoft.AspNetCore.Identity;
 using System.Text.Json;
-using Microsoft.AspNetCore.Hosting;
-using System.IO;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using ProbuildBackend.Models;
 
 namespace ProbuildBackend.Services
@@ -147,6 +142,11 @@ namespace ProbuildBackend.Services
                 throw new UnauthorizedAccessException("User is not authorized to access this conversation.");
             }
             return await _conversationRepository.GetMessagesAsync(conversationId);
+        }
+        
+        public async Task<IEnumerable<Conversation>> GetUserConversationsAsync(string userId)
+        {
+          return await _conversationRepository.GetByUserIdAsync(userId);
         }
     }
 }

@@ -1,6 +1,7 @@
 // ProbuildBackend/Data/SqlConversationRepository.cs
 using Dapper;
 using Microsoft.Data.SqlClient;
+using ProbuildBackend.Interface;
 using System.Text;
 
 public class SqlConversationRepository : IConversationRepository
@@ -40,7 +41,7 @@ public class SqlConversationRepository : IConversationRepository
         var sql = "SELECT * FROM Conversations WHERE Id = @Id";
         return await connection.QuerySingleOrDefaultAsync<Conversation>(sql, new { Id = conversationId });
     }
-    
+
     public async Task<List<Message>> GetUnsummarizedMessagesAsync(string conversationId)
     {
         await using var connection = GetConnection();
@@ -66,7 +67,7 @@ public class SqlConversationRepository : IConversationRepository
             throw;
         }
     }
-    
+
     public async Task UpdateConversationSummaryAsync(string conversationId, string? newSummary)
     {
         await using var connection = GetConnection();
@@ -93,5 +94,13 @@ public class SqlConversationRepository : IConversationRepository
         sqlBuilder.Append("ORDER BY Timestamp ASC;");
         var messages = await connection.QueryAsync<Message>(sqlBuilder.ToString(), new { ConversationId = conversationId });
         return messages.ToList();
+    }
+
+    public async Task<IEnumerable<Conversation>> GetByUserIdAsync(string userId)
+    {
+        await using var connection = GetConnection();
+        var sql = "SELECT * FROM Conversations WHERE UserId = @UserId";
+        var conversations = await connection.QueryAsync<Conversation>(sql, new { UserId = userId });
+        return conversations.ToList();
     }
 }

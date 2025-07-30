@@ -2,7 +2,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ProbuildBackend.Services;
-using ProbuildBackend.Models.DTO;
 using System.Security.Claims;
 
 namespace ProbuildBackend.Controllers
@@ -69,6 +68,19 @@ namespace ProbuildBackend.Controllers
 
             var history = await _chatService.GetConversationHistoryAsync(conversationId, userId);
             return Ok(history);
+        }
+
+        [HttpGet("my-conversations")]
+        public async Task<IActionResult> GetMyConversations()
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized();
+            }
+
+            var conversations = await _chatService.GetUserConversationsAsync(userId);
+            return Ok(conversations);
         }
     }
 

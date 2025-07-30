@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models.DTO;
-using System.Threading.Tasks;
 
 namespace ProbuildBackend.Controllers
 {
