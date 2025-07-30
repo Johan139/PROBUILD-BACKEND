@@ -40,6 +40,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<TeamMember> TeamMembers { get; set; }
     public DbSet<Permission> Permissions { get; set; }
     public DbSet<TeamMemberPermission> TeamMemberPermissions { get; set; }
+    public DbSet<Conversation> Conversations { get; set; }
  
       protected override void OnModelCreating(ModelBuilder modelBuilder)
       {
@@ -232,7 +233,12 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
            .HasOne(tp => tp.Permission)
            .WithMany(p => p.TeamMemberPermissions)
            .HasForeignKey(tp => tp.PermissionId);
-
-        base.OnModelCreating(modelBuilder);
-     }
+        
+        modelBuilder.Entity<Conversation>()
+            .HasMany<JobDocumentModel>()
+            .WithOne()
+            .HasForeignKey(d => d.ConversationId);
+ 
+         base.OnModelCreating(modelBuilder);
+      }
 }

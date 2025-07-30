@@ -4,6 +4,7 @@
     {
         public int Id { get; set; }
         public int? JobId { get; set; }
+        public string? ConversationId { get; set; }
         public string FileName { get; set; }
         public string BlobUrl { get; set; }
         public string SessionId { get; set; }

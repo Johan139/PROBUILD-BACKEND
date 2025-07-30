@@ -1,4 +1,3 @@
-// ProbuildBackend/Controllers/ChatController.cs
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ProbuildBackend.Services;
@@ -9,6 +8,8 @@ using Microsoft.AspNetCore.Http;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
+using ProbuildBackend.Models;
+using Microsoft.EntityFrameworkCore;
 
 namespace ProbuildBackend.Controllers
 {
@@ -21,13 +22,17 @@ namespace ProbuildBackend.Controllers
         private readonly ILogger<ChatController> _logger;
         private readonly IComparisonAnalysisService _comparisonAnalysisService;
         private readonly IRenovationAnalysisService _renovationAnalysisService;
+        private readonly AzureBlobService _azureBlobService;
+        private readonly ApplicationDbContext _context;
 
-        public ChatController(ChatService chatService, ILogger<ChatController> logger, IComparisonAnalysisService comparisonAnalysisService, IRenovationAnalysisService renovationAnalysisService)
+        public ChatController(ChatService chatService, ILogger<ChatController> logger, IComparisonAnalysisService comparisonAnalysisService, IRenovationAnalysisService renovationAnalysisService, AzureBlobService azureBlobService, ApplicationDbContext context)
         {
             _chatService = chatService;
             _logger = logger;
             _comparisonAnalysisService = comparisonAnalysisService;
             _renovationAnalysisService = renovationAnalysisService;
+            _azureBlobService = azureBlobService;
+            _context = context;
         }
 
         [HttpGet("my-prompts")]
@@ -119,6 +124,7 @@ namespace ProbuildBackend.Controllers
         [HttpPost("start-renovation-analysis")]
         public async Task<IActionResult> StartRenovationAnalysis(IFormFileCollection files)
         {
+          _logger.LogInformation("DELETE ME: StartRenovationAnalysis endpoint hit");
             var userId = User.FindFirstValue("UserId");
             if (string.IsNullOrEmpty(userId))
             {
@@ -133,6 +139,8 @@ namespace ProbuildBackend.Controllers
         [HttpPost("start-subcontractor-comparison")]
         public async Task<IActionResult> StartSubcontractorComparison(IFormFileCollection files)
         {
+            _logger.LogInformation("DELETE ME: StartSubcontractorComparison endpoint hit");
+
             var userId = User.FindFirstValue("UserId");
             if (string.IsNullOrEmpty(userId))
             {
@@ -151,6 +159,8 @@ namespace ProbuildBackend.Controllers
         [HttpPost("start-vendor-comparison")]
         public async Task<IActionResult> StartVendorComparison(IFormFileCollection files)
         {
+            _logger.LogInformation("DELETE ME: StartVendorComparison endpoint hit");
+
             var userId = User.FindFirstValue("UserId");
             if (string.IsNullOrEmpty(userId))
             {
@@ -164,6 +174,61 @@ namespace ProbuildBackend.Controllers
             };
             var result = await _comparisonAnalysisService.PerformAnalysisAsync(request, files.ToList());
             return Ok(result);
+        }
+
+        [HttpPost("{conversationId}/upload")]
+        public async Task<IActionResult> UploadChatFile(string conversationId, IFormFileCollection files)
+        {
+            _logger.LogInformation($"DELETE ME: UploadChatFile endpoint hit for conversationId: {conversationId}");
+            var userId = User.FindFirstValue("UserId");
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized();
+            }
+
+            var uploadedFileUrls = await _azureBlobService.UploadFiles(files.ToList(), null, null);
+
+            foreach (var (file, url) in files.Zip(uploadedFileUrls, (f, u) => (f, u)))
+            {
+                var jobDocument = new JobDocumentModel
+                {
+                    JobId = null,
+                    ConversationId = conversationId,
+                    FileName = file.FileName,
+                    BlobUrl = url,
+                    SessionId = null,
+                    UploadedAt = DateTime.UtcNow,
+                    Size = file.Length
+                };
+                _context.JobDocuments.Add(jobDocument);
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { fileUrls = uploadedFileUrls });
+        }
+
+        [HttpGet("{conversationId}/documents")]
+        public async Task<IActionResult> GetConversationDocuments(string conversationId)
+        {
+            _logger.LogInformation($"DELETE ME: GetConversationDocuments endpoint hit for conversationId: {conversationId}");
+            var userId = User.FindFirstValue("UserId");
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized();
+            }
+
+            var documents = await _context.JobDocuments
+                .Where(d => d.ConversationId == conversationId)
+                .ToListAsync();
+
+            _logger.LogInformation($"DELETE ME: GetConversationDocuments - Found {documents.Count} documents for conversationId: {conversationId}");
+            if (documents.Count == 0)
+            {
+                return NotFound("No documents found for this conversation.");
+            }
+
+            return Ok(documents);
         }
     }
 
