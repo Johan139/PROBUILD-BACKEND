@@ -1,262 +1,327 @@
 [
   {
     "tradeName": "ACOUSTICAL_CONTRACTORS",
-    "promptFileName": "Acoustical_Subcontractor_Prompt.txt"
+    "promptFileName": "Acoustical_Subcontractor_Prompt.txt",
+    "displayName": "Acoustical Contractors"
   },
   {
     "tradeName": "ASBESTOS_ABATEMENT",
-    "promptFileName": "Asbestos_Subcontractor_Prompt.txt"
+    "promptFileName": "Asbestos_Subcontractor_Prompt.txt",
+    "displayName": "Asbestos Abatement"
   },
   {
     "tradeName": "AUTOMATION_TECHNOLOGY",
-    "promptFileName": "Automation_Technology_Subcontractor_Prompt.txt"
+    "promptFileName": "Automation_Technology_Subcontractor_Prompt.txt",
+    "displayName": "Automation Technology"
   },
   {
     "tradeName": "CARPENTRY_MLWK",
-    "promptFileName": "Carpentry_Subcontractor_Prompt.txt"
+    "promptFileName": "Carpentry_Subcontractor_Prompt.txt",
+    "displayName": "Carpentry Mlwk"
   },
   {
     "tradeName": "WOODWORK_INTERIOR",
-    "promptFileName": "Carpentry_Subcontractor_Prompt.txt"
+    "promptFileName": "Carpentry_Subcontractor_Prompt.txt",
+    "displayName": "Woodwork Interior"
   },
   {
     "tradeName": "COMMUNICATIONS",
-    "promptFileName": "Communications_Subcontractor_Prompt.txt"
+    "promptFileName": "Communications_Subcontractor_Prompt.txt",
+    "displayName": "Communications"
   },
   {
     "tradeName": "COMPUTER_FACILITIES",
-    "promptFileName": "Computer_Facilities_Subcontractor_Prompt.txt"
+    "promptFileName": "Computer_Facilities_Subcontractor_Prompt.txt",
+    "displayName": "Computer Facilities"
   },
   {
     "tradeName": "CONCRETE",
-    "promptFileName": "Concrete_Subcontractor_Prompt.txt"
+    "promptFileName": "Concrete_Subcontractor_Prompt.txt",
+    "displayName": "Concrete"
   },
   {
     "tradeName": "CONCRETE_DECORATIVE",
-    "promptFileName": "Concrete_Subcontractor_Prompt.txt"
+    "promptFileName": "Concrete_Subcontractor_Prompt.txt",
+    "displayName": "Concrete Decorative"
   },
   {
     "tradeName": "CONCRETE_POLISHING",
-    "promptFileName": "Concrete_Subcontractor_Prompt.txt"
+    "promptFileName": "Concrete_Subcontractor_Prompt.txt",
+    "displayName": "Concrete Polishing"
   },
   {
     "tradeName": "COUNTERTOPS",
-    "promptFileName": "Concrete_Subcontractor_Prompt.txt"
+    "promptFileName": "Concrete_Subcontractor_Prompt.txt",
+    "displayName": "Countertops"
   },
   {
     "tradeName": "CRANES",
-    "promptFileName": "Crane_Rigging_Subcontractor_Prompt.txt"
+    "promptFileName": "Crane_Rigging_Subcontractor_Prompt.txt",
+    "displayName": "Cranes"
   },
   {
     "tradeName": "RIGGING_HAULING",
-    "promptFileName": "Crane_Rigging_Subcontractor_Prompt.txt"
+    "promptFileName": "Crane_Rigging_Subcontractor_Prompt.txt",
+    "displayName": "Rigging Hauling"
   },
   {
     "tradeName": "CURTAIN_WALL",
-    "promptFileName": "Curtain_Wall_Glass_Subcontractor_Prompt.txt"
+    "promptFileName": "Curtain_Wall_Glass_Subcontractor_Prompt.txt",
+    "displayName": "Curtain Wall"
   },
   {
     "tradeName": "GLASS_GLAZING",
-    "promptFileName": "Curtain_Wall_Glass_Subcontractor_Prompt.txt"
+    "promptFileName": "Curtain_Wall_Glass_Subcontractor_Prompt.txt",
+    "displayName": "Glass Glazing"
   },
   {
     "tradeName": "WINDOWS",
-    "promptFileName": "Curtain_Wall_Glass_Subcontractor_Prompt.txt"
+    "promptFileName": "Curtain_Wall_Glass_Subcontractor_Prompt.txt",
+    "displayName": "Windows"
   },
   {
     "tradeName": "DISASTER_RECOVERY",
-    "promptFileName": "Disaster_Recovery_Subcontractor_Prompt.txt"
+    "promptFileName": "Disaster_Recovery_Subcontractor_Prompt.txt",
+    "displayName": "Disaster Recovery"
   },
   {
     "tradeName": "DOORS_HARDWARE",
-    "promptFileName": "Doors_Hardware_Subcontractor_Prompt.txt"
+    "promptFileName": "Doors_Hardware_Subcontractor_Prompt.txt",
+    "displayName": "Doors Hardware"
   },
   {
     "tradeName": "DRYWALL_PLASTER_ACOUSTIC",
-    "promptFileName": "Drywall_Plaster_Acoustic_Subcontractor_Prompt.txt"
+    "promptFileName": "Drywall_Plaster_Acoustic_Subcontractor_Prompt.txt",
+    "displayName": "Drywall Plaster Acoustic"
   },
   {
     "tradeName": "ELECTRICAL",
-    "promptFileName": "Electrical_Subcontractor_Prompt.txt"
+    "promptFileName": "Electrical_Subcontractor_Prompt.txt",
+    "displayName": "Electrical"
   },
   {
     "tradeName": "LIGHTENING_PROTECTION",
-    "promptFileName": "Electrical_Subcontractor_Prompt.txt"
+    "promptFileName": "Electrical_Subcontractor_Prompt.txt",
+    "displayName": "Lightening Protection"
   },
   {
     "tradeName": "ELEVATOR_ESCALATOR",
-    "promptFileName": "Elevator_Subcontractor_Prompt.txt"
+    "promptFileName": "Elevator_Subcontractor_Prompt.txt",
+    "displayName": "Elevator Escalator"
   },
   {
     "tradeName": "ENVIRONMENTAL",
-    "promptFileName": "Environmental_Subcontractor_Prompt.txt"
+    "promptFileName": "Environmental_Subcontractor_Prompt.txt",
+    "displayName": "Environmental"
   },
   {
     "tradeName": "EXCAVATING_EARTHMOVING",
-    "promptFileName": "Excavation_Site_Preparation_Subcontractor_Prompt.txt"
+    "promptFileName": "Excavation_Site_Preparation_Subcontractor_Prompt.txt",
+    "displayName": "Excavating Earthmoving"
   },
   {
     "tradeName": "FOUNDATION_DRILLING",
-    "promptFileName": "Excavation_Site_Preparation_Subcontractor_Prompt.txt"
+    "promptFileName": "Excavation_Site_Preparation_Subcontractor_Prompt.txt",
+    "displayName": "Foundation Drilling"
   },
   {
     "tradeName": "GEOTECHNICAL_CONSTRUCTION",
-    "promptFileName": "Excavation_Site_Preparation_Subcontractor_Prompt.txt"
+    "promptFileName": "Excavation_Site_Preparation_Subcontractor_Prompt.txt",
+    "displayName": "Geotechnical Construction"
   },
   {
     "tradeName": "SITE_PREPARATION",
-    "promptFileName": "Excavation_Site_Preparation_Subcontractor_Prompt.txt"
+    "promptFileName": "Excavation_Site_Preparation_Subcontractor_Prompt.txt",
+    "displayName": "Site Preparation"
   },
   {
     "tradeName": "WATER_WELL_DRILLING",
-    "promptFileName": "Excavation_Site_Preparation_Subcontractor_Prompt.txt"
+    "promptFileName": "Excavation_Site_Preparation_Subcontractor_Prompt.txt",
+    "displayName": "Water Well Drilling"
   },
   {
     "tradeName": "EXTERIOR_IMPROVEMENT",
-    "promptFileName": "Exterior_Improvement_Subcontractor_Prompt.txt"
+    "promptFileName": "Exterior_Improvement_Subcontractor_Prompt.txt",
+    "displayName": "Exterior Improvement"
   },
   {
     "tradeName": "FENCE",
-    "promptFileName": "Fence_Subcontractor_Prompt.txt"
+    "promptFileName": "Fence_Subcontractor_Prompt.txt",
+    "displayName": "Fence"
   },
   {
     "tradeName": "FIRE_PROOFING",
-    "promptFileName": "Fire_Protection_Subcontractor_Prompt.txt"
+    "promptFileName": "Fire_Protection_Subcontractor_Prompt.txt",
+    "displayName": "Fire Proofing"
   },
   {
     "tradeName": "FIRE_PROTECTION",
-    "promptFileName": "Fire_Protection_Subcontractor_Prompt.txt"
+    "promptFileName": "Fire_Protection_Subcontractor_Prompt.txt",
+    "displayName": "Fire Protection"
   },
   {
     "tradeName": "FIRE_SPRINKLING",
-    "promptFileName": "Fire_Protection_Subcontractor_Prompt.txt"
+    "promptFileName": "Fire_Protection_Subcontractor_Prompt.txt",
+    "displayName": "Fire Sprinkling"
   },
   {
     "tradeName": "FLOORING",
-    "promptFileName": "Flooring_Subcontractor_Prompt.txt"
+    "promptFileName": "Flooring_Subcontractor_Prompt.txt",
+    "displayName": "Flooring"
   },
   {
     "tradeName": "TILE_TERRAZZO_MARBLE",
-    "promptFileName": "Flooring_Subcontractor_Prompt.txt"
+    "promptFileName": "Flooring_Subcontractor_Prompt.txt",
+    "displayName": "Tile Terrazzo Marble"
   },
   {
     "tradeName": "HIGHWAYS_STREETS_BRIDGES",
-    "promptFileName": "Highways_Streets_Bridges_Subcontractor_Prompt.txt"
+    "promptFileName": "Highways_Streets_Bridges_Subcontractor_Prompt.txt",
+    "displayName": "Highways Streets Bridges"
   },
   {
     "tradeName": "HVAC",
-    "promptFileName": "HVAC_Mechanical_Subcontractor_Prompt.txt"
+    "promptFileName": "HVAC_Mechanical_Subcontractor_Prompt.txt",
+    "displayName": "Hvac"
   },
   {
     "tradeName": "MECHANICAL",
-    "promptFileName": "HVAC_Mechanical_Subcontractor_Prompt.txt"
+    "promptFileName": "HVAC_Mechanical_Subcontractor_Prompt.txt",
+    "displayName": "Mechanical"
   },
   {
     "tradeName": "MECHANICAL_INSULATION",
-    "promptFileName": "HVAC_Mechanical_Subcontractor_Prompt.txt"
+    "promptFileName": "HVAC_Mechanical_Subcontractor_Prompt.txt",
+    "displayName": "Mechanical Insulation"
   },
   {
     "tradeName": "TESTING_BALANCING",
-    "promptFileName": "HVAC_Mechanical_Subcontractor_Prompt.txt"
+    "promptFileName": "HVAC_Mechanical_Subcontractor_Prompt.txt",
+    "displayName": "Testing Balancing"
   },
   {
     "tradeName": "INSULATION",
-    "promptFileName": "Insulation_Subcontractor_Prompt.txt"
+    "promptFileName": "Insulation_Subcontractor_Prompt.txt",
+    "displayName": "Insulation"
   },
   {
     "tradeName": "THERMAL_MOISTURE_PROTECTION",
-    "promptFileName": "Insulation_Subcontractor_Prompt.txt"
+    "promptFileName": "Insulation_Subcontractor_Prompt.txt",
+    "displayName": "Thermal Moisture Protection"
   },
   {
     "tradeName": "INTERIOR_FINISHING",
-    "promptFileName": "Interior_Finishing_Subcontractor_Prompt.txt"
+    "promptFileName": "Interior_Finishing_Subcontractor_Prompt.txt",
+    "displayName": "Interior Finishing"
   },
   {
     "tradeName": "LANDSCAPING",
-    "promptFileName": "Landscaping_Subcontractor_Prompt.txt"
+    "promptFileName": "Landscaping_Subcontractor_Prompt.txt",
+    "displayName": "Landscaping"
   },
   {
     "tradeName": "MASONRY",
-    "promptFileName": "Masonry_Subcontractor_Prompt.txt"
+    "promptFileName": "Masonry_Subcontractor_Prompt.txt",
+    "displayName": "Masonry"
   },
   {
     "tradeName": "METAL_DECK",
-    "promptFileName": "Metal_Steel_Subcontractor_Prompt.txt"
+    "promptFileName": "Metal_Steel_Subcontractor_Prompt.txt",
+    "displayName": "Metal Deck"
   },
   {
     "tradeName": "STEEL_ERECTOR",
-    "promptFileName": "Metal_Steel_Subcontractor_Prompt.txt"
+    "promptFileName": "Metal_Steel_Subcontractor_Prompt.txt",
+    "displayName": "Steel Erector"
   },
   {
     "tradeName": "STEEL_FABRICATION",
-    "promptFileName": "Metal_Steel_Subcontractor_Prompt.txt"
+    "promptFileName": "Metal_Steel_Subcontractor_Prompt.txt",
+    "displayName": "Steel Fabrication"
   },
   {
     "tradeName": "WELDING",
-    "promptFileName": "Metal_Steel_Subcontractor_Prompt.txt"
+    "promptFileName": "Metal_Steel_Subcontractor_Prompt.txt",
+    "displayName": "Welding"
   },
   {
     "tradeName": "SHEET_METAL_FABRICATION",
-    "promptFileName": "Metal_Steel_Subcontractor_Prompt.txt"
+    "promptFileName": "Metal_Steel_Subcontractor_Prompt.txt",
+    "displayName": "Sheet Metal Fabrication"
   },
   {
     "tradeName": "PAINT_DECORATE",
-    "promptFileName": "Painting_Decorating_Subcontractor_Prompt.txt"
+    "promptFileName": "Painting_Decorating_Subcontractor_Prompt.txt",
+    "displayName": "Paint Decorate"
   },
   {
     "tradeName": "SEALANTS",
-    "promptFileName": "Painting_Decorating_Subcontractor_Prompt.txt"
+    "promptFileName": "Painting_Decorating_Subcontractor_Prompt.txt",
+    "displayName": "Sealants"
   },
   {
     "tradeName": "PAVING",
-    "promptFileName": "Paving_Subcontractor_Prompt.txt"
+    "promptFileName": "Paving_Subcontractor_Prompt.txt",
+    "displayName": "Paving"
   },
   {
     "tradeName": "PLUMBING",
-    "promptFileName": "Plumbing_Subcontractor_Prompt.txt"
+    "promptFileName": "Plumbing_Subcontractor_Prompt.txt",
+    "displayName": "Plumbing"
   },
   {
     "tradeName": "SEWER",
-    "promptFileName": "Plumbing_Subcontractor_Prompt.txt"
+    "promptFileName": "Plumbing_Subcontractor_Prompt.txt",
+    "displayName": "Sewer"
   },
   {
     "tradeName": "UTILITY",
-    "promptFileName": "Plumbing_Subcontractor_Prompt.txt"
+    "promptFileName": "Plumbing_Subcontractor_Prompt.txt",
+    "displayName": "Utility"
   },
   {
     "tradeName": "GUTTERS",
-    "promptFileName": "Roofing_Subcontractor_Prompt.txt"
+    "promptFileName": "Roofing_Subcontractor_Prompt.txt",
+    "displayName": "Gutters"
   },
   {
     "tradeName": "ROOFING",
-    "promptFileName": "Roofing_Subcontractor_Prompt.txt"
+    "promptFileName": "Roofing_Subcontractor_Prompt.txt",
+    "displayName": "Roofing"
   },
   {
     "tradeName": "SCAFFOLDING",
-    "promptFileName": "Scaffolding_Subcontractor_Prompt.txt"
+    "promptFileName": "Scaffolding_Subcontractor_Prompt.txt",
+    "displayName": "Scaffolding"
   },
   {
     "tradeName": "SECURITY_SYSTEMS",
-    "promptFileName": "Security_Systems_Subcontractor_Prompt.txt"
+    "promptFileName": "Security_Systems_Subcontractor_Prompt.txt",
+    "displayName": "Security Systems"
   },
   {
     "tradeName": "SIGNAGE",
-    "promptFileName": "Signage_Subcontractor_Prompt.txt"
+    "promptFileName": "Signage_Subcontractor_Prompt.txt",
+    "displayName": "Signage"
   },
   {
     "tradeName": "SOLAR",
-    "promptFileName": "Solar_Installation_Subcontractor_Prompt.txt"
+    "promptFileName": "Solar_Installation_Subcontractor_Prompt.txt",
+    "displayName": "Solar"
   },
   {
     "tradeName": "SPECIAL_CONSTRUCTION",
-    "promptFileName": "Special_Construction_Subcontractor_Prompt.txt"
+    "promptFileName": "Special_Construction_Subcontractor_Prompt.txt",
+    "displayName": "Special Construction"
   },
   {
     "tradeName": "WATERPROOFING",
-    "promptFileName": "Waterproofing_Subcontractor_Prompt.txt"
+    "promptFileName": "Waterproofing_Subcontractor_Prompt.txt",
+    "displayName": "Waterproofing"
   },
   {
     "tradeName": "WRECKING_DEMOLITION",
-    "promptFileName": "Wrecking_Demolition_Subcontractor_Prompt.txt"
+    "promptFileName": "Wrecking_Demolition_Subcontractor_Prompt.txt",
+    "displayName": "Wrecking Demolition"
   }
 ]
