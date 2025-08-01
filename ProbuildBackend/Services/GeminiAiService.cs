@@ -346,7 +346,7 @@ JSON Output:";
                 var response = await _generativeModel.GenerateContentAsync(request);
                  modelResponseText = response.Text();
                 _logger.LogInformation("Gemini returned response of length {Length}", modelResponseText.Length);
-       
+
             }
             catch (Exception ex)
             {
@@ -368,6 +368,47 @@ JSON Output:";
             throw;
         }
     }
+
+    public async Task<(string response, string conversationId)> StartTextConversationAsync(string userId, string systemPersonaPrompt, string initialUserPrompt)
+    {
+        _logger.LogInformation("Starting new text-only conversation for user {UserId}", userId);
+
+        // 1. Create a new conversation
+        var conversationTitle = $"Chat started on {DateTime.UtcNow:yyyy-MM-dd}";
+        var conversationId = await _conversationRepo.CreateConversationAsync(userId, conversationTitle);
+
+        // 2. Construct the initial request
+        var systemContent = new Content { Role = Roles.User, Parts = new List<Part> { new Part { Text = systemPersonaPrompt } } };
+        var modelResponseToSystem = new Content { Role = Roles.Model, Parts = new List<Part> { new Part { Text = "Understood. I am ready to assist." } } };
+        var userContent = new Content { Role = Roles.User };
+        userContent.AddText(initialUserPrompt);
+
+        var request = new GenerateContentRequest
+        {
+            Contents = new List<Content> { systemContent, modelResponseToSystem, userContent }
+        };
+
+        try
+        {
+            // 3. Send the request
+            var response = await _generativeModel.GenerateContentAsync(request);
+            var modelResponseText = response.Text();
+
+            // 4. Store initial messages
+            await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "user", Content = initialUserPrompt });
+            await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "model", Content = modelResponseText });
+
+            // 5. Return response and ID
+            _logger.LogInformation("Successfully started text-only conversation {ConversationId}", conversationId);
+            return (modelResponseText, conversationId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "An error occurred while calling the Gemini API in StartTextConversationAsync for conversation {ConversationId}", conversationId);
+            throw;
+        }
+    }
+
     private static bool LogAndReturnFalse(Exception ex)
     {
         Console.WriteLine($"[Critical Gemini Crash] {ex}");

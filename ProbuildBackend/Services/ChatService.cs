@@ -82,32 +82,29 @@ namespace ProbuildBackend.Services
 
         public async Task<Conversation> StartConversationAsync(string userId, string userType, string initialMessage, string promptKey, List<string> blueprintUrls)
         {
-            var conversationId = await _conversationRepository.CreateConversationAsync(userId, promptKey);
+            var title = !string.IsNullOrEmpty(promptKey)
+                ? promptKey
+                : (initialMessage.Length > 50 ? initialMessage.Substring(0, 50) : initialMessage);
 
-            var userMessage = new Message
+            var systemPersonaPrompt = await _promptManager.GetPromptAsync(userType, promptKey ?? "generic-chat");
+
+            string initialResponse;
+            string conversationId;
+
+            if (string.IsNullOrEmpty(promptKey))
             {
-                ConversationId = conversationId,
-                Role = "user",
-                Content = initialMessage,
-                Timestamp = DateTime.UtcNow
-            };
-            await _conversationRepository.AddMessageAsync(userMessage);
-
-            var prompt = await _promptManager.GetPromptAsync(userType, promptKey);
-
-            var (initialResponse, _) = await _aiService.StartMultimodalConversationAsync(userId, blueprintUrls, prompt, initialMessage);
-
-            var aiMessage = new Message
+                (initialResponse, conversationId) = await _aiService.StartTextConversationAsync(userId, systemPersonaPrompt, initialMessage);
+            }
+            else
             {
-                ConversationId = conversationId,
-                Role = "assistant",
-                Content = initialResponse,
-                Timestamp = DateTime.UtcNow
-            };
-            await _conversationRepository.AddMessageAsync(aiMessage);
+                (initialResponse, conversationId) = await _aiService.StartMultimodalConversationAsync(userId, blueprintUrls ?? new List<string>(), systemPersonaPrompt, initialMessage);
+            }
 
-            var conversation = await _conversationRepository.GetConversationAsync(conversationId);
-            return conversation;
+            var conversation = await _conversationRepository.GetConversationAsync(conversationId) ?? throw new Exception("Failed to retrieve conversation after creation.");
+
+      // The messages are now created within the respective AI service methods,
+      // so we just need to return the final conversation object.
+      return conversation;
         }
 
         public async Task<Message> SendMessageAsync(string conversationId, string messageText, string userId)
@@ -156,6 +153,11 @@ namespace ProbuildBackend.Services
         public async Task<IEnumerable<Conversation>> GetUserConversationsAsync(string userId)
         {
           return await _conversationRepository.GetByUserIdAsync(userId);
+        }
+
+        public async Task UpdateConversationTitleAsync(string conversationId, string newTitle)
+        {
+            await _conversationRepository.UpdateConversationTitleAsync(conversationId, newTitle);
         }
     }
 }

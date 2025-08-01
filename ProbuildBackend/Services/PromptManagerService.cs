@@ -20,8 +20,17 @@ public class PromptManagerService : IPromptManagerService
 
     public async Task<string> GetPromptAsync(string userType, string fileName)
     {
-        var folderPath = $"{userType}/";
-        var fullBlobName = $"{folderPath}{fileName}";
+        string fullBlobName;
+        if (fileName == "generic-chat")
+        {
+            fullBlobName = "generic-prompt.txt";
+        }
+        else
+        {
+            var folderPath = $"{userType}/";
+            fullBlobName = $"{folderPath}{fileName}";
+        }
+
         if (_promptCache.TryGetValue(fullBlobName, out var cachedPrompt)) return cachedPrompt;
 
         var blobClient = _blobContainerClient.GetBlobClient(fullBlobName);

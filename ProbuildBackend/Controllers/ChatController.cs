@@ -52,7 +52,7 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("start")]
-        public async Task<IActionResult> StartConversation([FromBody] StartConversationDto dto)
+        public async Task<IActionResult> StartConversation([FromForm] StartConversationDto dto)
         {
             _logger.LogInformation("DELETE ME: StartConversation endpoint hit");
             var userId = User.FindFirstValue("UserId");
@@ -124,7 +124,6 @@ namespace ProbuildBackend.Controllers
         [HttpPost("start-renovation-analysis")]
         public async Task<IActionResult> StartRenovationAnalysis(IFormFileCollection files)
         {
-          _logger.LogInformation("DELETE ME: StartRenovationAnalysis endpoint hit");
             var userId = User.FindFirstValue("UserId");
             if (string.IsNullOrEmpty(userId))
             {
@@ -139,8 +138,6 @@ namespace ProbuildBackend.Controllers
         [HttpPost("start-subcontractor-comparison")]
         public async Task<IActionResult> StartSubcontractorComparison(IFormFileCollection files)
         {
-            _logger.LogInformation("DELETE ME: StartSubcontractorComparison endpoint hit");
-
             var userId = User.FindFirstValue("UserId");
             if (string.IsNullOrEmpty(userId))
             {
@@ -159,8 +156,6 @@ namespace ProbuildBackend.Controllers
         [HttpPost("start-vendor-comparison")]
         public async Task<IActionResult> StartVendorComparison(IFormFileCollection files)
         {
-            _logger.LogInformation("DELETE ME: StartVendorComparison endpoint hit");
-
             var userId = User.FindFirstValue("UserId");
             if (string.IsNullOrEmpty(userId))
             {
@@ -179,7 +174,6 @@ namespace ProbuildBackend.Controllers
         [HttpPost("{conversationId}/upload")]
         public async Task<IActionResult> UploadChatFile(string conversationId, IFormFileCollection files)
         {
-            _logger.LogInformation($"DELETE ME: UploadChatFile endpoint hit for conversationId: {conversationId}");
             var userId = User.FindFirstValue("UserId");
             if (string.IsNullOrEmpty(userId))
             {
@@ -211,7 +205,6 @@ namespace ProbuildBackend.Controllers
         [HttpGet("{conversationId}/documents")]
         public async Task<IActionResult> GetConversationDocuments(string conversationId)
         {
-            _logger.LogInformation($"DELETE ME: GetConversationDocuments endpoint hit for conversationId: {conversationId}");
             var userId = User.FindFirstValue("UserId");
             if (string.IsNullOrEmpty(userId))
             {
@@ -222,14 +215,38 @@ namespace ProbuildBackend.Controllers
                 .Where(d => d.ConversationId == conversationId)
                 .ToListAsync();
 
-            _logger.LogInformation($"DELETE ME: GetConversationDocuments - Found {documents.Count} documents for conversationId: {conversationId}");
-            if (documents.Count == 0)
-            {
-                return NotFound("No documents found for this conversation.");
-            }
-
             return Ok(documents);
         }
+
+        [HttpPut("conversation/title")]
+        public async Task<IActionResult> UpdateConversationTitle([FromBody] UpdateConversationTitleDto dto)
+        {
+            if (dto.NewTitle.Length > 255)
+            {
+                return BadRequest("Title cannot be longer than 255 characters.");
+            }
+
+            var userId = User.FindFirstValue("UserId");
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized();
+            }
+
+            var conversation = await _context.Conversations.FindAsync(dto.ConversationId);
+            if (conversation == null || conversation.UserId != userId)
+            {
+                return NotFound();
+            }
+
+            await _chatService.UpdateConversationTitleAsync(dto.ConversationId, dto.NewTitle);
+            return Ok();
+        }
+    }
+
+    public class UpdateConversationTitleDto
+    {
+        public string ConversationId { get; set; }
+        public string NewTitle { get; set; }
     }
 
     public class StartConversationDto

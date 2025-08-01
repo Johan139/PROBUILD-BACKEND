@@ -10,5 +10,6 @@ namespace ProbuildBackend.Interface
         Task AddMessageAsync(Message message);
         Task UpdateConversationSummaryAsync(string conversationId, string? newSummary);
         Task MarkMessagesAsSummarizedAsync(IEnumerable<long> messageIds);
+        Task UpdateConversationTitleAsync(string conversationId, string newTitle);
     }
 }

@@ -1,4 +1,3 @@
-// ProbuildBackend/Data/SqlConversationRepository.cs
 using Dapper;
 using Microsoft.Data.SqlClient;
 using ProbuildBackend.Interface;
@@ -10,11 +9,11 @@ public class SqlConversationRepository : IConversationRepository
     private readonly ILogger<SqlConversationRepository> _logger;
     public SqlConversationRepository(IConfiguration configuration, ILogger<SqlConversationRepository> logger)
     {
-#if (DEBUG)
+        #if (DEBUG)
         _connectionString = configuration.GetConnectionString("DefaultConnection");
-#else
- _connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING");
-#endif
+        #else
+        _connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING");
+        #endif
         _logger = logger;
     }
 
@@ -22,7 +21,7 @@ public class SqlConversationRepository : IConversationRepository
 
     public async Task<string> CreateConversationAsync(string userId, string title)
     {
-       await using var connection = GetConnection();
+        await using var connection = GetConnection();
         var newConversation = new Conversation
         {
             Id = Guid.NewGuid().ToString(),
@@ -57,9 +56,9 @@ public class SqlConversationRepository : IConversationRepository
 
 
             await using var connection = GetConnection();
-        message.Timestamp = DateTime.UtcNow;
-        var sql = @"INSERT INTO Messages (ConversationId, Role, Content, IsSummarized, Timestamp) VALUES (@ConversationId, @Role, @Content, @IsSummarized, @Timestamp);";
-        await connection.ExecuteAsync(sql, message);
+            message.Timestamp = DateTime.UtcNow;
+            var sql = @"INSERT INTO Messages (ConversationId, Role, Content, IsSummarized, Timestamp) VALUES (@ConversationId, @Role, @Content, @IsSummarized, @Timestamp);";
+            await connection.ExecuteAsync(sql, message);
         }
         catch (SqlException ex)
         {
@@ -102,5 +101,12 @@ public class SqlConversationRepository : IConversationRepository
         var sql = "SELECT * FROM Conversations WHERE UserId = @UserId";
         var conversations = await connection.QueryAsync<Conversation>(sql, new { UserId = userId });
         return conversations.ToList();
+    }
+    
+    public async Task UpdateConversationTitleAsync(string conversationId, string newTitle)
+    {
+        await using var connection = GetConnection();
+        var sql = "UPDATE Conversations SET Title = @NewTitle WHERE Id = @ConversationId";
+        await connection.ExecuteAsync(sql, new { NewTitle = newTitle, ConversationId = conversationId });
     }
 }
