@@ -70,7 +70,7 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("{conversationId}/message")]
-        public async Task<IActionResult> PostMessage(string conversationId, [FromBody] PostMessageDto dto)
+        public async Task<IActionResult> PostMessage(string conversationId, [FromForm] PostMessageDto dto)
         {
             _logger.LogInformation($"DELETE ME: PostMessage endpoint hit for conversationId: {conversationId}");
             var userId = User.FindFirstValue("UserId");
@@ -82,7 +82,7 @@ namespace ProbuildBackend.Controllers
             _logger.LogInformation($"DELETE ME: PostMessage - Found UserId: {userId}");
             _logger.LogInformation($"DELETE ME: PostMessage - DTO: {System.Text.Json.JsonSerializer.Serialize(dto)}");
 
-            var aiMessage = await _chatService.SendMessageAsync(conversationId, dto.Message, userId);
+            var aiMessage = await _chatService.SendMessageAsync(conversationId, dto.Message, userId, dto.Files);
             _logger.LogInformation($"DELETE ME: PostMessage - Returning AI message");
             return Ok(aiMessage);
         }
@@ -260,5 +260,6 @@ namespace ProbuildBackend.Controllers
     public class PostMessageDto
     {
         public string Message { get; set; }
+        public IFormFileCollection? Files { get; set; }
     }
 }

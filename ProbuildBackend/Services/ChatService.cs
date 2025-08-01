@@ -18,6 +18,7 @@ namespace ProbuildBackend.Services
         private readonly UserManager<UserModel> _userManager;
         private readonly IWebHostEnvironment _hostingEnvironment;
         private readonly List<PromptMapping> _promptMappings;
+        private readonly AzureBlobService _azureBlobService;
 
 
         public ChatService(
@@ -25,7 +26,8 @@ namespace ProbuildBackend.Services
             IPromptManagerService promptManager,
             IAiService aiService,
             UserManager<UserModel> userManager,
-            IWebHostEnvironment hostingEnvironment)
+            IWebHostEnvironment hostingEnvironment,
+            AzureBlobService azureBlobService)
         {
             _conversationRepository = conversationRepository;
             _promptManager = promptManager;
@@ -33,6 +35,7 @@ namespace ProbuildBackend.Services
             _userManager = userManager;
             _hostingEnvironment = hostingEnvironment;
             _promptMappings = LoadPromptMappings();
+            _azureBlobService = azureBlobService;
         }
 
         private List<PromptMapping> LoadPromptMappings()
@@ -107,7 +110,7 @@ namespace ProbuildBackend.Services
       return conversation;
         }
 
-        public async Task<Message> SendMessageAsync(string conversationId, string messageText, string userId)
+        public async Task<Message> SendMessageAsync(string conversationId, string messageText, string userId, IFormFileCollection? files)
         {
             var conversation = await _conversationRepository.GetConversationAsync(conversationId);
             if (conversation == null || conversation.UserId != userId)
@@ -125,8 +128,14 @@ namespace ProbuildBackend.Services
             };
             await _conversationRepository.AddMessageAsync(userMessage);
 
+            List<string>? fileUrls = null;
+            if (files != null && files.Count > 0)
+            {
+                fileUrls = await _azureBlobService.UploadFiles(files.ToList(), null, null);
+            }
+
             // The ContinueConversationAsync method in the AI service handles retrieving history.
-            var (aiResponse, _) = await _aiService.ContinueConversationAsync(conversationId, userId, messageText, null);
+            var (aiResponse, _) = await _aiService.ContinueConversationAsync(conversationId, userId, messageText, fileUrls);
 
             var aiMessage = new Message
             {

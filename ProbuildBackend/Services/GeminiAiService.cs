@@ -36,7 +36,7 @@ public class GeminiAiService : IAiService
 
     #region Conversational Method
     public async Task<(string response, string conversationId)> ContinueConversationAsync(
-        string? conversationId, string userId, string userPrompt, IEnumerable<byte[]>? imageBytesList)
+        string? conversationId, string userId, string userPrompt, IEnumerable<string>? documentUris)
     {
         var conversation = await GetOrCreateConversation(conversationId, userId, userPrompt);
         conversationId = conversation.Id;
@@ -52,17 +52,22 @@ public class GeminiAiService : IAiService
         currentUserContent.AddText(userPrompt);
 
         var tempFilePaths = new List<string>();
-        if (imageBytesList != null)
-        {
-            foreach (var imageBytes in imageBytesList)
-            {
-                var (mimeType, extension) = MimeTypeValidator.GetMimeType(imageBytes);
-                var tempFilePath = Path.GetTempFileName() + extension;
-                await File.WriteAllBytesAsync(tempFilePath, imageBytes);
-                tempFilePaths.Add(tempFilePath);
-                currentUserContent.AddInlineFile(tempFilePath, mimeType);
-            }
-        }
+       if (documentUris != null)
+       {
+           foreach (var fileUri in documentUris)
+           {
+               try
+               {
+                   var (fileBytes, mimeType) = await _azureBlobService.DownloadBlobAsBytesAsync(fileUri);
+                   var base64String = Convert.ToBase64String(fileBytes);
+                   currentUserContent.AddInlineData(base64String, mimeType);
+               }
+               catch (Exception ex)
+               {
+                   _logger.LogError(ex, "Failed to download or add file for analysis: {FileUri}", fileUri);
+               }
+           }
+       }
         request.Contents.Add(currentUserContent);
 
         try
