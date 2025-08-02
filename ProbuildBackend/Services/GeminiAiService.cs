@@ -119,30 +119,36 @@ public class GeminiAiService : IAiService
             return await _conversationRepo.GetConversationAsync(id) ?? throw new KeyNotFoundException("Conversation not found.");
         }
         _logger.LogInformation("Creating new conversation for user {UserId}", userId);
-        var newId = await _conversationRepo.CreateConversationAsync(userId, title.Substring(0, Math.Min(title.Length, 50)));
+        var newId = await _conversationRepo.CreateConversationAsync(userId, title.Substring(0, Math.Min(title.Length, 50)), null);
         return await _conversationRepo.GetConversationAsync(newId) ?? throw new Exception("Failed to create or retrieve conversation.");
     }
 
     private async Task<List<Content>> BuildHistoryAsync(Conversation conv)
     {
-        var recentMessages = await _conversationRepo.GetUnsummarizedMessagesAsync(conv.Id);
-        var systemPrompt = await _promptManager.GetPromptAsync("", "system-persona");
+        var history = new List<Content>();
 
-        var history = new List<Content>
+        // For prompt-based conversations, fetch and add the system prompt.
+        if (!string.IsNullOrEmpty(conv.PromptKey))
         {
-            new Content { Role = Roles.User, Parts = new List<Part> { new Part { Text = systemPrompt } } },
-            new Content { Role = Roles.Model, Parts = new List<Part> { new Part { Text = "Understood. I will act as a construction Project Manager, Quantity Surveyor and Financial Advisor. I am ready to begin." } } }
-        };
+            var systemPrompt = await _promptManager.GetPromptAsync("", "system-persona");
+            history.Add(new Content { Role = Roles.User, Parts = new List<Part> { new Part { Text = systemPrompt } } });
+            history.Add(new Content { Role = Roles.Model, Parts = new List<Part> { new Part { Text = "Understood. I will act as a construction Project Manager, Quantity Surveyor and Financial Advisor. I am ready to begin." } } });
+        }
 
+        // Add conversation summary if it exists.
         if (!string.IsNullOrWhiteSpace(conv.ConversationSummary))
         {
             history.Add(new Content { Role = Roles.User, Parts = new List<Part> { new Part { Text = $"**Summary of the conversation so far:**\n{conv.ConversationSummary}" } } });
             history.Add(new Content { Role = Roles.Model, Parts = new List<Part> { new Part { Text = "Okay, I have reviewed the summary. I am ready to continue." } } });
         }
 
-        foreach (var msg in recentMessages)
+        // Add the rest of the message history.
+        // For text-only chats, the history starts here.
+        var recentMessages = await _conversationRepo.GetUnsummarizedMessagesAsync(conv.Id);
+        foreach (var message in recentMessages)
         {
-            history.Add(new Content { Role = msg.Role, Parts = new List<Part> { new Part { Text = msg.Content } } });
+            var apiRole = message.Role.ToLower() == "assistant" ? "model" : "user";
+            history.Add(new Content { Role = apiRole, Parts = new List<Part> { new Part { Text = message.Content } } });
         }
 
         return history;
@@ -308,7 +314,7 @@ JSON Output:";
 
         // 1. Create a new conversation
         var conversationTitle = $"Analysis started on {DateTime.UtcNow:yyyy-MM-dd}";
-        var conversationId = await _conversationRepo.CreateConversationAsync(userId, conversationTitle);
+        var conversationId = await _conversationRepo.CreateConversationAsync(userId, conversationTitle, "system-persona");
         var conversation = await _conversationRepo.GetConversationAsync(conversationId) ?? throw new Exception("Failed to create or retrieve conversation.");
 
         // 2. Construct the initial request
@@ -380,7 +386,7 @@ JSON Output:";
 
         // 1. Create a new conversation
         var conversationTitle = $"Chat started on {DateTime.UtcNow:yyyy-MM-dd}";
-        var conversationId = await _conversationRepo.CreateConversationAsync(userId, conversationTitle);
+        var conversationId = await _conversationRepo.CreateConversationAsync(userId, conversationTitle, "system-persona");
 
         // 2. Construct the initial request
         var systemContent = new Content { Role = Roles.User, Parts = new List<Part> { new Part { Text = systemPersonaPrompt } } };

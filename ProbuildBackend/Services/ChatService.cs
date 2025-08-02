@@ -103,11 +103,27 @@ namespace ProbuildBackend.Services
                 (initialResponse, conversationId) = await _aiService.StartMultimodalConversationAsync(userId, blueprintUrls ?? new List<string>(), systemPersonaPrompt, initialMessage);
             }
 
+            var userMessage = new Message
+            {
+                ConversationId = conversationId,
+                Role = "user",
+                Content = initialMessage,
+                Timestamp = DateTime.UtcNow
+            };
+            await _conversationRepository.AddMessageAsync(userMessage);
+
+            var aiMessage = new Message
+            {
+                ConversationId = conversationId,
+                Role = "assistant",
+                Content = initialResponse,
+                Timestamp = DateTime.UtcNow
+            };
+            await _conversationRepository.AddMessageAsync(aiMessage);
+
             var conversation = await _conversationRepository.GetConversationAsync(conversationId) ?? throw new Exception("Failed to retrieve conversation after creation.");
 
-      // The messages are now created within the respective AI service methods,
-      // so we just need to return the final conversation object.
-      return conversation;
+            return conversation;
         }
 
         public async Task<Message> SendMessageAsync(string conversationId, string messageText, string userId, IFormFileCollection? files)
@@ -119,15 +135,6 @@ namespace ProbuildBackend.Services
                 throw new UnauthorizedAccessException("User is not authorized to access this conversation.");
             }
 
-            var userMessage = new Message
-            {
-                ConversationId = conversationId,
-                Role = "user",
-                Content = messageText,
-                Timestamp = DateTime.UtcNow
-            };
-            await _conversationRepository.AddMessageAsync(userMessage);
-
             List<string>? fileUrls = null;
             if (files != null && files.Count > 0)
             {
@@ -136,6 +143,15 @@ namespace ProbuildBackend.Services
 
             // The ContinueConversationAsync method in the AI service handles retrieving history.
             var (aiResponse, _) = await _aiService.ContinueConversationAsync(conversationId, userId, messageText, fileUrls);
+
+            var userMessage = new Message
+            {
+                ConversationId = conversationId,
+                Role = "user",
+                Content = messageText,
+                Timestamp = DateTime.UtcNow
+            };
+            await _conversationRepository.AddMessageAsync(userMessage);
 
             var aiMessage = new Message
             {

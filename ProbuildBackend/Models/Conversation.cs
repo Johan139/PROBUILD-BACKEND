@@ -5,4 +5,5 @@ public class Conversation
     public string Title { get; set; }
     public DateTime CreatedAt { get; set; }
     public string? ConversationSummary { get; set; }
+    public string? PromptKey { get; set; }
 }
