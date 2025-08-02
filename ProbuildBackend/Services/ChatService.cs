@@ -7,6 +7,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using ProbuildBackend.Models;
+using Microsoft.AspNetCore.SignalR;
+using ProbuildBackend.Middleware;
 
 namespace ProbuildBackend.Services
 {
@@ -19,6 +21,7 @@ namespace ProbuildBackend.Services
         private readonly IWebHostEnvironment _hostingEnvironment;
         private readonly List<PromptMapping> _promptMappings;
         private readonly AzureBlobService _azureBlobService;
+        private readonly IHubContext<ChatHub> _hubContext;
 
 
         public ChatService(
@@ -27,7 +30,8 @@ namespace ProbuildBackend.Services
             IAiService aiService,
             UserManager<UserModel> userManager,
             IWebHostEnvironment hostingEnvironment,
-            AzureBlobService azureBlobService)
+            AzureBlobService azureBlobService,
+            IHubContext<ChatHub> hubContext)
         {
             _conversationRepository = conversationRepository;
             _promptManager = promptManager;
@@ -36,6 +40,7 @@ namespace ProbuildBackend.Services
             _hostingEnvironment = hostingEnvironment;
             _promptMappings = LoadPromptMappings();
             _azureBlobService = azureBlobService;
+            _hubContext = hubContext;
         }
 
         private List<PromptMapping> LoadPromptMappings()
@@ -115,11 +120,13 @@ namespace ProbuildBackend.Services
             var aiMessage = new Message
             {
                 ConversationId = conversationId,
-                Role = "assistant",
+                Role = "model",
                 Content = initialResponse,
                 Timestamp = DateTime.UtcNow
             };
             await _conversationRepository.AddMessageAsync(aiMessage);
+
+            await _hubContext.Clients.Group(conversationId).SendAsync("ReceiveMessage", aiMessage);
 
             var conversation = await _conversationRepository.GetConversationAsync(conversationId) ?? throw new Exception("Failed to retrieve conversation after creation.");
 
@@ -131,7 +138,6 @@ namespace ProbuildBackend.Services
             var conversation = await _conversationRepository.GetConversationAsync(conversationId);
             if (conversation == null || conversation.UserId != userId)
             {
-                // Or handle as an exception
                 throw new UnauthorizedAccessException("User is not authorized to access this conversation.");
             }
 
@@ -156,11 +162,23 @@ namespace ProbuildBackend.Services
             var aiMessage = new Message
             {
                 ConversationId = conversationId,
-                Role = "assistant",
+                Role = "model",
                 Content = aiResponse,
                 Timestamp = DateTime.UtcNow
             };
             await _conversationRepository.AddMessageAsync(aiMessage);
+
+                var frontendMessage = new SignalRMessage
+                {
+                    Id = aiMessage.Id,
+                    ConversationId = aiMessage.ConversationId,
+                    Role = aiMessage.Role,
+                    Content = aiMessage.Content,
+                    IsSummarized = aiMessage.IsSummarized,
+                    Timestamp = aiMessage.Timestamp
+                };
+            
+            await _hubContext.Clients.Group(conversationId).SendAsync("ReceiveMessage", frontendMessage);
 
             return aiMessage;
         }

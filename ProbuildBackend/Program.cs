@@ -138,6 +138,26 @@ builder.Services.AddAuthentication(options =>
         ValidAudience = builder.Configuration["Jwt:Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
     };
+    
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+            
+            // If the request is for our hub...
+            if (!string.IsNullOrEmpty(accessToken) && 
+                (path.StartsWithSegments("/chathub") || 
+                 path.StartsWithSegments("/progressHub") || 
+                 path.StartsWithSegments("/hubs/notifications")))
+            {
+                // Read the token out of the query string
+                context.Token = accessToken;
+            }
+            return Task.CompletedTask;
+        }
+    };
 });
 
 
@@ -149,6 +169,7 @@ builder.Services.AddHttpClient();
 builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<WebSocketManager>();
 builder.Services.AddSignalR();
+builder.Services.AddLogging(configure => configure.AddConsole());
 builder.Services.AddHttpContextAccessor(); // Required for AzureBlobService
 builder.Services.AddHangfire(config => config
     .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
@@ -214,6 +235,8 @@ app.MapGet("/health", () => Results.Ok("Healthy"));
 // Map SignalR hub
 app.MapHub<ProgressHub>("/progressHub");
 app.MapHub<NotificationHub>("/hubs/notifications");
+app.MapHub<ChatHub>("/chathub");
+app.Logger.LogInformation("ChatHub endpoint mapped at /chathub");
 
 // Log the URLs the application is listening on
 var listeningUrls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "Not set";
