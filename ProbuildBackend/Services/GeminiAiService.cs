@@ -92,8 +92,9 @@ public class GeminiAiService : IAiService
                 _logger.LogCritical(ex, "Gemini call crashed the app");
                 throw;
             }
-            await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "user", Content = userPrompt });
-            await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "model", Content = modelResponseText });
+
+            // await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "user", Content = userPrompt });
+            // await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "model", Content = modelResponseText });
 
             return (modelResponseText, conversationId);
         }
