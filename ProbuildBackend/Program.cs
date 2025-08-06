@@ -18,6 +18,7 @@ using ProbuildBackend.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using MongoDB.Driver.Core.Configuration;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -93,7 +94,9 @@ builder.Services.AddDataProtection()
         ValidationAlgorithm = ValidationAlgorithm.HMACSHA256
     });
 
-var connectionString = Environment.ExpandEnvironmentVariables(builder.Configuration.GetConnectionString("DefaultConnection") ?? "");
+var connectionString =
+    Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
+    ?? builder.Configuration.GetConnectionString("DefaultConnection");
 
 var azureBlobStorage = builder.Configuration.GetConnectionString("AzureBlobConnection");
 var jwtKey = builder.Configuration["Jwt:Key"];
