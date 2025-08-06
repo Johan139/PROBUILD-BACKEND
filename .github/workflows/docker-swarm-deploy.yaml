@@ -43,12 +43,14 @@ jobs:
             echo "IMAGE_TAG=prod-${{ github.sha }}" >> $GITHUB_ENV
             echo "APP_NAME=probuildai-backend" >> $GITHUB_ENV
             echo "PORT=8080" >> $GITHUB_ENV
+            echo "DOTNET_ENVIRONMENT=Production" >> $GITHUB_ENV
             echo "DB_CONNECTION_STRING=Server=tcp:azsql-probuild.database.windows.net,1433;Initial Catalog=ProbuildQA;Persist Security Info=False;User ID=${{ secrets.SQL_USER }};Password=${{ secrets.SQL_PASSWORD }};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;" >> $GITHUB_ENV
             echo "AZURE_BLOB_CONNECTION=DefaultEndpointsProtocol=https;AccountName=qastorageprobuildaiblob;AccountKey=${{ secrets.AZURE_BLOB_KEY }};EndpointSuffix=core.windows.net" >> $GITHUB_ENV
           else
             echo "IMAGE_TAG=dev-${{ github.sha }}" >> $GITHUB_ENV
             echo "APP_NAME=probuildai-backend-dev" >> $GITHUB_ENV
             echo "PORT=8081" >> $GITHUB_ENV
+            echo "DOTNET_ENVIRONMENT=Development" >> $GITHUB_ENV
             echo "DB_CONNECTION_STRING=Server=tcp:azsql-probuild.database.windows.net,1433;Initial Catalog=Probuild_DEV;Persist Security Info=False;User ID=${{ secrets.SQL_USER }};Password=${{ secrets.SQL_PASSWORD }};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;" >> $GITHUB_ENV
             echo "AZURE_BLOB_CONNECTION=DefaultEndpointsProtocol=https;AccountName=qastorageprobuildaiblob;AccountKey=${{ secrets.AZURE_BLOB_KEY }};EndpointSuffix=core.windows.net" >> $GITHUB_ENV
           fi
@@ -67,6 +69,8 @@ jobs:
             --resource-group rg-Probuild \
             --image probuild.azurecr.io/probuildai-backend:${{ env.IMAGE_TAG }} \
             --set-env-vars \
+              DOTNET_ENVIRONMENT="${{ env.DOTNET_ENVIRONMENT }}" \
+              ConnectionStrings__DefaultConnection="${{ env.DB_CONNECTION_STRING }}" \
               DB_CONNECTION_STRING="${{ env.DB_CONNECTION_STRING }}" \
               AZURE_BLOB_CONNECTION="${{ env.AZURE_BLOB_CONNECTION }}" \
               JWT_KEY="${{ secrets.JWT_KEY }}" \

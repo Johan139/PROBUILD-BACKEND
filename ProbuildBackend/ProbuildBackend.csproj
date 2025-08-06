@@ -46,6 +46,18 @@
     <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
   </None>
+<None Update="appsettings.Development.json">
+  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+  <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+</None>
+<None Update="appsettings.Production.json">
+  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+  <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+</None>
+<None Update="appsettings.Staging.json">
+  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+  <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+</None>
   </ItemGroup>
 
 </Project>
