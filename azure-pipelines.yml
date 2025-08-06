@@ -2,7 +2,7 @@ trigger:
 
   branches:
     include:
-      - master
+      - Development
 
 pool:
   vmImage: 'ubuntu-latest'
@@ -33,9 +33,9 @@ stages:
       displayName: Build and push Docker image to ACR
       inputs:
         command: buildAndPush
-        repository: $(ACR_NAME).azurecr.io/probuild-backend
+        repository: $(ACR_NAME).azurecr.io/probuildai-backend-dev
         dockerfile: 'Dockerfile'
-        tags: 'latest'
+        tags: 'test'
 
     - task: AzureCLI@2
       displayName: Deploy to Azure Container Apps
