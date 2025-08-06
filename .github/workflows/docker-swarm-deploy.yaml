@@ -30,13 +30,12 @@ jobs:
           creds: '{"clientId":"${{ secrets.AZURE_CLIENT_ID }}","clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}","tenantId":"${{ secrets.AZURE_TENANT_ID }}","subscriptionId":"0e6dc202-bcae-4b8b-b1de-a8f3a04341d6"}'
 
       - name: Log in to ACR
-        run: |
-          az acr login --name probuild
+        run: az acr login --name probuild
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Set env vars for image tagging and deployment
+      - name: Set environment variables
         id: env-setup
         run: |
           if [ "${{ env.IS_PROD }}" = "true" ]; then
@@ -71,10 +70,17 @@ jobs:
             --set-env-vars \
               DOTNET_ENVIRONMENT="${{ env.DOTNET_ENVIRONMENT }}" \
               ConnectionStrings__DefaultConnection="${{ env.DB_CONNECTION_STRING }}" \
-              DB_CONNECTION_STRING="${{ env.DB_CONNECTION_STRING }}" \
-              AZURE_BLOB_CONNECTION="${{ env.AZURE_BLOB_CONNECTION }}" \
-              JWT_KEY="${{ secrets.JWT_KEY }}" \
-              GPTAPIKEY="${{ secrets.GPTAPIKEY }}" \
+              ConnectionStrings__AzureBlobConnection="${{ env.AZURE_BLOB_CONNECTION }}" \
+              Jwt__Key="${{ secrets.JWT_KEY }}" \
+              Jwt__Issuer="https://probuildai-backend.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io" \
+              Jwt__Audience="https://probuildai-backend.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io" \
+              SendGrid__ApiKey="${{ secrets.SENDGRID_API_KEY }}" \
+              SendGrid__SendEmail="${{ secrets.SENDGRID_EMAIL }}" \
+              SendGrid__Email="${{ secrets.SENDGRID_FROM_EMAIL }}" \
+              ChatGPTAPI__APIKey="${{ secrets.GPTAPIKEY }}" \
+              GoogleGeminiAPI__APIKey="${{ secrets.GeminiAPIKey }}" \
+              GoogleMapsAPI__APIKey="${{ secrets.MapsAPI }}" \
+              URL__FrontendBaseUrl="${{ secrets.FrontEndUrl }}" \
               ASPNETCORE_URLS="http://+:${{ env.PORT }}" \
               ELASTIC_ENABLED="false" \
               DEPLOY_TIMESTAMP="$(date +%s)" \
