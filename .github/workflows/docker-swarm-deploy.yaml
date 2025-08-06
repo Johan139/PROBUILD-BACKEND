@@ -1,13 +1,17 @@
-name: Build and Deploy to Azure Container Apps (Dev)
+name: Build and Deploy to Azure Container Apps (Dev + Prod)
 
 on:
   push:
     branches:
+      - master
       - Development
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
+    env:
+      IS_PROD: ${{ github.ref == 'refs/heads/master' }}
 
     steps:
       - name: Check out code
@@ -32,33 +36,48 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Set env vars for image tagging and deployment
+        id: env-setup
+        run: |
+          if [ "${{ env.IS_PROD }}" = "true" ]; then
+            echo "IMAGE_TAG=prod-${{ github.sha }}" >> $GITHUB_ENV
+            echo "APP_NAME=probuildai-backend" >> $GITHUB_ENV
+            echo "DB_CONN=${{ secrets.DB_CONNECTION_STRING_PROD }}" >> $GITHUB_ENV
+            echo "PORT=8080" >> $GITHUB_ENV
+          else
+            echo "IMAGE_TAG=dev-${{ github.sha }}" >> $GITHUB_ENV
+            echo "APP_NAME=probuildai-backend-dev" >> $GITHUB_ENV
+            echo "DB_CONN=${{ secrets.DB_CONNECTION_STRING_DEV }}" >> $GITHUB_ENV
+            echo "PORT=8081" >> $GITHUB_ENV
+          fi
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: probuild.azurecr.io/probuildai-backend:dev-${{ github.sha }}
+          tags: probuild.azurecr.io/probuildai-backend:${{ env.IMAGE_TAG }}
 
-      - name: Deploy to Azure Container Apps (Dev)
+      - name: Deploy to Azure Container Apps
         run: |
           az containerapp update \
-            --name probuildai-backend-dev \
+            --name ${{ env.APP_NAME }} \
             --resource-group rg-Probuild \
-            --image probuild.azurecr.io/probuildai-backend:dev-${{ github.sha }} \
+            --image probuild.azurecr.io/probuildai-backend:${{ env.IMAGE_TAG }} \
             --set-env-vars \
               "SQL_USER=${{ secrets.SQL_USER }}" \
               "SQL_PASSWORD=${{ secrets.SQL_PASSWORD }}" \
               "AZURE_BLOB_KEY=${{ secrets.AZURE_BLOB_KEY }}" \
               "JWT_KEY=${{ secrets.JWT_KEY }}" \
-              "ASPNETCORE_URLS=http://+:8081" \
+              "ASPNETCORE_URLS=http://+:${{ env.PORT }}" \
               "ELASTIC_ENABLED=false" \
               "GPTAPIKEY=${{ secrets.GPTAPIKEY }}" \
-              "DB_CONNECTION_STRING=${{ secrets.DB_CONNECTION_STRING_DEV }}" \
+              "DB_CONNECTION_STRING=${{ env.DB_CONN }}" \
               "FORCE_NEW_REVISION=true" \
             --set template.containers[0].probes=null \
-            --set ingress.targetPort=8081
+            --set ingress.targetPort=${{ env.PORT }}
 
       - name: Check Container App Logs
         run: |
-          az containerapp logs show --name probuildai-backend-dev --resource-group rg-Probuild --follow --tail 100
+          az containerapp logs show --name ${{ env.APP_NAME }} --resource-group rg-Probuild --follow --tail 100
         continue-on-error: true
