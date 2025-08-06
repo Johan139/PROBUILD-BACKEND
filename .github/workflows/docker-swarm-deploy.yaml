@@ -42,13 +42,15 @@ jobs:
           if [ "${{ env.IS_PROD }}" = "true" ]; then
             echo "IMAGE_TAG=prod-${{ github.sha }}" >> $GITHUB_ENV
             echo "APP_NAME=probuildai-backend" >> $GITHUB_ENV
-            echo "DB_CONN=${{ secrets.DB_CONNECTION_STRING_PROD }}" >> $GITHUB_ENV
             echo "PORT=8080" >> $GITHUB_ENV
+            echo "DB_CONNECTION_STRING=Server=tcp:azsql-probuild.database.windows.net,1433;Initial Catalog=ProbuildQA;Persist Security Info=False;User ID=${{ secrets.SQL_USER }};Password=${{ secrets.SQL_PASSWORD }};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;" >> $GITHUB_ENV
+            echo "AZURE_BLOB_CONNECTION=DefaultEndpointsProtocol=https;AccountName=qastorageprobuildaiblob;AccountKey=${{ secrets.AZURE_BLOB_KEY }};EndpointSuffix=core.windows.net" >> $GITHUB_ENV
           else
             echo "IMAGE_TAG=dev-${{ github.sha }}" >> $GITHUB_ENV
             echo "APP_NAME=probuildai-backend-dev" >> $GITHUB_ENV
-            echo "DB_CONN=${{ secrets.DB_CONNECTION_STRING_DEV }}" >> $GITHUB_ENV
             echo "PORT=8081" >> $GITHUB_ENV
+            echo "DB_CONNECTION_STRING=Server=tcp:azsql-probuild.database.windows.net,1433;Initial Catalog=Probuild_DEV;Persist Security Info=False;User ID=${{ secrets.SQL_USER }};Password=${{ secrets.SQL_PASSWORD }};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;" >> $GITHUB_ENV
+            echo "AZURE_BLOB_CONNECTION=DefaultEndpointsProtocol=https;AccountName=qastorageprobuildaiblob;AccountKey=${{ secrets.AZURE_BLOB_KEY }};EndpointSuffix=core.windows.net" >> $GITHUB_ENV
           fi
 
       - name: Build and push Docker image
@@ -59,27 +61,18 @@ jobs:
           tags: probuild.azurecr.io/probuildai-backend:${{ env.IMAGE_TAG }}
 
       - name: Deploy to Azure Container Apps
-        env:
-          SQL_USER: ${{ secrets.SQL_USER }}
-          SQL_PASSWORD: ${{ secrets.SQL_PASSWORD }}
-          AZURE_BLOB_KEY: ${{ secrets.AZURE_BLOB_KEY }}
-          JWT_KEY: ${{ secrets.JWT_KEY }}
-          GPTAPIKEY: ${{ secrets.GPTAPIKEY }}
-          DB_CONNECTION_STRING: ${{ env.DB_CONN }}
         run: |
           az containerapp update \
             --name ${{ env.APP_NAME }} \
             --resource-group rg-Probuild \
             --image probuild.azurecr.io/probuildai-backend:${{ env.IMAGE_TAG }} \
             --set-env-vars \
-              SQL_USER="$SQL_USER" \
-              SQL_PASSWORD="$SQL_PASSWORD" \
-              AZURE_BLOB_KEY="$AZURE_BLOB_KEY" \
-              JWT_KEY="$JWT_KEY" \
+              DB_CONNECTION_STRING="${{ env.DB_CONNECTION_STRING }}" \
+              AZURE_BLOB_CONNECTION="${{ env.AZURE_BLOB_CONNECTION }}" \
+              JWT_KEY="${{ secrets.JWT_KEY }}" \
+              GPTAPIKEY="${{ secrets.GPTAPIKEY }}" \
               ASPNETCORE_URLS="http://+:${{ env.PORT }}" \
               ELASTIC_ENABLED="false" \
-              GPTAPIKEY="$GPTAPIKEY" \
-              DB_CONNECTION_STRING="$DB_CONNECTION_STRING" \
               DEPLOY_TIMESTAMP="$(date +%s)" \
             --set template.containers[0].probes=null \
             --set ingress.targetPort=${{ env.PORT }}
