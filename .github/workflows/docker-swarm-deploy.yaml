@@ -74,9 +74,10 @@ jobs:
               "GPTAPIKEY=${{ secrets.GPTAPIKEY }}" \
               "DB_CONNECTION_STRING=${{ env.DB_CONN }}" \
               "FORCE_NEW_REVISION=true" \
+              "DEPLOY_TIMESTAMP=$(date +%s)" \
             --set template.containers[0].probes=null \
             --set ingress.targetPort=${{ env.PORT }}
-              "DEPLOY_TIMESTAMP=$(date +%s)" \
+              
 
       - name: Check Container App Logs
         run: |
