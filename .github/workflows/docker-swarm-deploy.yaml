@@ -76,6 +76,7 @@ jobs:
               "FORCE_NEW_REVISION=true" \
             --set template.containers[0].probes=null \
             --set ingress.targetPort=${{ env.PORT }}
+              "DEPLOY_TIMESTAMP=$(date +%s)" \
 
       - name: Check Container App Logs
         run: |
