@@ -93,7 +93,8 @@ builder.Services.AddDataProtection()
         ValidationAlgorithm = ValidationAlgorithm.HMACSHA256
     });
 
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+var connectionString = Environment.ExpandEnvironmentVariables(builder.Configuration.GetConnectionString("DefaultConnection") ?? "");
+
 var azureBlobStorage = builder.Configuration.GetConnectionString("AzureBlobConnection");
 var jwtKey = builder.Configuration["Jwt:Key"];
 
