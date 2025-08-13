@@ -2,6 +2,7 @@
 using Dapper;
 using Microsoft.Data.SqlClient;
 using ProbuildBackend.Interface;
+using ProbuildBackend.Models;
 using System.Text;
 
 public class SqlConversationRepository : IConversationRepository
@@ -41,7 +42,7 @@ public class SqlConversationRepository : IConversationRepository
 
             if (promptKeys != null && promptKeys.Any())
             {
-                var promptKeySql = @"INSERT INTO ConversationPromptKeys (ConversationId, PromptKey) VALUES (@ConversationId, @PromptKey);";
+                var promptKeySql = @"INSERT INTO ConversationPrompts (ConversationId, PromptKey) VALUES (@ConversationId, @PromptKey);";
                 foreach (var key in promptKeys)
                 {
                     await connection.ExecuteAsync(promptKeySql, new { ConversationId = newConversation.Id, PromptKey = key }, transaction);
@@ -62,14 +63,14 @@ public class SqlConversationRepository : IConversationRepository
     {
         await using var connection = GetConnection();
         var sql = "SELECT * FROM Conversations WHERE Id = @Id;" +
-                  "SELECT * FROM ConversationPromptKeys WHERE ConversationId = @Id;";
+                  "SELECT * FROM ConversationPrompts WHERE ConversationId = @Id;";
 
         using (var multi = await connection.QueryMultipleAsync(sql, new { Id = conversationId }))
         {
             var conversation = await multi.ReadSingleOrDefaultAsync<Conversation>();
             if (conversation != null)
             {
-                conversation.PromptKeys = (await multi.ReadAsync<ConversationPromptKey>()).ToList();
+                conversation.PromptKeys = (await multi.ReadAsync<ConversationPrompt>()).ToList();
             }
             return conversation;
         }
@@ -133,12 +134,12 @@ public class SqlConversationRepository : IConversationRepository
     {
         await using var connection = GetConnection();
         var sql = "SELECT * FROM Conversations WHERE UserId = @UserId;" +
-                  "SELECT cp.* FROM ConversationPromptKeys cp JOIN Conversations c ON cp.ConversationId = c.Id WHERE c.UserId = @UserId;";
+                  "SELECT cp.* FROM ConversationPrompts cp JOIN Conversations c ON cp.ConversationId = c.Id WHERE c.UserId = @UserId;";
 
         using (var multi = await connection.QueryMultipleAsync(sql, new { UserId = userId }))
         {
             var conversations = (await multi.ReadAsync<Conversation>()).ToList();
-            var promptKeys = (await multi.ReadAsync<ConversationPromptKey>()).ToList();
+            var promptKeys = (await multi.ReadAsync<ConversationPrompt>()).ToList();
 
             foreach (var conversation in conversations)
             {

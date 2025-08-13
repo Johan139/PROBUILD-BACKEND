@@ -41,7 +41,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<Permission> Permissions { get; set; }
     public DbSet<TeamMemberPermission> TeamMemberPermissions { get; set; }
     public DbSet<Conversation> Conversations { get; set; }
-    public DbSet<ConversationPromptKey> ConversationPromptKeys { get; set; }
+    public DbSet<ConversationPrompt> ConversationPrompts { get; set; }
 
       protected override void OnModelCreating(ModelBuilder modelBuilder)
       {
@@ -244,6 +244,9 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
            .HasMany(c => c.PromptKeys)
            .WithOne(cp => cp.Conversation)
            .HasForeignKey(cp => cp.ConversationId);
+
+        modelBuilder.Entity<ConversationPrompt>()
+            .ToTable("ConversationPrompts");
 
        base.OnModelCreating(modelBuilder);
       }

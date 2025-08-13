@@ -162,7 +162,7 @@ builder.Services.AddAuthentication(options =>
 });
 
 
-builder.Services.AddScoped<DocumentProcessorService>();
+builder.Services.AddScoped<IDocumentProcessorService, DocumentProcessorService>();
 builder.Services.AddTransient<IEmailSender, EmailSender>();
 builder.Services.AddSingleton<AzureBlobService>();
 builder.Services.AddEndpointsApiExplorer();
