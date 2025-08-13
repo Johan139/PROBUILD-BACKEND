@@ -1,10 +1,6 @@
-using Microsoft.AspNetCore.Http;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models.DTO;
-using System.Collections.Generic;
-using System.IO;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace ProbuildBackend.Services
 {
@@ -21,7 +17,7 @@ namespace ProbuildBackend.Services
             _pdfTextExtractionService = pdfTextExtractionService;
         }
 
-        public async Task<AnalysisResponse> PerformAnalysisAsync(RenovationAnalysisRequest request, List<IFormFile> pdfFiles)
+        public async Task<AnalysisResponseDto> PerformAnalysisAsync(RenovationAnalysisRequestDto request, List<IFormFile> pdfFiles)
         {
             var prompt = await _promptManager.GetPromptAsync("RenovationPrompts/", "ProBuildAI_Renovation_Prompt.txt");
 
@@ -42,7 +38,7 @@ namespace ProbuildBackend.Services
 
             var (analysisResult, conversationId) = await _aiService.StartMultimodalConversationAsync(request.UserId, null, fullPrompt, "Analyze the renovation project based on the provided details.");
 
-            return new AnalysisResponse
+            return new AnalysisResponseDto
             {
                 AnalysisResult = analysisResult,
                 ConversationId = conversationId

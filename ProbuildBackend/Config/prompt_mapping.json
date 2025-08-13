@@ -323,5 +323,35 @@
     "tradeName": "WRECKING_DEMOLITION",
     "promptFileName": "Wrecking_Demolition_Subcontractor_Prompt.txt",
     "displayName": "Wrecking Demolition"
+  },
+  {
+    "tradeName": "SYSTEM",
+    "promptFileName": "SYSTEM_COMPREHENSIVE_ANALYSIS",
+    "displayName": "Full Blueprint Analysis"
+  },
+  {
+    "tradeName": "PERSONA",
+    "promptFileName": "sub-contractor-selected-prompt-master-prompt.txt",
+    "displayName": "Persona - Sub-Contractor Master"
+  },
+  {
+    "tradeName": "SYSTEM",
+    "promptFileName": "ProBuildAI_Renovation_Prompt.txt",
+    "displayName": "System - Renovation Analysis"
+  },
+  {
+    "tradeName": "SYSTEM",
+    "promptFileName": "prompt-failure-corrective-action.txt",
+    "displayName": "System - Failure Correction"
+  },
+  {
+    "tradeName": "SYSTEM",
+    "promptFileName": "prompt-revision.txt",
+    "displayName": "System - Prompt Revision"
+  },
+  {
+    "tradeName": "SYSTEM",
+    "promptFileName": "prompt-22-rebuttal.txt",
+    "displayName": "System - Prompt Rebuttal"
   }
 ]

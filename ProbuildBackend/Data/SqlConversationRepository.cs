@@ -20,27 +20,59 @@ public class SqlConversationRepository : IConversationRepository
 
     private SqlConnection GetConnection() => new SqlConnection(_connectionString);
 
-    public async Task<string> CreateConversationAsync(string userId, string title, string? promptKey = null)
+    public async Task<string> CreateConversationAsync(string userId, string title, List<string>? promptKeys = null)
     {
         await using var connection = GetConnection();
-        var newConversation = new Conversation
+        await connection.OpenAsync();
+        using var transaction = connection.BeginTransaction();
+
+        try
         {
-            Id = Guid.NewGuid().ToString(),
-            UserId = userId,
-            Title = title,
-            CreatedAt = DateTime.UtcNow,
-            PromptKey = promptKey
-        };
-        var sql = @"INSERT INTO Conversations (Id, UserId, Title, CreatedAt, PromptKey) VALUES (@Id, @UserId, @Title, @CreatedAt, @PromptKey);";
-        await connection.ExecuteAsync(sql, newConversation);
-        return newConversation.Id;
+            var newConversation = new Conversation
+            {
+                Id = Guid.NewGuid().ToString(),
+                UserId = userId,
+                Title = title,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            var conversationSql = @"INSERT INTO Conversations (Id, UserId, Title, CreatedAt) VALUES (@Id, @UserId, @Title, @CreatedAt);";
+            await connection.ExecuteAsync(conversationSql, newConversation, transaction);
+
+            if (promptKeys != null && promptKeys.Any())
+            {
+                var promptKeySql = @"INSERT INTO ConversationPromptKeys (ConversationId, PromptKey) VALUES (@ConversationId, @PromptKey);";
+                foreach (var key in promptKeys)
+                {
+                    await connection.ExecuteAsync(promptKeySql, new { ConversationId = newConversation.Id, PromptKey = key }, transaction);
+                }
+            }
+
+            transaction.Commit();
+            return newConversation.Id;
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
     }
 
     public async Task<Conversation?> GetConversationAsync(string conversationId)
     {
         await using var connection = GetConnection();
-        var sql = "SELECT * FROM Conversations WHERE Id = @Id";
-        return await connection.QuerySingleOrDefaultAsync<Conversation>(sql, new { Id = conversationId });
+        var sql = "SELECT * FROM Conversations WHERE Id = @Id;" +
+                  "SELECT * FROM ConversationPromptKeys WHERE ConversationId = @Id;";
+
+        using (var multi = await connection.QueryMultipleAsync(sql, new { Id = conversationId }))
+        {
+            var conversation = await multi.ReadSingleOrDefaultAsync<Conversation>();
+            if (conversation != null)
+            {
+                conversation.PromptKeys = (await multi.ReadAsync<ConversationPromptKey>()).ToList();
+            }
+            return conversation;
+        }
     }
 
     public async Task<List<Message>> GetUnsummarizedMessagesAsync(string conversationId)
@@ -100,9 +132,20 @@ public class SqlConversationRepository : IConversationRepository
     public async Task<IEnumerable<Conversation>> GetByUserIdAsync(string userId)
     {
         await using var connection = GetConnection();
-        var sql = "SELECT * FROM Conversations WHERE UserId = @UserId";
-        var conversations = await connection.QueryAsync<Conversation>(sql, new { UserId = userId });
-        return conversations.ToList();
+        var sql = "SELECT * FROM Conversations WHERE UserId = @UserId;" +
+                  "SELECT cp.* FROM ConversationPromptKeys cp JOIN Conversations c ON cp.ConversationId = c.Id WHERE c.UserId = @UserId;";
+
+        using (var multi = await connection.QueryMultipleAsync(sql, new { UserId = userId }))
+        {
+            var conversations = (await multi.ReadAsync<Conversation>()).ToList();
+            var promptKeys = (await multi.ReadAsync<ConversationPromptKey>()).ToList();
+
+            foreach (var conversation in conversations)
+            {
+                conversation.PromptKeys = promptKeys.Where(pk => pk.ConversationId == conversation.Id).ToList();
+            }
+            return conversations;
+        }
     }
 
     public async Task UpdateConversationTitleAsync(string conversationId, string newTitle)

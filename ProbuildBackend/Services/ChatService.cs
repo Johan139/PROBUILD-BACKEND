@@ -1,14 +1,11 @@
 using ProbuildBackend.Interface;
 using Microsoft.AspNetCore.Identity;
 using System.Text.Json;
-using Microsoft.AspNetCore.Hosting;
-using System.IO;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using ProbuildBackend.Models;
 using Microsoft.AspNetCore.SignalR;
 using ProbuildBackend.Middleware;
+using ProbuildBackend.Models.DTO;
+using ProbuildBackend.Models.Enums;
 
 namespace ProbuildBackend.Services
 {
@@ -22,6 +19,7 @@ namespace ProbuildBackend.Services
         private readonly List<PromptMapping> _promptMappings;
         private readonly AzureBlobService _azureBlobService;
         private readonly IHubContext<ChatHub> _hubContext;
+        private readonly IAnalysisService _analysisService;
 
 
         public ChatService(
@@ -31,7 +29,8 @@ namespace ProbuildBackend.Services
             UserManager<UserModel> userManager,
             IWebHostEnvironment hostingEnvironment,
             AzureBlobService azureBlobService,
-            IHubContext<ChatHub> hubContext)
+            IHubContext<ChatHub> hubContext,
+            IAnalysisService analysisService)
         {
             _conversationRepository = conversationRepository;
             _promptManager = promptManager;
@@ -41,6 +40,7 @@ namespace ProbuildBackend.Services
             _promptMappings = LoadPromptMappings();
             _azureBlobService = azureBlobService;
             _hubContext = hubContext;
+            _analysisService = analysisService;
         }
 
         private List<PromptMapping> LoadPromptMappings()
@@ -88,24 +88,28 @@ namespace ProbuildBackend.Services
             return prompts;
         }
 
-        public async Task<Conversation> StartConversationAsync(string userId, string userType, string initialMessage, string promptKey, List<string> blueprintUrls)
+        public async Task<Conversation> StartConversationAsync(string userId, string userType, string initialMessage, List<string>? promptKeys = null, List<string>? blueprintUrls = null)
         {
-            var title = !string.IsNullOrEmpty(promptKey)
-                ? promptKey
+            promptKeys ??= new List<string>();
+            blueprintUrls ??= new List<string>();
+
+            var title = promptKeys.Any()
+                ? string.Join(", ", promptKeys)
                 : (initialMessage.Length > 50 ? initialMessage.Substring(0, 50) : initialMessage);
 
-            var systemPersonaPrompt = await _promptManager.GetPromptAsync(userType, promptKey ?? "generic-chat");
+            var conversationId = await _conversationRepository.CreateConversationAsync(userId, title, promptKeys);
+
+            var systemPersonaPrompt = await _promptManager.GetPromptAsync(userType, promptKeys.FirstOrDefault() ?? "generic-chat");
 
             string initialResponse;
-            string conversationId;
 
-            if (string.IsNullOrEmpty(promptKey))
+            if (!promptKeys.Any())
             {
-                (initialResponse, conversationId) = await _aiService.StartTextConversationAsync(userId, systemPersonaPrompt, initialMessage);
+                (initialResponse, _) = await _aiService.StartTextConversationAsync(conversationId, systemPersonaPrompt, initialMessage);
             }
             else
             {
-                (initialResponse, conversationId) = await _aiService.StartMultimodalConversationAsync(userId, blueprintUrls ?? new List<string>(), systemPersonaPrompt, initialMessage);
+                (initialResponse, _) = await _aiService.StartMultimodalConversationAsync(conversationId, blueprintUrls, systemPersonaPrompt, initialMessage);
             }
 
             var userMessage = new Message
@@ -133,7 +137,7 @@ namespace ProbuildBackend.Services
             return conversation;
         }
 
-        public async Task<Message> SendMessageAsync(string conversationId, string messageText, string userId, IFormFileCollection? files)
+        public async Task<Message> SendMessageAsync(string conversationId, string userId, PostMessageDto dto)
         {
             var conversation = await _conversationRepository.GetConversationAsync(conversationId);
             if (conversation == null || conversation.UserId != userId)
@@ -142,19 +146,35 @@ namespace ProbuildBackend.Services
             }
 
             List<string>? fileUrls = null;
-            if (files != null && files.Count > 0)
+            if (dto.Files != null && dto.Files.Count > 0)
             {
-                fileUrls = await _azureBlobService.UploadFiles(files.ToList(), null, null);
+                fileUrls = await _azureBlobService.UploadFiles(dto.Files.ToList(), null, null);
             }
 
-            // The ContinueConversationAsync method in the AI service handles retrieving history.
-            var (aiResponse, _) = await _aiService.ContinueConversationAsync(conversationId, userId, messageText, fileUrls);
+            string aiResponse;
+
+            if (dto.PromptKeys != null && dto.PromptKeys.Any())
+            {
+                var analysisRequest = new AnalysisRequestDto
+                {
+                    AnalysisType = AnalysisType.Selected, // Or determine from context
+                    PromptKeys = dto.PromptKeys,
+                    DocumentUrls = fileUrls ?? new List<string>(),
+                    UserContext = dto.Message
+                };
+                aiResponse = await _analysisService.PerformAnalysisAsync(analysisRequest);
+            }
+            else
+            {
+                var (continueResponse, _) = await _aiService.ContinueConversationAsync(conversationId, userId, dto.Message, fileUrls);
+                aiResponse = continueResponse;
+            }
 
             var userMessage = new Message
             {
                 ConversationId = conversationId,
                 Role = "user",
-                Content = messageText,
+                Content = dto.Message,
                 Timestamp = DateTime.UtcNow
             };
             await _conversationRepository.AddMessageAsync(userMessage);
@@ -168,16 +188,16 @@ namespace ProbuildBackend.Services
             };
             await _conversationRepository.AddMessageAsync(aiMessage);
 
-                var frontendMessage = new SignalRMessage
-                {
-                    Id = aiMessage.Id,
-                    ConversationId = aiMessage.ConversationId,
-                    Role = aiMessage.Role,
-                    Content = aiMessage.Content,
-                    IsSummarized = aiMessage.IsSummarized,
-                    Timestamp = aiMessage.Timestamp
-                };
-            
+            var frontendMessage = new SignalRMessage
+            {
+                Id = aiMessage.Id,
+                ConversationId = aiMessage.ConversationId,
+                Role = aiMessage.Role,
+                Content = aiMessage.Content,
+                IsSummarized = aiMessage.IsSummarized,
+                Timestamp = aiMessage.Timestamp
+            };
+
             await _hubContext.Clients.Group(conversationId).SendAsync("ReceiveMessage", frontendMessage);
 
             return aiMessage;

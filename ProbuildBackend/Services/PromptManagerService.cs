@@ -8,7 +8,6 @@ public class PromptManagerService : IPromptManagerService
 
     public PromptManagerService(IConfiguration configuration)
     {
-        // Uses the correct connection string key from your appsettings.json
 #if DEBUG
         var connectionString = configuration.GetConnectionString("AzureBlobConnection");
 #else
@@ -21,14 +20,20 @@ public class PromptManagerService : IPromptManagerService
     public async Task<string> GetPromptAsync(string userType, string fileName)
     {
         string fullBlobName;
-        if (fileName == "generic-chat")
+
+        // Determine the correct folder based on the file name convention
+        if (fileName.EndsWith("_Subcontractor_Prompt.txt"))
         {
-            fullBlobName = "generic-prompt.txt";
+            fullBlobName = $"SubcontractorPrompts/{fileName}";
+        }
+        else if (fileName == "ProBuildAI_Renovation_Prompt.txt")
+        {
+            fullBlobName = $"RenovationPrompts/{fileName}";
         }
         else
         {
-            var folderPath = $"{userType}/";
-            fullBlobName = $"{folderPath}{fileName}";
+            // System-level prompts are in the root
+            fullBlobName = fileName;
         }
 
         if (_promptCache.TryGetValue(fullBlobName, out var cachedPrompt)) return cachedPrompt;

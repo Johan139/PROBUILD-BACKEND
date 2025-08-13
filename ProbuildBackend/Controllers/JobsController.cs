@@ -11,6 +11,7 @@ using System.Globalization;
 using Hangfire;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using BomWithCosts = ProbuildBackend.Models.BomWithCosts;
+using ProbuildBackend.Interface;
 
 namespace ProbuildBackend.Controllers
 {
@@ -22,7 +23,7 @@ namespace ProbuildBackend.Controllers
         private readonly IHubContext<ProgressHub> _hubContext;
         private readonly AzureBlobService _azureBlobservice;
         private readonly IHttpContextAccessor _httpContextAccessor;
-        private readonly DocumentProcessorService _documentProcessorService;
+        private readonly IDocumentProcessorService _documentProcessorService;
         private readonly IEmailSender _emailService; // Add this
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IConfiguration _config;
@@ -33,7 +34,7 @@ namespace ProbuildBackend.Controllers
             AzureBlobService azureBlobservice,
             IHubContext<ProgressHub> hubContext,
             IHttpContextAccessor httpContextAccessor,
-            DocumentProcessorService documentProcessorService,
+            IDocumentProcessorService documentProcessorService,
             IEmailSender emailService,
             IHttpClientFactory httpClientFactory,
             IConfiguration config,

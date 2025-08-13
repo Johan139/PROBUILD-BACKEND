@@ -16,7 +16,7 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("analyze")]
-        public async Task<IActionResult> Analyze([FromForm] ComparisonAnalysisRequest request, [FromForm] List<IFormFile> pdfFiles)
+        public async Task<IActionResult> Analyze([FromForm] ComparisonAnalysisRequestDto request, [FromForm] List<IFormFile> pdfFiles)
         {
             if (!ModelState.IsValid)
             {

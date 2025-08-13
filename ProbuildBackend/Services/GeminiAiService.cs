@@ -129,7 +129,7 @@ public class GeminiAiService : IAiService
         var history = new List<Content>();
 
         // For prompt-based conversations, fetch and add the system prompt.
-        if (!string.IsNullOrEmpty(conv.PromptKey))
+        if (conv.PromptKeys != null && conv.PromptKeys.Any())
         {
             var systemPrompt = await _promptManager.GetPromptAsync("", "system-persona");
             history.Add(new Content { Role = Roles.User, Parts = new List<Part> { new Part { Text = systemPrompt } } });
@@ -315,7 +315,7 @@ JSON Output:";
 
         // 1. Create a new conversation
         var conversationTitle = $"Analysis started on {DateTime.UtcNow:yyyy-MM-dd}";
-        var conversationId = await _conversationRepo.CreateConversationAsync(userId, conversationTitle, "system-persona");
+        var conversationId = await _conversationRepo.CreateConversationAsync(userId, conversationTitle, new List<string> { "system-persona" });
         var conversation = await _conversationRepo.GetConversationAsync(conversationId) ?? throw new Exception("Failed to create or retrieve conversation.");
 
         // 2. Construct the initial request
@@ -387,7 +387,7 @@ JSON Output:";
 
         // 1. Create a new conversation
         var conversationTitle = $"Chat started on {DateTime.UtcNow:yyyy-MM-dd}";
-        var conversationId = await _conversationRepo.CreateConversationAsync(userId, conversationTitle, "system-persona");
+        var conversationId = await _conversationRepo.CreateConversationAsync(userId, conversationTitle, new List<string> { "system-persona" });
 
         // 2. Construct the initial request
         var systemContent = new Content { Role = Roles.User, Parts = new List<Part> { new Part { Text = systemPersonaPrompt } } };

@@ -1,9 +1,6 @@
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models.DTO;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace ProbuildBackend.Controllers
 {
@@ -19,7 +16,7 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("analyze")]
-        public async Task<IActionResult> Analyze([FromForm] RenovationAnalysisRequest request, IFormFileCollection files)
+        public async Task<IActionResult> Analyze([FromForm] RenovationAnalysisRequestDto request, IFormFileCollection files)
         {
             if (!ModelState.IsValid)
             {

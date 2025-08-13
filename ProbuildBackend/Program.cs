@@ -45,6 +45,7 @@ builder.Services.AddCors(options =>
 
 
 
+
 // Configure the token provider for password reset
 builder.Services.Configure<DataProtectionTokenProviderOptions>(options =>
 {
@@ -138,18 +139,18 @@ builder.Services.AddAuthentication(options =>
         ValidAudience = builder.Configuration["Jwt:Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
     };
-    
+
     options.Events = new JwtBearerEvents
     {
         OnMessageReceived = context =>
         {
             var accessToken = context.Request.Query["access_token"];
             var path = context.HttpContext.Request.Path;
-            
+
             // If the request is for our hub...
-            if (!string.IsNullOrEmpty(accessToken) && 
-                (path.StartsWithSegments("/chathub") || 
-                 path.StartsWithSegments("/progressHub") || 
+            if (!string.IsNullOrEmpty(accessToken) &&
+                (path.StartsWithSegments("/chathub") ||
+                 path.StartsWithSegments("/progressHub") ||
                  path.StartsWithSegments("/hubs/notifications")))
             {
                 // Read the token out of the query string
@@ -195,6 +196,7 @@ builder.Services.AddScoped<IPdfImageConverter, PdfImageConverter>(); // Add this
 builder.Services.AddScoped<IPdfTextExtractionService, PdfTextExtractionService>();
 builder.Services.AddScoped<IRenovationAnalysisService, RenovationAnalysisService>();
 builder.Services.AddScoped<IComparisonAnalysisService, ComparisonAnalysisService>();
+builder.Services.AddScoped<IAnalysisService, AnalysisService>();
 builder.Services.Configure<OcrSettings>(configuration.GetSection("OcrSettings"));
 builder.Services.AddScoped(sp => sp.GetRequiredService<IOptions<OcrSettings>>().Value);
 

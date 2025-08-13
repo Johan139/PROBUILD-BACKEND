@@ -4,12 +4,9 @@ using ProbuildBackend.Services;
 using ProbuildBackend.Models.DTO;
 using System.Security.Claims;
 using ProbuildBackend.Interface;
-using Microsoft.AspNetCore.Http;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
 using ProbuildBackend.Models;
 using Microsoft.EntityFrameworkCore;
+using ProbuildBackend.Models.Enums;
 
 namespace ProbuildBackend.Controllers
 {
@@ -64,7 +61,7 @@ namespace ProbuildBackend.Controllers
             _logger.LogInformation($"DELETE ME: StartConversation - Found UserId: {userId}");
             _logger.LogInformation($"DELETE ME: StartConversation - DTO: {System.Text.Json.JsonSerializer.Serialize(dto)}");
 
-            var conversation = await _chatService.StartConversationAsync(userId, dto.UserType, dto.InitialMessage, dto.PromptKey, dto.BlueprintUrls);
+            var conversation = await _chatService.StartConversationAsync(userId, dto.UserType, dto.InitialMessage, dto.PromptKeys, dto.BlueprintUrls);
             _logger.LogInformation($"DELETE ME: StartConversation - Returning new conversation with ID: {conversation.Id}");
             return Ok(conversation);
         }
@@ -82,7 +79,7 @@ namespace ProbuildBackend.Controllers
             _logger.LogInformation($"DELETE ME: PostMessage - Found UserId: {userId}");
             _logger.LogInformation($"DELETE ME: PostMessage - DTO: {System.Text.Json.JsonSerializer.Serialize(dto)}");
 
-            var aiMessage = await _chatService.SendMessageAsync(conversationId, dto.Message, userId, dto.Files);
+            var aiMessage = await _chatService.SendMessageAsync(conversationId, userId, dto);
             _logger.LogInformation($"DELETE ME: PostMessage - Returning AI message");
             return Ok(aiMessage);
         }
@@ -130,7 +127,7 @@ namespace ProbuildBackend.Controllers
                 return Unauthorized();
             }
 
-            var request = new RenovationAnalysisRequest { UserId = userId };
+            var request = new RenovationAnalysisRequestDto { UserId = userId };
             var result = await _renovationAnalysisService.PerformAnalysisAsync(request, files.ToList());
             return Ok(result);
         }
@@ -144,7 +141,7 @@ namespace ProbuildBackend.Controllers
                 return Unauthorized();
             }
 
-            var request = new ComparisonAnalysisRequest
+            var request = new ComparisonAnalysisRequestDto
             {
                 UserId = userId,
                 ComparisonType = ComparisonType.Subcontractor
@@ -162,7 +159,7 @@ namespace ProbuildBackend.Controllers
                 return Unauthorized();
             }
 
-            var request = new ComparisonAnalysisRequest
+            var request = new ComparisonAnalysisRequestDto
             {
                 UserId = userId,
                 ComparisonType = ComparisonType.Vendor
@@ -243,23 +240,4 @@ namespace ProbuildBackend.Controllers
         }
     }
 
-    public class UpdateConversationTitleDto
-    {
-        public string ConversationId { get; set; }
-        public string NewTitle { get; set; }
-    }
-
-    public class StartConversationDto
-    {
-        public string InitialMessage { get; set; }
-        public string PromptKey { get; set; }
-        public List<string> BlueprintUrls { get; set; }
-        public string UserType { get; set; }
-    }
-
-    public class PostMessageDto
-    {
-        public string Message { get; set; }
-        public IFormFileCollection? Files { get; set; }
-    }
 }

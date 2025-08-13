@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Identity.UI.Services;
 
 namespace ProbuildBackend.Services
 {
-    public class DocumentProcessorService
+    public class DocumentProcessorService : IDocumentProcessorService
     {
         private readonly ApplicationDbContext _context;
         private readonly IHubContext<ProgressHub> _hubContext;

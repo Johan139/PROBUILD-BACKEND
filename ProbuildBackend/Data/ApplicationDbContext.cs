@@ -41,7 +41,8 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<Permission> Permissions { get; set; }
     public DbSet<TeamMemberPermission> TeamMemberPermissions { get; set; }
     public DbSet<Conversation> Conversations { get; set; }
- 
+    public DbSet<ConversationPromptKey> ConversationPromptKeys { get; set; }
+
       protected override void OnModelCreating(ModelBuilder modelBuilder)
       {
         modelBuilder.Entity<NotificationView>().HasNoKey().ToView("vw_Notifications");
@@ -233,12 +234,17 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
            .HasOne(tp => tp.Permission)
            .WithMany(p => p.TeamMemberPermissions)
            .HasForeignKey(tp => tp.PermissionId);
-        
+
         modelBuilder.Entity<Conversation>()
             .HasMany<JobDocumentModel>()
             .WithOne()
             .HasForeignKey(d => d.ConversationId);
- 
-         base.OnModelCreating(modelBuilder);
+
+       modelBuilder.Entity<Conversation>()
+           .HasMany(c => c.PromptKeys)
+           .WithOne(cp => cp.Conversation)
+           .HasForeignKey(cp => cp.ConversationId);
+
+       base.OnModelCreating(modelBuilder);
       }
 }

@@ -89,47 +89,48 @@ Now, please execute the full analysis based on this information. I will provide 
             // conversationId = newConversationId;
 
             // For now, can't proceed without a conversation ID.
-            
+
             return await Task.FromResult("Image analysis feature is under development.");
         }
 
-        public async Task<string> PerformAnalysisFromFilesAsync(string userId, IEnumerable<string> documentUris, JobModel jobDetails)
+        public async Task<string> PerformAnalysisFromFilesAsync(string userId, IEnumerable<string> documentUris, JobModel jobDetails, string promptKey = "prompt-00-initial-analysis.txt")
         {
-            _logger.LogInformation("Starting stateful analysis from files for user {UserId}", userId);
-
-            // 1. Get Prompts
-            var systemPersonaPrompt = await _promptManager.GetPromptAsync("", "system-persona.txt");
-            var initialAnalysisPrompt = await _promptManager.GetPromptAsync("", "prompt-00-initial-analysis.txt");
-
-            // Construct the full initial prompt with job details
-            var initialUserPrompt = $"{initialAnalysisPrompt}\n\nHere are the project details:\n" +
-                                    $"Project Name: {jobDetails.ProjectName}\n" +
-                                    $"Job Type: {jobDetails.JobType}\n" +
-                                    $"Address: {jobDetails.Address}\n" +
-                                    $"Operating Area: {jobDetails.OperatingArea}\n" +
-                                    $"Desired Start Date: {jobDetails.DesiredStartDate:yyyy-MM-dd}\n" +
-                                    $"Stories: {jobDetails.Stories}\n" +
-                                    $"Building Size: {jobDetails.BuildingSize} sq ft\n" +
-                                    $"Wall Structure: {jobDetails.WallStructure}\n" +
-                                    $"Wall Insulation: {jobDetails.WallInsulation}\n" +
-                                    $"Roof Structure: {jobDetails.RoofStructure}\n" +
-                                    $"Roof Insulation: {jobDetails.RoofInsulation}\n" +
-                                    $"Foundation: {jobDetails.Foundation}\n" +
-                                    $"Finishes: {jobDetails.Finishes}\n" +
-                                    $"Electrical Needs: {jobDetails.ElectricalSupplyNeeds}";
+            _logger.LogInformation("Starting stateful analysis from files for user {UserId} with prompt key {PromptKey}", userId, promptKey);
 
             try
             {
+                // 1. Get Prompts
+                var systemPersonaPrompt = await _promptManager.GetPromptAsync("", "system-persona.txt");
+                var initialAnalysisPrompt = await _promptManager.GetPromptAsync("", promptKey);
+
+                // Construct the full initial prompt with job details
+                var initialUserPrompt = $"{initialAnalysisPrompt}\n\nHere are the project details:\n" +
+                                        $"Project Name: {jobDetails.ProjectName}\n" +
+                                        $"Job Type: {jobDetails.JobType}\n" +
+                                        $"Address: {jobDetails.Address}\n" +
+                                        $"Operating Area: {jobDetails.OperatingArea}\n" +
+                                        $"Desired Start Date: {jobDetails.DesiredStartDate:yyyy-MM-dd}\n" +
+                                        $"Stories: {jobDetails.Stories}\n" +
+                                        $"Building Size: {jobDetails.BuildingSize} sq ft\n" +
+                                        $"Wall Structure: {jobDetails.WallStructure}\n" +
+                                        $"Wall Insulation: {jobDetails.WallInsulation}\n" +
+                                        $"Roof Structure: {jobDetails.RoofStructure}\n" +
+                                        $"Roof Insulation: {jobDetails.RoofInsulation}\n" +
+                                        $"Foundation: {jobDetails.Foundation}\n" +
+                                        $"Finishes: {jobDetails.Finishes}\n" +
+                                        $"Electrical Needs: {jobDetails.ElectricalSupplyNeeds}";
+
                 // 2. Start Conversation
                 var (initialResponse, conversationId) = await _aiService.StartMultimodalConversationAsync(userId, documentUris, systemPersonaPrompt, initialUserPrompt);
                 _logger.LogInformation("Started multimodal conversation {ConversationId} for user {UserId}", conversationId, userId);
 
                 // 3. Health Check
-                if (initialResponse.Contains("BLUEPRINT FAILURE", StringComparison.OrdinalIgnoreCase))
+                if (initialResponse.Contains("cannot fulfill", StringComparison.OrdinalIgnoreCase) ||
+                    initialResponse.Contains("unable to process", StringComparison.OrdinalIgnoreCase) ||
+                    initialResponse.Contains("BLUEPRINT FAILURE", StringComparison.OrdinalIgnoreCase))
                 {
-                    _logger.LogWarning("Blueprint FAILURE detected for conversation {ConversationId}. Halting analysis.", conversationId);
-                    // Optionally, could call ContinueConversationAsync here to ask the AI to elaborate on the failure.
-                    return initialResponse; // Return the failure report
+                    _logger.LogWarning("Initial analysis failed for conversation {ConversationId}. Triggering corrective action.", conversationId);
+                    return await HandleFailureAsync(documentUris, initialResponse);
                 }
 
                 _logger.LogInformation("Blueprint fitness check PASSED for conversation {ConversationId}. Proceeding with full sequential analysis.", conversationId);
@@ -176,6 +177,16 @@ Now, please execute the full analysis based on this information. I will provide 
             _logger.LogInformation("Full sequential analysis completed successfully for conversation {ConversationId}", conversationId);
 
             return stringBuilder.ToString();
+        }
+
+        private async Task<string> HandleFailureAsync(IEnumerable<string> documentUrls, string failedResponse)
+        {
+            var correctivePrompt = await _promptManager.GetPromptAsync(null, "prompt-failure-corrective-action.txt");
+            var correctiveInput = $"{correctivePrompt}\n\nOriginal Failed Response:\n{failedResponse}";
+
+            // The corrective action requires the original documents and the failed response.
+            // Note: This uses PerformMultimodalAnalysisAsync which is stateless and doesn't affect the ongoing conversation state.
+            return await _aiService.PerformMultimodalAnalysisAsync(documentUrls, correctiveInput);
         }
     }
 }

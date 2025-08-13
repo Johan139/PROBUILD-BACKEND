@@ -1,5 +1,6 @@
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models.DTO;
+using ProbuildBackend.Models.Enums;
 using System.Text;
 
 namespace ProbuildBackend.Services
@@ -17,7 +18,7 @@ namespace ProbuildBackend.Services
             _pdfTextExtractionService = pdfTextExtractionService;
         }
 
-        public async Task<AnalysisResponse> PerformAnalysisAsync(ComparisonAnalysisRequest request, List<IFormFile> pdfFiles)
+        public async Task<AnalysisResponseDto> PerformAnalysisAsync(ComparisonAnalysisRequestDto request, List<IFormFile> pdfFiles)
         {
             string promptFileName = request.ComparisonType switch
             {
@@ -42,7 +43,7 @@ namespace ProbuildBackend.Services
 
             var (analysisResult, conversationId) = await _aiService.StartMultimodalConversationAsync(request.UserId, null, fullPrompt, "Analyze the document based on the provided details.");
 
-            return new AnalysisResponse
+            return new AnalysisResponseDto
             {
                 AnalysisResult = analysisResult,
                 ConversationId = conversationId
