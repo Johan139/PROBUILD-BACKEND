@@ -19,7 +19,7 @@ namespace ProbuildBackend.Services
         private readonly List<PromptMapping> _promptMappings;
         private readonly AzureBlobService _azureBlobService;
         private readonly IHubContext<ChatHub> _hubContext;
-        private readonly IAnalysisService _analysisService;
+        private readonly IAiAnalysisService _aiAnalysisService;
 
 
         public ChatService(
@@ -30,7 +30,7 @@ namespace ProbuildBackend.Services
             IWebHostEnvironment hostingEnvironment,
             AzureBlobService azureBlobService,
             IHubContext<ChatHub> hubContext,
-            IAnalysisService analysisService)
+            IAiAnalysisService aiAnalysisService)
         {
             _conversationRepository = conversationRepository;
             _promptManager = promptManager;
@@ -40,7 +40,7 @@ namespace ProbuildBackend.Services
             _promptMappings = LoadPromptMappings();
             _azureBlobService = azureBlobService;
             _hubContext = hubContext;
-            _analysisService = analysisService;
+            _aiAnalysisService = aiAnalysisService;
         }
 
         private List<PromptMapping> LoadPromptMappings()
@@ -162,7 +162,9 @@ namespace ProbuildBackend.Services
                     DocumentUrls = fileUrls ?? new List<string>(),
                     UserContext = dto.Message
                 };
-                aiResponse = await _analysisService.PerformAnalysisAsync(analysisRequest);
+                var conversationResult = await _aiAnalysisService.PerformSelectedAnalysisAsync(analysisRequest, false);
+                var messages = await _conversationRepository.GetMessagesAsync(conversationResult.Id);
+                aiResponse = messages.LastOrDefault(m => m.Role == "model")?.Content ?? "";
             }
             else
             {

@@ -311,12 +311,14 @@ JSON Output:";
 
     public async Task<(string initialResponse, string conversationId)> StartMultimodalConversationAsync(string userId, IEnumerable<string> documentUris, string systemPersonaPrompt, string initialUserPrompt)
     {
-        _logger.LogInformation("Starting new multimodal conversation for user {UserId}", userId);
+        _logger.LogInformation("START: StartMultimodalConversationAsync for User {UserId}", userId);
 
         // 1. Create a new conversation
         var conversationTitle = $"Analysis started on {DateTime.UtcNow:yyyy-MM-dd}";
+        _logger.LogInformation("Creating conversation with title: {Title}", conversationTitle);
         var conversationId = await _conversationRepo.CreateConversationAsync(userId, conversationTitle, new List<string> { "system-persona" });
         var conversation = await _conversationRepo.GetConversationAsync(conversationId) ?? throw new Exception("Failed to create or retrieve conversation.");
+        _logger.LogInformation("Conversation {ConversationId} created.", conversationId);
 
         // 2. Construct the initial request
         var systemContent = new Content { Role = Roles.User, Parts = new List<Part> { new Part { Text = systemPersonaPrompt } } };
@@ -325,13 +327,16 @@ JSON Output:";
         var userContent = new Content { Role = Roles.User };
         userContent.AddText(initialUserPrompt);
 
+        _logger.LogInformation("Processing {DocumentCount} document URIs.", documentUris.Count());
         foreach (var fileUri in documentUris)
         {
             try
             {
+                _logger.LogInformation("Downloading blob: {FileUri}", fileUri);
                 var (fileBytes, mimeType) = await _azureBlobService.DownloadBlobAsBytesAsync(fileUri);
                 var base64String = Convert.ToBase64String(fileBytes);
                 userContent.AddInlineData(base64String, mimeType);
+                _logger.LogInformation("Added file to request: {FileUri}, MimeType: {MimeType}, Size: {Size} bytes", fileUri, mimeType, fileBytes.Length);
             }
             catch (Exception ex)
             {
@@ -347,7 +352,7 @@ JSON Output:";
         try
         {
             // 3. Send the request
-            _logger.LogInformation("Sending request to Gemini: {PartsCount}", request.Contents.Sum(c => c.Parts?.Count ?? 0));
+            _logger.LogInformation("Sending request to Gemini: {PartsCount} parts", request.Contents.Sum(c => c.Parts?.Count ?? 0));
             string modelResponseText = string.Empty;
             try
             {
@@ -367,6 +372,7 @@ JSON Output:";
             }
 
             // 4. Store initial messages
+            _logger.LogInformation("Storing initial messages for conversation {ConversationId}", conversationId);
             await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "user", Content = initialUserPrompt });
             await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "model", Content = modelResponseText });
 
@@ -376,8 +382,12 @@ JSON Output:";
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "An error occurred while calling the Gemini API in StartMultimodalConversationAsync for conversation {ConversationId}", conversationId);
+            _logger.LogError(ex, "EXCEPTION in StartMultimodalConversationAsync for conversation {ConversationId}", conversationId);
             throw;
+        }
+        finally
+        {
+            _logger.LogInformation("END: StartMultimodalConversationAsync for User {UserId}", userId);
         }
     }
 

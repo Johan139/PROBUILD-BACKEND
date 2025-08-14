@@ -23,6 +23,7 @@ public class SqlConversationRepository : IConversationRepository
 
     public async Task<string> CreateConversationAsync(string userId, string title, List<string>? promptKeys = null)
     {
+        _logger.LogInformation("START: CreateConversationAsync for User {UserId}, Title: {Title}", userId, title);
         await using var connection = GetConnection();
         await connection.OpenAsync();
         using var transaction = connection.BeginTransaction();
@@ -38,10 +39,12 @@ public class SqlConversationRepository : IConversationRepository
             };
 
             var conversationSql = @"INSERT INTO Conversations (Id, UserId, Title, CreatedAt) VALUES (@Id, @UserId, @Title, @CreatedAt);";
+            _logger.LogInformation("Executing SQL to insert new conversation: {ConversationId}", newConversation.Id);
             await connection.ExecuteAsync(conversationSql, newConversation, transaction);
 
             if (promptKeys != null && promptKeys.Any())
             {
+                _logger.LogInformation("Inserting {PromptCount} prompt keys for conversation {ConversationId}", promptKeys.Count, newConversation.Id);
                 var promptKeySql = @"INSERT INTO ConversationPrompts (ConversationId, PromptKey) VALUES (@ConversationId, @PromptKey);";
                 foreach (var key in promptKeys)
                 {
@@ -50,12 +53,18 @@ public class SqlConversationRepository : IConversationRepository
             }
 
             transaction.Commit();
+            _logger.LogInformation("Successfully created conversation {ConversationId}", newConversation.Id);
             return newConversation.Id;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "EXCEPTION in CreateConversationAsync for User {UserId}", userId);
             transaction.Rollback();
             throw;
+        }
+        finally
+        {
+            _logger.LogInformation("END: CreateConversationAsync for User {UserId}", userId);
         }
     }
 

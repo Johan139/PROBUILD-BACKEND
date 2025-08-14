@@ -400,8 +400,13 @@ namespace ProbuildBackend.Controllers
                             BuildingSize = jobRequest.BuildingSize,
                             OperatingArea = jobRequest.OperatingArea,
                             UserId = jobRequest.UserId,
-                            Status = jobRequest.Status
+                            Status = jobRequest.Status,
                         };
+
+                        if (jobRequest.UserContextFile != null)
+                        {
+                            var userContextFileUrl = (await _azureBlobservice.UploadFiles(new List<IFormFile> { jobRequest.UserContextFile }, null, null)).FirstOrDefault();
+                        }
 
                         _context.Jobs.Add(job);
                         await _context.SaveChangesAsync();
@@ -484,13 +489,24 @@ namespace ProbuildBackend.Controllers
 
                             if (jobRequest.AnalysisType == "Comprehensive")
                             {
-                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessDocumentsForJobAsync(job.Id, documentUrls, connectionId));
+                                var userContextFileUrl = "";
+                                if (jobRequest.UserContextFile != null)
+                                {
+                                    userContextFileUrl = (await _azureBlobservice.UploadFiles(new List<IFormFile> { jobRequest.UserContextFile }, null, null)).FirstOrDefault();
+                                }
+                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessDocumentsForJobAsync(job.Id, documentUrls, connectionId, jobRequest.GenerateDetailsWithAi, jobRequest.UserContextText, userContextFileUrl));
                             }
                             else if (jobRequest.AnalysisType == "Selected")
                             {
-                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessSelectedAnalysisForJobAsync(job.Id, documentUrls, jobRequest.PromptKeys, connectionId));
+                                var userContextFileUrl = "";
+                                if (jobRequest.UserContextFile != null)
+                                {
+                                    userContextFileUrl = (await _azureBlobservice.UploadFiles(new List<IFormFile> { jobRequest.UserContextFile }, null, null)).FirstOrDefault();
+                                }
+                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessSelectedAnalysisForJobAsync(job.Id, documentUrls, jobRequest.PromptKeys, connectionId, jobRequest.GenerateDetailsWithAi, jobRequest.UserContextText, userContextFileUrl));
                             }
                         }
+
                         return Ok(jobRequest);
                     }
                     catch (Exception ex)

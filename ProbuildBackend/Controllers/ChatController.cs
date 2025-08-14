@@ -17,17 +17,13 @@ namespace ProbuildBackend.Controllers
     {
         private readonly ChatService _chatService;
         private readonly ILogger<ChatController> _logger;
-        private readonly IComparisonAnalysisService _comparisonAnalysisService;
-        private readonly IRenovationAnalysisService _renovationAnalysisService;
         private readonly AzureBlobService _azureBlobService;
         private readonly ApplicationDbContext _context;
 
-        public ChatController(ChatService chatService, ILogger<ChatController> logger, IComparisonAnalysisService comparisonAnalysisService, IRenovationAnalysisService renovationAnalysisService, AzureBlobService azureBlobService, ApplicationDbContext context)
+        public ChatController(ChatService chatService, ILogger<ChatController> logger, AzureBlobService azureBlobService, ApplicationDbContext context)
         {
             _chatService = chatService;
             _logger = logger;
-            _comparisonAnalysisService = comparisonAnalysisService;
-            _renovationAnalysisService = renovationAnalysisService;
             _azureBlobService = azureBlobService;
             _context = context;
         }
@@ -132,55 +128,6 @@ namespace ProbuildBackend.Controllers
             return Ok(conversations);
         }
 
-        [HttpPost("start-renovation-analysis")]
-        public async Task<IActionResult> StartRenovationAnalysis(IFormFileCollection files)
-        {
-            var userId = User.FindFirstValue("UserId");
-            if (string.IsNullOrEmpty(userId))
-            {
-                return Unauthorized();
-            }
-
-            var request = new RenovationAnalysisRequestDto { UserId = userId };
-            var result = await _renovationAnalysisService.PerformAnalysisAsync(request, files.ToList());
-            return Ok(result);
-        }
-
-        [HttpPost("start-subcontractor-comparison")]
-        public async Task<IActionResult> StartSubcontractorComparison(IFormFileCollection files)
-        {
-            var userId = User.FindFirstValue("UserId");
-            if (string.IsNullOrEmpty(userId))
-            {
-                return Unauthorized();
-            }
-
-            var request = new ComparisonAnalysisRequestDto
-            {
-                UserId = userId,
-                ComparisonType = ComparisonType.Subcontractor
-            };
-            var result = await _comparisonAnalysisService.PerformAnalysisAsync(request, files.ToList());
-            return Ok(result);
-        }
-
-        [HttpPost("start-vendor-comparison")]
-        public async Task<IActionResult> StartVendorComparison(IFormFileCollection files)
-        {
-            var userId = User.FindFirstValue("UserId");
-            if (string.IsNullOrEmpty(userId))
-            {
-                return Unauthorized();
-            }
-
-            var request = new ComparisonAnalysisRequestDto
-            {
-                UserId = userId,
-                ComparisonType = ComparisonType.Vendor
-            };
-            var result = await _comparisonAnalysisService.PerformAnalysisAsync(request, files.ToList());
-            return Ok(result);
-        }
 
         [HttpPost("{conversationId}/upload")]
         public async Task<IActionResult> UploadChatFile(string conversationId, IFormFileCollection files)
