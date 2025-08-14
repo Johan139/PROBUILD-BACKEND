@@ -9,6 +9,8 @@ namespace ProbuildBackend.Services
         private readonly ILogger<AnalysisService> _logger;
         private readonly IPromptManagerService _promptManager;
         private readonly IAiService _aiService;
+        private readonly IConversationRepository _conversationRepo;
+        private readonly ApplicationDbContext _context;
 
         // Constants for persona prompt keys
         private const string SelectedAnalysisPersonaKey = "sub-contractor-selected-prompt-master-prompt.txt";
@@ -16,19 +18,25 @@ namespace ProbuildBackend.Services
         private const string FailureCorrectiveActionKey = "prompt-failure-corrective-action.txt";
 
 
-        public AnalysisService(ILogger<AnalysisService> logger, IPromptManagerService promptManager, IAiService aiService)
+        public AnalysisService(ILogger<AnalysisService> logger, IPromptManagerService promptManager, IAiService aiService, IConversationRepository conversationRepo, ApplicationDbContext context)
         {
             _logger = logger;
             _promptManager = promptManager;
             _aiService = aiService;
+            _conversationRepo = conversationRepo;
+            _context = context;
         }
 
-        public async Task<string> PerformAnalysisAsync(AnalysisRequestDto requestDto)
+        public async Task<Conversation> PerformAnalysisAsync(AnalysisRequestDto requestDto)
         {
             if (requestDto?.PromptKeys == null || !requestDto.PromptKeys.Any())
             {
                 throw new ArgumentException("At least one prompt key must be provided.", nameof(requestDto.PromptKeys));
             }
+
+            var job = await _context.Jobs.FindAsync(requestDto.JobId);
+            var title = $"Selected Analysis for {job?.ProjectName ?? "Job ID " + requestDto.JobId}";
+            var conversationId = await _conversationRepo.CreateConversationAsync(requestDto.UserId, title, requestDto.PromptKeys);
 
             try
             {
@@ -65,11 +73,14 @@ namespace ProbuildBackend.Services
                     analysisResult.Contains("unable to process", StringComparison.OrdinalIgnoreCase))
                 {
                     _logger.LogWarning("Initial analysis failed for prompts: {PromptKeys}. Triggering corrective action.", string.Join(", ", requestDto.PromptKeys));
-                    return await HandleFailureAsync(requestDto.DocumentUrls, analysisResult);
+                    analysisResult = await HandleFailureAsync(requestDto.DocumentUrls, analysisResult);
                 }
 
+                var message = new Message { ConversationId = conversationId, Role = "model", Content = analysisResult, Timestamp = DateTime.UtcNow };
+                await _conversationRepo.AddMessageAsync(message);
+
                 _logger.LogInformation("Analysis completed successfully for prompts: {PromptKeys}", string.Join(", ", requestDto.PromptKeys));
-                return analysisResult;
+                return await _conversationRepo.GetConversationAsync(conversationId);
             }
             catch (Exception ex)
             {

@@ -16,5 +16,9 @@ namespace ProbuildBackend.Models.DTO
 
         // Optional field for future use, e.g., to pass user context.
         public string UserContext { get; set; }
+
+        public int JobId { get; set; }
+
+        public string UserId { get; set; }
     }
 }

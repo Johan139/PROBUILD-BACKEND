@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Interface;
 using Microsoft.AspNetCore.Identity.UI.Services;
+using ProbuildBackend.Models.DTO;
 
 
 namespace ProbuildBackend.Services
@@ -15,17 +16,20 @@ namespace ProbuildBackend.Services
         private readonly IHubContext<ProgressHub> _hubContext;
         private readonly IEmailSender _emailService;
         private readonly IComprehensiveAnalysisService _comprehensiveAnalysisService;
+        private readonly IAnalysisService _analysisService;
 
         public DocumentProcessorService(
             ApplicationDbContext context,
             IHubContext<ProgressHub> hubContext,
             IEmailSender emailService,
-            IComprehensiveAnalysisService comprehensiveAnalysisService)
+            IComprehensiveAnalysisService comprehensiveAnalysisService,
+            IAnalysisService analysisService)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _hubContext = hubContext ?? throw new ArgumentNullException(nameof(hubContext));
             _emailService = emailService ?? throw new ArgumentNullException(nameof(emailService));
             _comprehensiveAnalysisService = comprehensiveAnalysisService ?? throw new ArgumentNullException(nameof(comprehensiveAnalysisService));
+            _analysisService = analysisService ?? throw new ArgumentNullException(nameof(analysisService));
         }
 
         public async Task ProcessDocumentsForJobAsync(int jobId, List<string> documentUrls, string connectionId)
@@ -115,5 +119,48 @@ namespace ProbuildBackend.Services
             }
         }
 
+        public async Task ProcessSelectedAnalysisForJobAsync(int jobId, List<string> documentUrls, List<string> promptKeys, string connectionId)
+        {
+            var job = await _context.Jobs.FindAsync(jobId);
+            if (job == null)
+            {
+                // Log error
+                return;
+            }
+
+            try
+            {
+                var request = new AnalysisRequestDto
+                {
+                    AnalysisType = Models.Enums.AnalysisType.Selected,
+                    PromptKeys = promptKeys,
+                    DocumentUrls = documentUrls,
+                    JobId = jobId,
+                    UserId = job.UserId
+                };
+
+                string finalReport = await _analysisService.PerformAnalysisAsync(request);
+
+                var result = new DocumentProcessingResult
+                {
+                    JobId = jobId,
+                    FullResponse = finalReport,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _context.DocumentProcessingResults.Add(result);
+                job.Status = "PROCESSED";
+                await _context.SaveChangesAsync();
+
+                await _hubContext.Clients.Client(connectionId).SendAsync("AnalysisComplete", jobId, "Selected analysis is complete.");
+            }
+            catch (Exception ex)
+            {
+                // Log error
+                job.Status = "FAILED";
+                await _context.SaveChangesAsync();
+                await _hubContext.Clients.Client(connectionId).SendAsync("AnalysisFailed", jobId, "Selected analysis failed.");
+            }
+        }
     }
 }

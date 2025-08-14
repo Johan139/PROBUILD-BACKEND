@@ -480,16 +480,16 @@ namespace ProbuildBackend.Controllers
 
                         if (documentUrls.Any())
                         {
-                            string connectionId =
-                                _httpContextAccessor.HttpContext?.Connection.Id ?? string.Empty;
-                            BackgroundJob.Enqueue(
-                                () =>
-                                    _documentProcessorService.ProcessDocumentsForJobAsync(
-                                        job.Id,
-                                        documentUrls,
-                                        connectionId
-                                    )
-                            );
+                            string connectionId = _httpContextAccessor.HttpContext?.Connection.Id ?? string.Empty;
+
+                            if (jobRequest.AnalysisType == "Comprehensive")
+                            {
+                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessDocumentsForJobAsync(job.Id, documentUrls, connectionId));
+                            }
+                            else if (jobRequest.AnalysisType == "Selected")
+                            {
+                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessSelectedAnalysisForJobAsync(job.Id, documentUrls, jobRequest.PromptKeys, connectionId));
+                            }
                         }
                         return Ok(jobRequest);
                     }
