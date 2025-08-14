@@ -48,6 +48,20 @@ namespace ProbuildBackend.Controllers
             return Ok(prompts);
         }
 
+       [AllowAnonymous]
+       [HttpGet("prompts")]
+       public IActionResult GetPrompts()
+       {
+           var filePath = Path.Combine(Directory.GetCurrentDirectory(), "Config", "prompt_mapping.json");
+           if (!System.IO.File.Exists(filePath))
+           {
+               return NotFound("Prompt mapping file not found.");
+           }
+
+           var json = System.IO.File.ReadAllText(filePath);
+           return Content(json, "application/json");
+       }
+
         [HttpPost("start")]
         public async Task<IActionResult> StartConversation([FromForm] StartConversationDto dto)
         {

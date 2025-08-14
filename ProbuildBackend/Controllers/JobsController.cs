@@ -168,6 +168,34 @@ namespace ProbuildBackend.Controllers
                 return StatusCode(500, $"An error occurred while fetching the blob: {ex.Message}");
             }
         }
+
+        [HttpPost("view")]
+        public async Task<IActionResult> ViewDocument([FromBody] ViewDocumentRequest request)
+        {
+            try
+            {
+                var document = await _context.JobDocuments.FirstOrDefaultAsync(doc => doc.BlobUrl == request.DocumentUrl);
+
+                if (document == null)
+                {
+                    return NotFound("Document not found.");
+                }
+
+                var sasUrl = _azureBlobservice.GenerateTemporaryPublicUrl(document.BlobUrl);
+
+                if (string.IsNullOrEmpty(sasUrl))
+                {
+                    return StatusCode(500, "Could not generate viewable URL.");
+                }
+
+                return Ok(sasUrl);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An error occurred: {ex.Message}");
+            }
+        }
+
         [HttpGet("downloadFile")]
         public async Task<IActionResult> DownloadFile([FromQuery(Name = "fileUrl")] string fileUrl)
         {
@@ -987,8 +1015,13 @@ namespace ProbuildBackend.Controllers
         }
     }
 
-    public class DeleteTemporaryFilesRequest
+    public class ViewDocumentRequest
     {
-        public List<string> BlobUrls { get; set; }
+        public string DocumentUrl { get; set; }
     }
+
+    public class DeleteTemporaryFilesRequest
+  {
+    public List<string> BlobUrls { get; set; }
+  }
 }

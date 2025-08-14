@@ -78,8 +78,14 @@ public class ProjectAnalysisController : ControllerBase
             return Unauthorized();
         }
 
+        if (requestDto == null || requestDto.PromptKeys == null || !requestDto.PromptKeys.Any() || requestDto.DocumentUrls == null || !requestDto.DocumentUrls.Any())
+        {
+            _logger.LogWarning("User {UserId} made an invalid analysis request with missing prompts or documents.", userId);
+            return BadRequest(new { message = "Invalid request. Please provide at least one prompt and one document URL." });
+        }
+
         _logger.LogInformation("User {UserId} initiated a one-shot 'Selected' analysis with prompts: {PromptKeys}",
-            userId, string.Join(", ", requestDto.PromptKeys ?? new List<string>()));
+            userId, string.Join(", ", requestDto.PromptKeys));
 
         try
         {

@@ -221,9 +221,12 @@ namespace ProbuildBackend.Services
         {
             try
             {
-                var uri = new Uri(blobUrl);
+                var decodedBlobUrl = Uri.UnescapeDataString(blobUrl);
+                var uri = new Uri(decodedBlobUrl);
                 var containerName = uri.Segments[1].TrimEnd('/');
-                var blobName = uri.AbsolutePath.Substring(uri.AbsolutePath.IndexOf('/', 1) + 1);
+
+                // The blob name is the entire path after the container name.
+                var blobName = uri.AbsolutePath.Substring(containerName.Length + 2); // +2 for the two slashes
 
                 var containerClient = _blobClient.GetBlobContainerClient(containerName);
                 var blobClient = containerClient.GetBlobClient(blobName);
