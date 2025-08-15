@@ -14,34 +14,35 @@ public class GeminiAiService : IAiService
 
     private const int SUMMARIZATION_THRESHOLD_CHARS = 250000;
 
-    public GeminiAiService(IConfiguration configuration, IConversationRepository conversationRepo, IPromptManagerService promptManager, ILogger<GeminiAiService> logger, AzureBlobService azureBlobService)
-    {
-        _conversationRepo = conversationRepo;
-        _promptManager = promptManager;
-        _logger = logger;
-        _azureBlobService = azureBlobService;
+  public GeminiAiService(IConfiguration configuration, IConversationRepository conversationRepo, IPromptManagerService promptManager, ILogger<GeminiAiService> logger, AzureBlobService azureBlobService)
+  {
+    _conversationRepo = conversationRepo;
+    _promptManager = promptManager;
+    _logger = logger;
+    _azureBlobService = azureBlobService;
 
 #if (DEBUG)
-        var apiKey = configuration["GoogleGeminiAPI:APIKey"];
+    var apiKey = configuration["GoogleGeminiAPI:APIKey"];
 #else
-   var apiKey = Environment.GetEnvironmentVariable("GeminiAPIKey");
+    var apiKey = Environment.GetEnvironmentVariable("GeminiAPIKey");
 #endif
 
-
-
-        var googleAI = new GoogleAi(apiKey);
-        _generativeModel = googleAI.CreateGenerativeModel("gemini-2.5-pro");
-        _generativeModel.UseGoogleSearch = true;
+    var googleAI = new GoogleAi(apiKey);
+    _generativeModel = googleAI.CreateGenerativeModel("gemini-2.5-pro");
+    _generativeModel.UseGoogleSearch = true;
     }
 
     #region Conversational Method
     public async Task<(string response, string conversationId)> ContinueConversationAsync(
-        string? conversationId, string userId, string userPrompt, IEnumerable<string>? documentUris)
+        string? conversationId, string userId, string userPrompt, IEnumerable<string>? documentUris, bool isAnalysis = false)
     {
         var conversation = await GetOrCreateConversation(conversationId, userId, userPrompt);
         conversationId = conversation.Id;
 
-        await CompactHistoryIfRequiredAsync(conversation);
+        if (!isAnalysis)
+        {
+            await CompactHistoryIfRequiredAsync(conversation);
+        }
         var updatedConv = await _conversationRepo.GetConversationAsync(conversationId) ?? conversation;
 
         var history = await BuildHistoryAsync(updatedConv);
@@ -52,22 +53,23 @@ public class GeminiAiService : IAiService
         currentUserContent.AddText(userPrompt);
 
         var tempFilePaths = new List<string>();
-       if (documentUris != null)
-       {
-           foreach (var fileUri in documentUris)
-           {
-               try
-               {
-                   var (fileBytes, mimeType) = await _azureBlobService.DownloadBlobAsBytesAsync(fileUri);
-                   var base64String = Convert.ToBase64String(fileBytes);
-                   currentUserContent.AddInlineData(base64String, mimeType);
-               }
-               catch (Exception ex)
-               {
-                   _logger.LogError(ex, "Failed to download or add file for analysis: {FileUri}", fileUri);
-               }
-           }
-       }
+        if (documentUris != null)
+        {
+            foreach (var fileUri in documentUris)
+            {
+                try
+                {
+                    var (fileBytes, mimeType) = await _azureBlobService.DownloadBlobAsBytesAsync(fileUri);
+                    var base64String = Convert.ToBase64String(fileBytes);
+                    currentUserContent.AddInlineData(base64String, mimeType);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to download or add file for analysis: {FileUri}", fileUri);
+                }
+            }
+        }
+
         request.Contents.Add(currentUserContent);
 
         try
@@ -97,19 +99,19 @@ public class GeminiAiService : IAiService
             // await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "model", Content = modelResponseText });
 
             return (modelResponseText, conversationId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "An error occurred while calling the Gemini API in ContinueConversationAsync for conversation {ConversationId}", conversationId);
-            throw; // Re-throw the exception to be handled by the caller
-        }
-        finally
-        {
-            foreach (var path in tempFilePaths)
-            {
-                if (File.Exists(path)) File.Delete(path);
-            }
-        }
+          }
+          catch (Exception ex)
+          {
+              _logger.LogError(ex, "An error occurred while calling the Gemini API in ContinueConversationAsync for conversation {ConversationId}", conversationId);
+              throw; // Re-throw the exception to be handled by the caller
+          }
+          finally
+          {
+              foreach (var path in tempFilePaths)
+              {
+                  if (File.Exists(path)) File.Delete(path);
+              }
+          }
     }
 
     private async Task<Conversation> GetOrCreateConversation(string? id, string userId, string title)
@@ -129,9 +131,9 @@ public class GeminiAiService : IAiService
         var history = new List<Content>();
 
         // For prompt-based conversations, fetch and add the system prompt.
-        if (conv.PromptKeys != null && conv.PromptKeys.Any())
+        if (conv.PromptKeys != null && conv.PromptKeys.Any() && history.Count == 0)
         {
-            var systemPrompt = await _promptManager.GetPromptAsync("", "system-persona");
+            var systemPrompt = await _promptManager.GetPromptAsync("", "system-persona.txt");
             history.Add(new Content { Role = Roles.User, Parts = new List<Part> { new Part { Text = systemPrompt } } });
             history.Add(new Content { Role = Roles.Model, Parts = new List<Part> { new Part { Text = "Understood. I will act as a construction Project Manager, Quantity Surveyor and Financial Advisor. I am ready to begin." } } });
         }
@@ -271,7 +273,7 @@ JSON Output:";
         }
     }
 
-    public async Task<string> PerformMultimodalAnalysisAsync(IEnumerable<string> fileUris, string prompt)
+    public async Task<string> PerformMultimodalAnalysisAsync(IEnumerable<string> fileUris, string prompt, bool isAnalysis = false)
     {
         var userContent = new Content { Role = Roles.User };
         userContent.AddText(prompt);
@@ -316,7 +318,7 @@ JSON Output:";
         // 1. Create a new conversation
         var conversationTitle = $"Analysis started on {DateTime.UtcNow:yyyy-MM-dd}";
         _logger.LogInformation("Creating conversation with title: {Title}", conversationTitle);
-        var conversationId = await _conversationRepo.CreateConversationAsync(userId, conversationTitle, new List<string> { "system-persona" });
+        var conversationId = await _conversationRepo.CreateConversationAsync(userId, conversationTitle, new List<string> { "system-persona.txt" });
         var conversation = await _conversationRepo.GetConversationAsync(conversationId) ?? throw new Exception("Failed to create or retrieve conversation.");
         _logger.LogInformation("Conversation {ConversationId} created.", conversationId);
 
@@ -397,7 +399,7 @@ JSON Output:";
 
         // 1. Create a new conversation
         var conversationTitle = $"Chat started on {DateTime.UtcNow:yyyy-MM-dd}";
-        var conversationId = await _conversationRepo.CreateConversationAsync(userId, conversationTitle, new List<string> { "system-persona" });
+        var conversationId = await _conversationRepo.CreateConversationAsync(userId, conversationTitle, new List<string> { "system-persona.txt" });
 
         // 2. Construct the initial request
         var systemContent = new Content { Role = Roles.User, Parts = new List<Part> { new Part { Text = systemPersonaPrompt } } };

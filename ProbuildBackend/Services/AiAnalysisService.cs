@@ -66,13 +66,12 @@ namespace ProbuildBackend.Services
                 var userContext = await GetUserContextAsString(requestDto.UserContext, null);
                 string finalPrompt = $"{personaPrompt}\n\n{userContext}\n\n{aggregatedSubPrompts}";
 
-                var analysisResult = await _aiService.PerformMultimodalAnalysisAsync(requestDto.DocumentUrls, finalPrompt);
+                var analysisResult = await _aiService.PerformMultimodalAnalysisAsync(requestDto.DocumentUrls, finalPrompt, true);
 
-                if (analysisResult.Contains("cannot fulfill", StringComparison.OrdinalIgnoreCase) ||
-                    analysisResult.Contains("unable to process", StringComparison.OrdinalIgnoreCase))
+                if (analysisResult.Contains("BLUEPRINT FAILURE", StringComparison.OrdinalIgnoreCase))
                 {
                     _logger.LogWarning("Initial analysis failed for prompts: {PromptKeys}. Triggering corrective action.", string.Join(", ", requestDto.PromptKeys));
-                    analysisResult = await HandleFailureAsync(requestDto.DocumentUrls, analysisResult);
+                    analysisResult = await HandleFailureAsync(conversationId, requestDto.UserId, requestDto.DocumentUrls, analysisResult);
                 }
 
                 var message = new Message { ConversationId = conversationId, Role = "model", Content = analysisResult, Timestamp = DateTime.UtcNow };
@@ -129,12 +128,10 @@ namespace ProbuildBackend.Services
                 var (initialResponse, conversationId) = await _aiService.StartMultimodalConversationAsync(userId, documentUris, systemPersonaPrompt, initialUserPrompt);
                 _logger.LogInformation("Started multimodal conversation {ConversationId} for user {UserId}. Initial response length: {Length}", conversationId, userId, initialResponse?.Length ?? 0);
 
-                if (initialResponse.Contains("cannot fulfill", StringComparison.OrdinalIgnoreCase) ||
-                    initialResponse.Contains("unable to process", StringComparison.OrdinalIgnoreCase) ||
-                    initialResponse.Contains("BLUEPRINT FAILURE", StringComparison.OrdinalIgnoreCase))
+                if (initialResponse.Contains("BLUEPRINT FAILURE", StringComparison.OrdinalIgnoreCase))
                 {
                     _logger.LogWarning("Initial analysis failed for conversation {ConversationId}. Triggering corrective action.", conversationId);
-                    return await HandleFailureAsync(documentUris, initialResponse);
+                    return await HandleFailureAsync(conversationId, userId, documentUris, initialResponse);
                 }
 
                 _logger.LogInformation("Blueprint fitness check PASSED for conversation {ConversationId}. Proceeding with full sequential analysis.", conversationId);
@@ -222,20 +219,20 @@ namespace ProbuildBackend.Services
         public async Task<string> GenerateRebuttalAsync(string conversationId, string clientQuery)
         {
             var rebuttalPrompt = await _promptManager.GetPromptAsync("", "prompt-22-rebuttal.txt") + $"\n\n**Client Query to Address:**\n{clientQuery}";
-            var (response, _) = await _aiService.ContinueConversationAsync(conversationId, "system-user", rebuttalPrompt, null);
+            var (response, _) = await _aiService.ContinueConversationAsync(conversationId, "system-user", rebuttalPrompt, null, false);
             return response;
         }
 
         public async Task<string> GenerateRevisionAsync(string conversationId, string revisionRequest)
         {
             var revisionPrompt = await _promptManager.GetPromptAsync("", "prompt-revision.txt") + $"\n\n**Revision Request:**\n{revisionRequest}";
-            var (response, _) = await _aiService.ContinueConversationAsync(conversationId, "system-user", revisionPrompt, null);
+            var (response, _) = await _aiService.ContinueConversationAsync(conversationId, "system-user", revisionPrompt, null, false);
             return response;
         }
 
         private async Task<string> ExecuteSequentialPromptsAsync(string conversationId, string userId, string initialResponse)
         {
-            var stringBuilder = new System.Text.StringBuilder();
+            var stringBuilder = new StringBuilder();
             stringBuilder.Append(initialResponse);
 
             var promptNames = new[] {
@@ -254,7 +251,9 @@ namespace ProbuildBackend.Services
             {
                 _logger.LogInformation("Executing step {Step} of {TotalSteps}: {PromptName} for conversation {ConversationId}", step, promptNames.Length, promptName, conversationId);
                 var promptText = await _promptManager.GetPromptAsync("", $"{promptName}.txt");
-                (lastResponse, _) = await _aiService.ContinueConversationAsync(conversationId, userId, promptText, null);
+                (lastResponse, _) = await _aiService.ContinueConversationAsync(conversationId, userId, promptText, null, true);
+
+                await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "model", Content = lastResponse });
 
                 stringBuilder.Append("\n\n---\n\n");
                 stringBuilder.Append(lastResponse);
@@ -267,12 +266,16 @@ namespace ProbuildBackend.Services
             return stringBuilder.ToString();
         }
 
-        private async Task<string> HandleFailureAsync(IEnumerable<string> documentUrls, string failedResponse)
+        private async Task<string> HandleFailureAsync(string conversationId, string userId, IEnumerable<string> documentUrls, string failedResponse)
         {
-            _logger.LogInformation("Failure prompt called");
+            _logger.LogInformation("Failure prompt called for conversation {ConversationId}", conversationId);
             var correctivePrompt = await _promptManager.GetPromptAsync(null, FailureCorrectiveActionKey);
             var correctiveInput = $"{correctivePrompt}\n\nOriginal Failed Response:\n{failedResponse}";
-            return await _aiService.PerformMultimodalAnalysisAsync(documentUrls, correctiveInput);
+
+            _logger.LogInformation("Calling ContinueConversationAsync for corrective action.");
+            var (response, _) = await _aiService.ContinueConversationAsync(conversationId, userId, correctiveInput, null, true);
+
+            return response;
         }
 
         private async Task<string> GetUserContextAsString(string userContextText, string userContextFileUrl)

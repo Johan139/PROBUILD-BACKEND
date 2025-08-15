@@ -99,7 +99,7 @@ namespace ProbuildBackend.Services
 
             var conversationId = await _conversationRepository.CreateConversationAsync(userId, title, promptKeys);
 
-            var systemPersonaPrompt = await _promptManager.GetPromptAsync(userType, promptKeys.FirstOrDefault() ?? "generic-chat");
+            var systemPersonaPrompt = await _promptManager.GetPromptAsync(userType, promptKeys.FirstOrDefault() ?? "generic-chat.txt");
 
             string initialResponse;
 
