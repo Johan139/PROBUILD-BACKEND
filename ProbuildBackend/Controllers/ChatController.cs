@@ -7,6 +7,7 @@ using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Models.Enums;
+using System.Text.RegularExpressions;
 
 namespace ProbuildBackend.Controllers
 {
@@ -179,9 +180,21 @@ namespace ProbuildBackend.Controllers
         [HttpPut("conversation/title")]
         public async Task<IActionResult> UpdateConversationTitle([FromBody] UpdateConversationTitleDto dto)
         {
-            if (dto.NewTitle.Length > 255)
+            if (string.IsNullOrWhiteSpace(dto.NewTitle))
             {
-                return BadRequest("Title cannot be longer than 255 characters.");
+                return BadRequest("Title cannot be empty.");
+            }
+
+            var sanitizedTitle = Regex.Replace(dto.NewTitle, @"[^a-zA-Z0-9\s]", "").Trim();
+
+            if (sanitizedTitle.Length > 50)
+            {
+                sanitizedTitle = sanitizedTitle.Substring(0, 50);
+            }
+
+            if (string.IsNullOrWhiteSpace(sanitizedTitle))
+            {
+                return BadRequest("Sanitized title cannot be empty.");
             }
 
             var userId = User.FindFirstValue("UserId");
@@ -196,7 +209,7 @@ namespace ProbuildBackend.Controllers
                 return NotFound();
             }
 
-            await _chatService.UpdateConversationTitleAsync(dto.ConversationId, dto.NewTitle);
+            await _chatService.UpdateConversationTitleAsync(dto.ConversationId, sanitizedTitle);
             return Ok();
         }
     }
