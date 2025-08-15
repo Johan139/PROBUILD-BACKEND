@@ -40,7 +40,7 @@ namespace ProbuildBackend.Controllers
 
             try
             {
-                var result = await _aiAnalysisService.PerformSelectedAnalysisAsync(requestDto, requestDto.GenerateDetailsWithAi);
+                var result = await _aiAnalysisService.PerformSelectedAnalysisAsync(userId, requestDto, requestDto.GenerateDetailsWithAi);
                 return Ok(new { report = result });
             }
             catch (ArgumentException ex)

@@ -275,6 +275,7 @@ JSON Output:";
 
     public async Task<string> PerformMultimodalAnalysisAsync(IEnumerable<string> fileUris, string prompt, bool isAnalysis = false)
     {
+        _logger.LogInformation("Performing multimodal analysis with {FileCount} files.", fileUris.Count());
         var userContent = new Content { Role = Roles.User };
         userContent.AddText(prompt);
 
@@ -393,13 +394,16 @@ JSON Output:";
         }
     }
 
-    public async Task<(string response, string conversationId)> StartTextConversationAsync(string userId, string systemPersonaPrompt, string initialUserPrompt)
+    public async Task<(string response, string conversationId)> StartTextConversationAsync(string userId, string systemPersonaPrompt, string initialUserPrompt, string? conversationId = null)
     {
         _logger.LogInformation("Starting new text-only conversation for user {UserId}", userId);
 
         // 1. Create a new conversation
-        var conversationTitle = $"Chat started on {DateTime.UtcNow:yyyy-MM-dd}";
-        var conversationId = await _conversationRepo.CreateConversationAsync(userId, conversationTitle, new List<string> { "system-persona.txt" });
+        if (string.IsNullOrEmpty(conversationId))
+        {
+            var conversationTitle = $"Chat started on {DateTime.UtcNow:yyyy-MM-dd}";
+            conversationId = await _conversationRepo.CreateConversationAsync(userId, conversationTitle, new List<string> { "system-persona.txt" });
+        }
 
         // 2. Construct the initial request
         var systemContent = new Content { Role = Roles.User, Parts = new List<Part> { new Part { Text = systemPersonaPrompt } } };

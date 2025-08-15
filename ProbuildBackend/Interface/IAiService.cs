@@ -13,6 +13,6 @@ namespace ProbuildBackend.Interface
         Task<string> PerformMultimodalAnalysisAsync(IEnumerable<string> fileUris, string prompt, bool isAnalysis = false);
 
         Task<(string initialResponse, string conversationId)> StartMultimodalConversationAsync(string userId, IEnumerable<string> documentUris, string systemPersonaPrompt, string initialUserPrompt);
-        Task<(string response, string conversationId)> StartTextConversationAsync(string userId, string systemPersonaPrompt, string initialUserPrompt);
+        Task<(string response, string conversationId)> StartTextConversationAsync(string userId, string systemPersonaPrompt, string initialUserPrompt, string? conversationId = null);
     }
 }

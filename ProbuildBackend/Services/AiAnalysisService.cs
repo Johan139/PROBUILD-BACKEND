@@ -40,7 +40,7 @@ namespace ProbuildBackend.Services
             _azureBlobService = azureBlobService;
         }
 
-        public async Task<Conversation> PerformSelectedAnalysisAsync(AnalysisRequestDto requestDto, bool generateDetailsWithAi)
+        public async Task<Conversation> PerformSelectedAnalysisAsync(string userId, AnalysisRequestDto requestDto, bool generateDetailsWithAi)
         {
             if (requestDto?.PromptKeys == null || !requestDto.PromptKeys.Any())
             {
@@ -49,7 +49,16 @@ namespace ProbuildBackend.Services
 
             var job = await _context.Jobs.FindAsync(requestDto.JobId);
             var title = $"Selected Analysis for {job?.ProjectName ?? "Job ID " + requestDto.JobId}";
-            var conversationId = await _conversationRepo.CreateConversationAsync(requestDto.UserId, title, requestDto.PromptKeys);
+
+            string conversationId;
+            if (!string.IsNullOrEmpty(requestDto.ConversationId))
+            {
+                conversationId = requestDto.ConversationId;
+            }
+            else
+            {
+                conversationId = await _conversationRepo.CreateConversationAsync(userId, title, requestDto.PromptKeys);
+            }
 
             try
             {
@@ -57,25 +66,27 @@ namespace ProbuildBackend.Services
                 _logger.LogInformation("Performing 'Selected' analysis with persona: {PersonaKey}", personaPromptKey);
 
                 string personaPrompt = await _promptManager.GetPromptAsync(null, personaPromptKey);
-
-                var subPromptsContent = await Task.WhenAll(
-                    requestDto.PromptKeys.Select(key => _promptManager.GetPromptAsync(null, key))
-                );
-                string aggregatedSubPrompts = string.Join("\n\n---\n\n", subPromptsContent.Where(s => !string.IsNullOrEmpty(s)));
-
                 var userContext = await GetUserContextAsString(requestDto.UserContext, null);
-                string finalPrompt = $"{personaPrompt}\n\n{userContext}\n\n{aggregatedSubPrompts}";
+                string initialPrompt = $"{personaPrompt}\n\n{userContext}";
 
-                var analysisResult = await _aiService.PerformMultimodalAnalysisAsync(requestDto.DocumentUrls, finalPrompt, true);
+                var (analysisResult, _) = await _aiService.StartMultimodalConversationAsync(userId, requestDto.DocumentUrls, personaPrompt, initialPrompt);
 
                 if (analysisResult.Contains("BLUEPRINT FAILURE", StringComparison.OrdinalIgnoreCase))
                 {
                     _logger.LogWarning("Initial analysis failed for prompts: {PromptKeys}. Triggering corrective action.", string.Join(", ", requestDto.PromptKeys));
-                    analysisResult = await HandleFailureAsync(conversationId, requestDto.UserId, requestDto.DocumentUrls, analysisResult);
+                    analysisResult = await HandleFailureAsync(conversationId, userId, requestDto.DocumentUrls, analysisResult);
                 }
 
                 var message = new Message { ConversationId = conversationId, Role = "model", Content = analysisResult, Timestamp = DateTime.UtcNow };
                 await _conversationRepo.AddMessageAsync(message);
+
+                foreach (var promptKey in requestDto.PromptKeys)
+                {
+                    var subPrompt = await _promptManager.GetPromptAsync(null, promptKey);
+                    (analysisResult, _) = await _aiService.ContinueConversationAsync(conversationId, userId, subPrompt, null, true);
+                    message = new Message { ConversationId = conversationId, Role = "model", Content = analysisResult, Timestamp = DateTime.UtcNow };
+                    await _conversationRepo.AddMessageAsync(message);
+                }
 
                 if (job != null && generateDetailsWithAi)
                 {

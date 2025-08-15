@@ -105,7 +105,7 @@ namespace ProbuildBackend.Services
 
             if (!promptKeys.Any())
             {
-                (initialResponse, _) = await _aiService.StartTextConversationAsync(conversationId, systemPersonaPrompt, initialMessage);
+                (initialResponse, _) = await _aiService.StartTextConversationAsync(userId, systemPersonaPrompt, initialMessage, conversationId);
             }
             else
             {
@@ -119,7 +119,7 @@ namespace ProbuildBackend.Services
                 Content = initialMessage,
                 Timestamp = DateTime.UtcNow
             };
-            await _conversationRepository.AddMessageAsync(userMessage);
+            // await _conversationRepository.AddMessageAsync(userMessage);
 
             var aiMessage = new Message
             {
@@ -128,7 +128,7 @@ namespace ProbuildBackend.Services
                 Content = initialResponse,
                 Timestamp = DateTime.UtcNow
             };
-            await _conversationRepository.AddMessageAsync(aiMessage);
+            // await _conversationRepository.AddMessageAsync(aiMessage);
 
             await _hubContext.Clients.Group(conversationId).SendAsync("ReceiveMessage", aiMessage);
 
@@ -152,13 +152,20 @@ namespace ProbuildBackend.Services
                 throw new UnauthorizedAccessException("User is not authorized to access this conversation.");
             }
 
-            List<string>? fileUrls = null;
+            List<string> fileUrls = [];
             if (dto.Files != null && dto.Files.Count > 0)
             {
-                fileUrls = await _azureBlobService.UploadFiles(dto.Files.ToList(), null, null);
+                var newUrls = await _azureBlobService.UploadFiles(dto.Files.ToList(), null, null);
+                fileUrls.AddRange(newUrls);
+            }
+
+            if (dto.DocumentUrls != null && dto.DocumentUrls.Any())
+            {
+                fileUrls.AddRange(dto.DocumentUrls);
             }
 
             string aiResponse;
+            string userMessageContent = string.IsNullOrEmpty(dto.Message) ? "Analysis started with selected prompts." : dto.Message;
 
             if (dto.PromptKeys != null && dto.PromptKeys.Any())
             {
@@ -166,10 +173,11 @@ namespace ProbuildBackend.Services
                 {
                     AnalysisType = AnalysisType.Selected, // Or determine from context
                     PromptKeys = dto.PromptKeys,
-                    DocumentUrls = fileUrls ?? new List<string>(),
-                    UserContext = dto.Message
+                    DocumentUrls = fileUrls,
+                    UserContext = dto.Message,
+                    ConversationId = conversationId
                 };
-                var conversationResult = await _aiAnalysisService.PerformSelectedAnalysisAsync(analysisRequest, false);
+                var conversationResult = await _aiAnalysisService.PerformSelectedAnalysisAsync(userId, analysisRequest, false);
                 var messages = await _conversationRepository.GetMessagesAsync(conversationResult.Id);
                 aiResponse = messages.LastOrDefault(m => m.Role == "model")?.Content ?? "";
             }
@@ -183,7 +191,7 @@ namespace ProbuildBackend.Services
             {
                 ConversationId = conversationId,
                 Role = "user",
-                Content = dto.Message,
+                Content = userMessageContent,
                 Timestamp = DateTime.UtcNow
             };
             await _conversationRepository.AddMessageAsync(userMessage);
@@ -195,7 +203,7 @@ namespace ProbuildBackend.Services
                 Content = aiResponse,
                 Timestamp = DateTime.UtcNow
             };
-            await _conversationRepository.AddMessageAsync(aiMessage);
+            //await _conversationRepository.AddMessageAsync(aiMessage);
 
             var frontendMessage = new SignalRMessage
             {

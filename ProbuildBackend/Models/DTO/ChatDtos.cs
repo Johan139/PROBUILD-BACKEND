@@ -19,5 +19,6 @@ namespace ProbuildBackend.Models.DTO
         public string Message { get; set; }
         public IFormFileCollection? Files { get; set; }
         public List<string>? PromptKeys { get; set; }
+        public List<string>? DocumentUrls { get; set; }
     }
 }

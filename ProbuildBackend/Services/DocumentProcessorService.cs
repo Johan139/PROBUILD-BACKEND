@@ -143,7 +143,7 @@ namespace ProbuildBackend.Services
         };
 
         request.UserContext = await GetUserContextAsString(userContextText, userContextFileUrl);
-        var conversation = await _aiAnalysisService.PerformSelectedAnalysisAsync(request, generateDetailsWithAi);
+        var conversation = await _aiAnalysisService.PerformSelectedAnalysisAsync(job.UserId, request, generateDetailsWithAi);
         var messages = await _conversationRepository.GetMessagesAsync(conversation.Id);
         string finalReport = messages.LastOrDefault(m => m.Role == "model")?.Content ?? "";
 

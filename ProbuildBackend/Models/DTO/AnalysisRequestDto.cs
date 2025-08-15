@@ -22,6 +22,8 @@ namespace ProbuildBackend.Models.DTO
     public string UserId { get; set; }
 
     public bool GenerateDetailsWithAi { get; set; }
+
+    public string? ConversationId { get; set; }
   }
 
 }
