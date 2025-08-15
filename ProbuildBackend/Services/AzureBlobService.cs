@@ -59,27 +59,27 @@ namespace ProbuildBackend.Services
             }
         }
 
-        public async Task<List<string>> UploadFiles(List<IFormFile> files, IHubContext<ProgressHub> hubContext, string connectionId)
+        public async Task<List<string>> UploadFiles(List<IFormFile> files, IHubContext<ProgressHub>? hubContext = null, string? connectionId = null)
         {
             var uploadedUrls = new List<string>();
-            if (string.IsNullOrEmpty(connectionId))
-            {
-                throw new InvalidOperationException("No valid connectionId provided.");
-            }
+            bool useSignalR = hubContext != null && !string.IsNullOrEmpty(connectionId);
 
-            Console.WriteLine($"Using connectionId for SignalR: {connectionId}");
+            if (useSignalR)
+            {
+                Console.WriteLine($"Using connectionId for SignalR: {connectionId}");
+            }
 
             foreach (var file in files)
             {
-                string fileName = $"{Guid.NewGuid()}_{file.FileName}"; // e.g., "c09444bf-9180-4179-a76a-d3be18043b8a_Trophy Club Approved Plans 072324 (1).pdf"
+                string fileName = $"{Guid.NewGuid()}_{file.FileName}";
                 BlobClient blobClient = _containerClient.GetBlobClient(fileName);
 
                 var blobHttpHeaders = new BlobHttpHeaders { ContentType = "application/gzip" };
                 var metadata = new Dictionary<string, string>
-        {
-            { "originalFileName", file.FileName },
-            { "compression", "gzip" }
-        };
+                {
+                    { "originalFileName", file.FileName },
+                    { "compression", "gzip" }
+                };
 
                 using var inputStream = file.OpenReadStream();
                 using var compressedStream = new MemoryStream();
@@ -89,37 +89,39 @@ namespace ProbuildBackend.Services
                     gzipStream.Flush();
                     compressedStream.Position = 0;
 
-                    long totalBytes = compressedStream.Length; // Compressed size
-                    long bytesUploaded = 0;
-
-                    var progressHandler = new Progress<long>(async progress =>
-                    {
-                        bytesUploaded = progress;
-                        int progressPercent = (int)Math.Min(100, (bytesUploaded * 100) / totalBytes);
-                        Console.WriteLine($"Azure Upload Progress: {progressPercent}% for {file.FileName} (Bytes: {bytesUploaded}/{totalBytes})");
-                        await hubContext.Clients.Client(connectionId).SendAsync("ReceiveProgress", progressPercent);
-                    });
-
-                    await blobClient.UploadAsync(compressedStream, new BlobUploadOptions
+                    var uploadOptions = new BlobUploadOptions
                     {
                         HttpHeaders = blobHttpHeaders,
                         Metadata = metadata,
                         TransferOptions = new StorageTransferOptions
                         {
                             MaximumTransferSize = 4 * 1024 * 1024 // 4MB chunks
-                        },
-                        ProgressHandler = progressHandler // Track Azure upload progress
-                    });
+                        }
+                    };
 
-                    // Build the URL manually to avoid encoding
+                    if (useSignalR)
+                    {
+                        long totalBytes = compressedStream.Length;
+                        var progressHandler = new Progress<long>(async progress =>
+                        {
+                            int progressPercent = totalBytes > 0 ? (int)Math.Min(100, (progress * 100) / totalBytes) : 0;
+                            await hubContext!.Clients.Client(connectionId!).SendAsync("ReceiveProgress", progressPercent);
+                        });
+                        uploadOptions.ProgressHandler = progressHandler;
+                    }
+
+                    await blobClient.UploadAsync(compressedStream, uploadOptions);
+
                     string blobUrl = $"https://qastorageprobuildaiblob.blob.core.windows.net/probuildaiprojects/{fileName}";
                     uploadedUrls.Add(blobUrl);
-                    Console.WriteLine($"Generated Blob URL: {blobUrl}");
                 }
             }
 
-            Console.WriteLine("Upload complete, sending UploadComplete signal");
-            await hubContext.Clients.Client(connectionId).SendAsync("UploadComplete", files.Count);
+            if (useSignalR)
+            {
+                await hubContext!.Clients.Client(connectionId!).SendAsync("UploadComplete", files.Count);
+            }
+
             return uploadedUrls;
         }
 

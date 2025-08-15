@@ -77,6 +77,23 @@ namespace ProbuildBackend.Controllers
             return Ok(conversation);
         }
 
+        [HttpPost("create")]
+        public async Task<IActionResult> CreateConversation()
+        {
+            _logger.LogInformation("DELETE ME: CreateConversation endpoint hit");
+            var userId = User.FindFirstValue("UserId");
+            if (userId == null)
+            {
+                _logger.LogWarning("DELETE ME: CreateConversation - UserId not found in token");
+                return Unauthorized();
+            }
+            _logger.LogInformation($"DELETE ME: CreateConversation - Found UserId: {userId}");
+
+            var conversation = await _chatService.CreateConversationAsync(userId, "New Conversation");
+            _logger.LogInformation($"DELETE ME: CreateConversation - Returning new conversation with ID: {conversation.Id}");
+            return Ok(conversation);
+        }
+
         [HttpPost("{conversationId}/message")]
         public async Task<IActionResult> PostMessage(string conversationId, [FromForm] PostMessageDto dto)
         {
@@ -139,7 +156,7 @@ namespace ProbuildBackend.Controllers
                 return Unauthorized();
             }
 
-            var uploadedFileUrls = await _azureBlobService.UploadFiles(files.ToList(), null, null);
+            var uploadedFileUrls = await _azureBlobService.UploadFiles(files.ToList());
 
             foreach (var (file, url) in files.Zip(uploadedFileUrls, (f, u) => (f, u)))
             {

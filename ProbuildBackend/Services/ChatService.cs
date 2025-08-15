@@ -99,7 +99,7 @@ namespace ProbuildBackend.Services
 
             var conversationId = await _conversationRepository.CreateConversationAsync(userId, title, promptKeys);
 
-            var systemPersonaPrompt = await _promptManager.GetPromptAsync(userType, promptKeys.FirstOrDefault() ?? "generic-chat.txt");
+            var systemPersonaPrompt = await _promptManager.GetPromptAsync(userType, promptKeys.FirstOrDefault() ?? "generic-prompt.txt");
 
             string initialResponse;
 
@@ -134,6 +134,13 @@ namespace ProbuildBackend.Services
 
             var conversation = await _conversationRepository.GetConversationAsync(conversationId) ?? throw new Exception("Failed to retrieve conversation after creation.");
 
+            return conversation;
+        }
+
+        public async Task<Conversation> CreateConversationAsync(string userId, string title)
+        {
+            var conversationId = await _conversationRepository.CreateConversationAsync(userId, title, new List<string>());
+            var conversation = await _conversationRepository.GetConversationAsync(conversationId) ?? throw new Exception("Failed to retrieve conversation after creation.");
             return conversation;
         }
 
