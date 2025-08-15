@@ -3,10 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using ProbuildBackend.Services;
 using ProbuildBackend.Models.DTO;
 using System.Security.Claims;
-using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using Microsoft.EntityFrameworkCore;
-using ProbuildBackend.Models.Enums;
 using System.Text.RegularExpressions;
 
 namespace ProbuildBackend.Controllers
@@ -150,23 +148,30 @@ namespace ProbuildBackend.Controllers
         [HttpPost("{conversationId}/upload")]
         public async Task<IActionResult> UploadChatFile(string conversationId, IFormFileCollection files)
         {
+            _logger.LogInformation("UploadChatFile endpoint hit for conversationId: {ConversationId}", conversationId);
+
             var userId = User.FindFirstValue("UserId");
             if (string.IsNullOrEmpty(userId))
             {
+                _logger.LogWarning("Unauthorized access attempt in UploadChatFile: UserId not found in token.");
                 return Unauthorized();
             }
 
+            _logger.LogInformation("User {UserId} is uploading {FileCount} files to conversation {ConversationId}", userId, files.Count, conversationId);
+
             var uploadedFileUrls = await _azureBlobService.UploadFiles(files.ToList());
+            _logger.LogInformation("Successfully uploaded {FileCount} files to Azure Blob Storage.", uploadedFileUrls.Count);
 
             foreach (var (file, url) in files.Zip(uploadedFileUrls, (f, u) => (f, u)))
             {
+                _logger.LogInformation("Creating JobDocumentModel for file: {FileName}, URL: {Url}", file.FileName, url);
                 var jobDocument = new JobDocumentModel
                 {
                     JobId = null,
                     ConversationId = conversationId,
                     FileName = file.FileName,
                     BlobUrl = url,
-                    SessionId = null,
+                    SessionId = conversationId,
                     UploadedAt = DateTime.UtcNow,
                     Size = file.Length
                 };
@@ -174,6 +179,7 @@ namespace ProbuildBackend.Controllers
             }
 
             await _context.SaveChangesAsync();
+            _logger.LogInformation("Successfully saved JobDocumentModels to the database.");
 
             return Ok(new { fileUrls = uploadedFileUrls });
         }

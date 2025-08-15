@@ -61,17 +61,19 @@ namespace ProbuildBackend.Services
 
         public async Task<List<string>> UploadFiles(List<IFormFile> files, IHubContext<ProgressHub>? hubContext = null, string? connectionId = null)
         {
+            _logger.LogInformation("Starting file upload process for {FileCount} files.", files.Count);
             var uploadedUrls = new List<string>();
             bool useSignalR = hubContext != null && !string.IsNullOrEmpty(connectionId);
 
             if (useSignalR)
             {
-                Console.WriteLine($"Using connectionId for SignalR: {connectionId}");
+                _logger.LogInformation("SignalR is enabled for this upload, using connectionId: {ConnectionId}", connectionId);
             }
 
             foreach (var file in files)
             {
                 string fileName = $"{Guid.NewGuid()}_{file.FileName}";
+                _logger.LogInformation("Generated unique file name: {FileName}", fileName);
                 BlobClient blobClient = _containerClient.GetBlobClient(fileName);
 
                 var blobHttpHeaders = new BlobHttpHeaders { ContentType = "application/gzip" };
@@ -88,6 +90,7 @@ namespace ProbuildBackend.Services
                     await inputStream.CopyToAsync(gzipStream);
                     gzipStream.Flush();
                     compressedStream.Position = 0;
+                    _logger.LogInformation("Successfully compressed file: {OriginalFileName}", file.FileName);
 
                     var uploadOptions = new BlobUploadOptions
                     {
@@ -111,6 +114,7 @@ namespace ProbuildBackend.Services
                     }
 
                     await blobClient.UploadAsync(compressedStream, uploadOptions);
+                    _logger.LogInformation("Successfully uploaded file to Azure Blob Storage: {FileName}", fileName);
 
                     string blobUrl = $"https://qastorageprobuildaiblob.blob.core.windows.net/probuildaiprojects/{fileName}";
                     uploadedUrls.Add(blobUrl);
@@ -120,8 +124,10 @@ namespace ProbuildBackend.Services
             if (useSignalR)
             {
                 await hubContext!.Clients.Client(connectionId!).SendAsync("UploadComplete", files.Count);
+                _logger.LogInformation("Sent 'UploadComplete' SignalR message to client: {ConnectionId}", connectionId);
             }
 
+            _logger.LogInformation("File upload process complete. Returning {FileCount} URLs.", uploadedUrls.Count);
             return uploadedUrls;
         }
 
