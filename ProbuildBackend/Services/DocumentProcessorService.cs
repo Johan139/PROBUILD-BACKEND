@@ -143,13 +143,13 @@ namespace ProbuildBackend.Services
         };
 
         request.UserContext = await GetUserContextAsString(userContextText, userContextFileUrl);
-        var conversation = await _aiAnalysisService.PerformSelectedAnalysisAsync(job.UserId, request, generateDetailsWithAi);
-        var messages = await _conversationRepository.GetMessagesAsync(conversation.Id);
-        string finalReport = messages.LastOrDefault(m => m.Role == "model")?.Content ?? "";
+        string finalReport = await _aiAnalysisService.PerformSelectedAnalysisAsync(job.UserId, request, generateDetailsWithAi);
 
         var result = new DocumentProcessingResult
         {
           JobId = jobId,
+          BomJson = JsonSerializer.Serialize(""),
+          MaterialsEstimateJson = JsonSerializer.Serialize(""),
           FullResponse = finalReport,
           CreatedAt = DateTime.UtcNow
         };
@@ -171,7 +171,7 @@ namespace ProbuildBackend.Services
          private async Task<string> GetUserContextAsString(string userContextText, string userContextFileUrl)
         {
            var contextBuilder = new System.Text.StringBuilder();
-           if (!string.IsNullOrWhiteSpace(userContextText))
+           if (!string.IsNullOrWhiteSpace(userContextText) && !userContextText.Contains("Analysis started with selected prompts:"))
            {
                contextBuilder.AppendLine("## User-Provided Context");
                contextBuilder.AppendLine(userContextText);

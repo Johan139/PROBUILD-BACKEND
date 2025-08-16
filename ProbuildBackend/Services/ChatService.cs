@@ -176,14 +176,17 @@ namespace ProbuildBackend.Services
                 userMessageContent = dto.Message;
             }
 
-            var userMessage = new Message
+            if (!string.IsNullOrWhiteSpace(userMessageContent))
             {
-                ConversationId = conversationId,
-                Role = "user",
-                Content = userMessageContent,
-                Timestamp = DateTime.UtcNow
-            };
-            await _conversationRepository.AddMessageAsync(userMessage);
+                var userMessage = new Message
+                {
+                    ConversationId = conversationId,
+                    Role = "user",
+                    Content = userMessageContent,
+                    Timestamp = DateTime.UtcNow
+                };
+                await _conversationRepository.AddMessageAsync(userMessage);
+            }
 
             if (dto.PromptKeys != null && dto.PromptKeys.Any())
             {
@@ -195,9 +198,7 @@ namespace ProbuildBackend.Services
                     UserContext = dto.Message,
                     ConversationId = conversationId
                 };
-                var conversationResult = await _aiAnalysisService.PerformSelectedAnalysisAsync(userId, analysisRequest, false, conversationId);
-                var messages = await _conversationRepository.GetMessagesAsync(conversationResult.Id);
-                aiResponse = string.Join("\n\n", messages.Where(m => m.Role == "model").Select(m => m.Content));
+                aiResponse = await _aiAnalysisService.PerformSelectedAnalysisAsync(userId, analysisRequest, false, conversationId);
             }
             else
             {

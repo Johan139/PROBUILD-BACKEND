@@ -379,7 +379,10 @@ JSON Output:";
 
             // 4. Store initial messages
             _logger.LogInformation("Storing initial messages for conversation {ConversationId}", conversationId);
-            await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "user", Content = initialUserPrompt });
+            if (!string.IsNullOrWhiteSpace(initialUserPrompt))
+            {
+                await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "user", Content = initialUserPrompt });
+            }
             await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "model", Content = modelResponseText });
 
             // 5. Return response and ID

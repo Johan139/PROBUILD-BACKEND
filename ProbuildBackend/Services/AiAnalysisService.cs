@@ -40,7 +40,7 @@ namespace ProbuildBackend.Services
             _azureBlobService = azureBlobService;
         }
 
-        public async Task<Conversation> PerformSelectedAnalysisAsync(string userId, AnalysisRequestDto requestDto, bool generateDetailsWithAi, string? conversationId = null)
+        public async Task<string> PerformSelectedAnalysisAsync(string userId, AnalysisRequestDto requestDto, bool generateDetailsWithAi, string? conversationId = null)
         {
             if (requestDto?.PromptKeys == null || !requestDto.PromptKeys.Any())
             {
@@ -70,29 +70,34 @@ namespace ProbuildBackend.Services
                 string personaPrompt = await _promptManager.GetPromptAsync(null, personaPromptKey);
                 var userContext = await GetUserContextAsString(requestDto.UserContext, null);
 
-                var (analysisResult, _) = await _aiService.StartMultimodalConversationAsync(userId, requestDto.DocumentUrls, personaPrompt, userContext, conversationId);
+                var (initialResponse, _) = await _aiService.StartMultimodalConversationAsync(userId, requestDto.DocumentUrls, personaPrompt, userContext, conversationId);
 
-                if (analysisResult.Contains("BLUEPRINT FAILURE", StringComparison.OrdinalIgnoreCase))
+                if (initialResponse.Contains("BLUEPRINT FAILURE", StringComparison.OrdinalIgnoreCase))
                 {
                     _logger.LogWarning("Initial analysis failed for prompts: {PromptKeys}. Triggering corrective action.", string.Join(", ", requestDto.PromptKeys));
-                    analysisResult = await HandleFailureAsync(conversationId, userId, requestDto.DocumentUrls, analysisResult);
+                    initialResponse = await HandleFailureAsync(conversationId, userId, requestDto.DocumentUrls, initialResponse);
                 }
+
+                var reportBuilder = new StringBuilder();
+                reportBuilder.Append(initialResponse);
 
                 foreach (var promptKey in requestDto.PromptKeys)
                 {
                     var subPrompt = await _promptManager.GetPromptAsync(null, promptKey);
-                    (analysisResult, _) = await _aiService.ContinueConversationAsync(conversationId, userId, subPrompt, null, true);
+                    var (analysisResult, _) = await _aiService.ContinueConversationAsync(conversationId, userId, subPrompt, null, true);
                     var message = new Message { ConversationId = conversationId, Role = "model", Content = analysisResult, Timestamp = DateTime.UtcNow };
                     await _conversationRepo.AddMessageAsync(message);
+                    reportBuilder.Append("\n\n---\n\n");
+                    reportBuilder.Append(analysisResult);
                 }
 
                 if (job != null && generateDetailsWithAi)
                 {
-                   await ParseAndSaveAiJobDetails(job.Id, analysisResult);
+                   await ParseAndSaveAiJobDetails(job.Id, reportBuilder.ToString());
                 }
 
                 _logger.LogInformation("Analysis completed successfully for prompts: {PromptKeys}", string.Join(", ", requestDto.PromptKeys));
-                return await _conversationRepo.GetConversationAsync(conversationId);
+                return reportBuilder.ToString();
             }
             catch (Exception ex)
             {
@@ -290,7 +295,7 @@ namespace ProbuildBackend.Services
         private async Task<string> GetUserContextAsString(string userContextText, string userContextFileUrl)
         {
            var contextBuilder = new StringBuilder();
-           if (!string.IsNullOrWhiteSpace(userContextText))
+           if (!string.IsNullOrWhiteSpace(userContextText) && !userContextText.Contains("Analysis started with selected prompts:"))
            {
                contextBuilder.AppendLine("## User-Provided Context");
                contextBuilder.AppendLine(userContextText);
@@ -356,3 +361,4 @@ namespace ProbuildBackend.Services
        }
     }
 }
+
