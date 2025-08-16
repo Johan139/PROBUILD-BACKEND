@@ -14,7 +14,6 @@ namespace ProbuildBackend.Models.DTO
     [Required]
     public List<string> DocumentUrls { get; set; }
 
-    // Optional field for future use, e.g., to pass user context.
     public string UserContext { get; set; }
 
     public int JobId { get; set; }

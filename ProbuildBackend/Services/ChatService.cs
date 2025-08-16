@@ -54,17 +54,13 @@ namespace ProbuildBackend.Services
         public async Task<List<object>> GetAvailablePromptsAsync(string userId)
         {
             var user = await _userManager.FindByIdAsync(userId);
-            Console.WriteLine($"DELETE ME: [ChatService] Checking prompts for userId: {userId}");
             if (user == null)
             {
-                Console.WriteLine($"DELETE ME: [ChatService] User with ID {userId} not found.");
                 return new List<object>();
             }
-            Console.WriteLine($"DELETE ME: [ChatService] Found user with UserType: {user.UserType}");
 
             if (user.UserType == "GENERAL_CONTRACTOR")
             {
-                Console.WriteLine("DELETE ME: [ChatService] User is GENERAL_CONTRACTOR, returning all prompts.");
                 return _promptMappings
                     .Select(p => new { promptName = p.TradeName.Replace("_", " "), promptKey = p.PromptFileName })
                     .GroupBy(p => p.promptKey)

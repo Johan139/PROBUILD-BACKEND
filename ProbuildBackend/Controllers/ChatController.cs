@@ -30,16 +30,14 @@ namespace ProbuildBackend.Controllers
         [HttpGet("my-prompts")]
         public async Task<IActionResult> GetMyPrompts()
         {
-            _logger.LogInformation("DELETE ME: GetMyPrompts endpoint hit");
             var userId = User.FindFirstValue("UserId");
             if (userId == null)
             {
-                _logger.LogWarning("DELETE ME: GetMyPrompts - UserId not found in token");
+                _logger.LogWarning("GetMyPrompts - UserId not found in token");
                 return Unauthorized();
             }
-            _logger.LogInformation($"DELETE ME: GetMyPrompts - Found UserId: {userId}");
             var prompts = await _chatService.GetAvailablePromptsAsync(userId);
-            _logger.LogInformation($"DELETE ME: GetMyPrompts - Returning {prompts.Count} prompts");
+            _logger.LogInformation($"GetMyPrompts - Returning {prompts.Count} prompts");
             return Ok(prompts);
         }
 
@@ -60,87 +58,82 @@ namespace ProbuildBackend.Controllers
         [HttpPost("start")]
         public async Task<IActionResult> StartConversation([FromForm] StartConversationDto dto)
         {
-            _logger.LogInformation("DELETE ME: StartConversation endpoint hit");
             var userId = User.FindFirstValue("UserId");
             if (userId == null)
             {
-                _logger.LogWarning("DELETE ME: StartConversation - UserId not found in token");
+                _logger.LogWarning("StartConversation - UserId not found in token");
                 return Unauthorized();
             }
-            _logger.LogInformation($"DELETE ME: StartConversation - Found UserId: {userId}");
-            _logger.LogInformation($"DELETE ME: StartConversation - DTO: {System.Text.Json.JsonSerializer.Serialize(dto)}");
+            _logger.LogInformation($"StartConversation - Found UserId: {userId}");
+            _logger.LogInformation($"StartConversation - DTO: {System.Text.Json.JsonSerializer.Serialize(dto)}");
 
             var conversation = await _chatService.StartConversationAsync(userId, dto.UserType, dto.InitialMessage, dto.PromptKeys, dto.BlueprintUrls);
-            _logger.LogInformation($"DELETE ME: StartConversation - Returning new conversation with ID: {conversation.Id}");
+            _logger.LogInformation($"StartConversation - Returning new conversation with ID: {conversation.Id}");
             return Ok(conversation);
         }
 
         [HttpPost("create")]
         public async Task<IActionResult> CreateConversation()
         {
-            _logger.LogInformation("DELETE ME: CreateConversation endpoint hit");
             var userId = User.FindFirstValue("UserId");
             if (userId == null)
             {
-                _logger.LogWarning("DELETE ME: CreateConversation - UserId not found in token");
+                _logger.LogWarning("CreateConversation - UserId not found in token");
                 return Unauthorized();
             }
-            _logger.LogInformation($"DELETE ME: CreateConversation - Found UserId: {userId}");
+            _logger.LogInformation($"CreateConversation - Found UserId: {userId}");
 
             var conversation = await _chatService.CreateConversationAsync(userId, "New Conversation");
-            _logger.LogInformation($"DELETE ME: CreateConversation - Returning new conversation with ID: {conversation.Id}");
+            _logger.LogInformation($"CreateConversation - Returning new conversation with ID: {conversation.Id}");
             return Ok(conversation);
         }
 
         [HttpPost("{conversationId}/message")]
         public async Task<IActionResult> PostMessage(string conversationId, [FromForm] PostMessageDto dto)
         {
-            _logger.LogInformation($"DELETE ME: PostMessage endpoint hit for conversationId: {conversationId}");
             var userId = User.FindFirstValue("UserId");
             if (userId == null)
             {
-                _logger.LogWarning("DELETE ME: PostMessage - UserId not found in token");
+                _logger.LogWarning("PostMessage - UserId not found in token");
                 return Unauthorized();
             }
-            _logger.LogInformation($"DELETE ME: PostMessage - Found UserId: {userId}");
-            _logger.LogInformation($"DELETE ME: PostMessage - DTO: {System.Text.Json.JsonSerializer.Serialize(dto)}");
+            _logger.LogInformation($"PostMessage - Found UserId: {userId}");
+            _logger.LogInformation($"PostMessage - DTO: {System.Text.Json.JsonSerializer.Serialize(dto)}");
 
             var aiMessage = await _chatService.SendMessageAsync(conversationId, userId, dto);
-            _logger.LogInformation($"DELETE ME: PostMessage - Returning AI message");
+            _logger.LogInformation($"PostMessage - Returning AI message");
             return Ok(aiMessage);
         }
 
         [HttpGet("{conversationId}")]
         public async Task<IActionResult> GetConversation(string conversationId)
         {
-            _logger.LogInformation($"DELETE ME: GetConversation endpoint hit for conversationId: {conversationId}");
             var userId = User.FindFirstValue("UserId");
             if (userId == null)
             {
-                _logger.LogWarning("DELETE ME: GetConversation - UserId not found in token");
+                _logger.LogWarning("GetConversation - UserId not found in token");
                 return Unauthorized();
             }
-            _logger.LogInformation($"DELETE ME: GetConversation - Found UserId: {userId}");
+            _logger.LogInformation($"GetConversation - Found UserId: {userId}");
 
             var history = await _chatService.GetConversationHistoryAsync(conversationId, userId);
-            _logger.LogInformation($"DELETE ME: GetConversation - Returning conversation history with {history.Count} messages");
+            _logger.LogInformation($"GetConversation - Returning conversation history with {history.Count} messages");
             return Ok(history);
         }
 
         [HttpGet("my-conversations")]
         public async Task<IActionResult> GetMyConversations()
         {
-            _logger.LogInformation("DELETE ME: GetMyConversations endpoint hit");
             var userId = User.FindFirstValue("UserId");
             if (string.IsNullOrEmpty(userId))
             {
-                _logger.LogWarning("DELETE ME: GetMyConversations - UserId not found in token");
+                _logger.LogWarning("GetMyConversations - UserId not found in token");
                 return Unauthorized();
             }
-            _logger.LogInformation($"DELETE ME: GetMyConversations - Found UserId: {userId}");
+            _logger.LogInformation($"GetMyConversations - Found UserId: {userId}");
 
             var conversations = await _chatService.GetUserConversationsAsync(userId);
-            _logger.LogInformation($"DELETE ME: GetMyConversations - Returning {conversations.Count()} conversations");
+            _logger.LogInformation($"GetMyConversations - Returning {conversations.Count()} conversations");
             return Ok(conversations);
         }
 
@@ -148,8 +141,6 @@ namespace ProbuildBackend.Controllers
         [HttpPost("{conversationId}/upload")]
         public async Task<IActionResult> UploadChatFile(string conversationId, IFormFileCollection files)
         {
-            _logger.LogInformation("UploadChatFile endpoint hit for conversationId: {ConversationId}", conversationId);
-
             var userId = User.FindFirstValue("UserId");
             if (string.IsNullOrEmpty(userId))
             {

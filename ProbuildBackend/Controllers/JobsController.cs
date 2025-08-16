@@ -24,7 +24,7 @@ namespace ProbuildBackend.Controllers
         private readonly AzureBlobService _azureBlobservice;
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly IDocumentProcessorService _documentProcessorService;
-        private readonly IEmailSender _emailService; // Add this
+        private readonly IEmailSender _emailService; 
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IConfiguration _config;
         private readonly WebSocketManager _webSocketManager;
