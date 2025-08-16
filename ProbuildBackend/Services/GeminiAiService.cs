@@ -312,14 +312,17 @@ JSON Output:";
     }
     #endregion
 
-    public async Task<(string initialResponse, string conversationId)> StartMultimodalConversationAsync(string userId, IEnumerable<string> documentUris, string systemPersonaPrompt, string initialUserPrompt)
+    public async Task<(string initialResponse, string conversationId)> StartMultimodalConversationAsync(string userId, IEnumerable<string> documentUris, string systemPersonaPrompt, string initialUserPrompt, string? conversationId = null)
     {
         _logger.LogInformation("START: StartMultimodalConversationAsync for User {UserId}", userId);
 
         // 1. Create a new conversation
         var conversationTitle = $"Analysis started on {DateTime.UtcNow:yyyy-MM-dd}";
         _logger.LogInformation("Creating conversation with title: {Title}", conversationTitle);
-        var conversationId = await _conversationRepo.CreateConversationAsync(userId, conversationTitle, new List<string> { "system-persona.txt" });
+        if (string.IsNullOrEmpty(conversationId))
+        {
+            conversationId = await _conversationRepo.CreateConversationAsync(userId, conversationTitle, new List<string> { "system-persona.txt" });
+        }
         var conversation = await _conversationRepo.GetConversationAsync(conversationId) ?? throw new Exception("Failed to create or retrieve conversation.");
         _logger.LogInformation("Conversation {ConversationId} created.", conversationId);
 

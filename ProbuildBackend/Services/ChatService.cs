@@ -165,7 +165,25 @@ namespace ProbuildBackend.Services
             }
 
             string aiResponse;
-            string userMessageContent = string.IsNullOrEmpty(dto.Message) ? "Analysis started with selected prompts." : dto.Message;
+            string userMessageContent;
+            if (string.IsNullOrEmpty(dto.Message))
+            {
+                var formattedPrompts = dto.PromptKeys?.Select(p => p.Replace(".txt", "").Replace("_", " ")) ?? Enumerable.Empty<string>();
+                userMessageContent = $"Analysis started with selected prompts: {string.Join(", ", formattedPrompts)}";
+            }
+            else
+            {
+                userMessageContent = dto.Message;
+            }
+
+            var userMessage = new Message
+            {
+                ConversationId = conversationId,
+                Role = "user",
+                Content = userMessageContent,
+                Timestamp = DateTime.UtcNow
+            };
+            await _conversationRepository.AddMessageAsync(userMessage);
 
             if (dto.PromptKeys != null && dto.PromptKeys.Any())
             {
@@ -177,9 +195,9 @@ namespace ProbuildBackend.Services
                     UserContext = dto.Message,
                     ConversationId = conversationId
                 };
-                var conversationResult = await _aiAnalysisService.PerformSelectedAnalysisAsync(userId, analysisRequest, false);
+                var conversationResult = await _aiAnalysisService.PerformSelectedAnalysisAsync(userId, analysisRequest, false, conversationId);
                 var messages = await _conversationRepository.GetMessagesAsync(conversationResult.Id);
-                aiResponse = messages.LastOrDefault(m => m.Role == "model")?.Content ?? "";
+                aiResponse = string.Join("\n\n", messages.Where(m => m.Role == "model").Select(m => m.Content));
             }
             else
             {
@@ -187,14 +205,6 @@ namespace ProbuildBackend.Services
                 aiResponse = continueResponse;
             }
 
-            var userMessage = new Message
-            {
-                ConversationId = conversationId,
-                Role = "user",
-                Content = userMessageContent,
-                Timestamp = DateTime.UtcNow
-            };
-            await _conversationRepository.AddMessageAsync(userMessage);
 
             var aiMessage = new Message
             {

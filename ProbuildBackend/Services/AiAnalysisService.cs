@@ -40,7 +40,7 @@ namespace ProbuildBackend.Services
             _azureBlobService = azureBlobService;
         }
 
-        public async Task<Conversation> PerformSelectedAnalysisAsync(string userId, AnalysisRequestDto requestDto, bool generateDetailsWithAi)
+        public async Task<Conversation> PerformSelectedAnalysisAsync(string userId, AnalysisRequestDto requestDto, bool generateDetailsWithAi, string? conversationId = null)
         {
             if (requestDto?.PromptKeys == null || !requestDto.PromptKeys.Any())
             {
@@ -50,14 +50,16 @@ namespace ProbuildBackend.Services
             var job = await _context.Jobs.FindAsync(requestDto.JobId);
             var title = $"Selected Analysis for {job?.ProjectName ?? "Job ID " + requestDto.JobId}";
 
-            string conversationId;
-            if (!string.IsNullOrEmpty(requestDto.ConversationId))
+            if (string.IsNullOrEmpty(conversationId))
             {
-                conversationId = requestDto.ConversationId;
-            }
-            else
-            {
-                conversationId = await _conversationRepo.CreateConversationAsync(userId, title, requestDto.PromptKeys);
+                if (!string.IsNullOrEmpty(requestDto.ConversationId))
+                {
+                    conversationId = requestDto.ConversationId;
+                }
+                else
+                {
+                    conversationId = await _conversationRepo.CreateConversationAsync(userId, title, requestDto.PromptKeys);
+                }
             }
 
             try
@@ -67,9 +69,8 @@ namespace ProbuildBackend.Services
 
                 string personaPrompt = await _promptManager.GetPromptAsync(null, personaPromptKey);
                 var userContext = await GetUserContextAsString(requestDto.UserContext, null);
-                string initialPrompt = $"{personaPrompt}\n\n{userContext}";
 
-                var (analysisResult, _) = await _aiService.StartMultimodalConversationAsync(userId, requestDto.DocumentUrls, personaPrompt, initialPrompt);
+                var (analysisResult, _) = await _aiService.StartMultimodalConversationAsync(userId, requestDto.DocumentUrls, personaPrompt, userContext, conversationId);
 
                 if (analysisResult.Contains("BLUEPRINT FAILURE", StringComparison.OrdinalIgnoreCase))
                 {
@@ -77,14 +78,11 @@ namespace ProbuildBackend.Services
                     analysisResult = await HandleFailureAsync(conversationId, userId, requestDto.DocumentUrls, analysisResult);
                 }
 
-                var message = new Message { ConversationId = conversationId, Role = "model", Content = analysisResult, Timestamp = DateTime.UtcNow };
-                await _conversationRepo.AddMessageAsync(message);
-
                 foreach (var promptKey in requestDto.PromptKeys)
                 {
                     var subPrompt = await _promptManager.GetPromptAsync(null, promptKey);
                     (analysisResult, _) = await _aiService.ContinueConversationAsync(conversationId, userId, subPrompt, null, true);
-                    message = new Message { ConversationId = conversationId, Role = "model", Content = analysisResult, Timestamp = DateTime.UtcNow };
+                    var message = new Message { ConversationId = conversationId, Role = "model", Content = analysisResult, Timestamp = DateTime.UtcNow };
                     await _conversationRepo.AddMessageAsync(message);
                 }
 
