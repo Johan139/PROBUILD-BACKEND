@@ -41,6 +41,7 @@ namespace ProbuildBackend.Controllers
             StripeConfiguration.ApiKey = Environment.GetEnvironmentVariable("StripeAPIKey") ?? _configuration["StripeAPI:StripeKey"];
 
             StripeModel stripeModel = GetPriceIdForPackage(request.PackageName); // Implement this to map package to Price ID
+
             if (string.IsNullOrEmpty(stripeModel.StripeProductId))
             {
                 return BadRequest("Invalid PackageName.");

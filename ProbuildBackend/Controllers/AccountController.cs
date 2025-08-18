@@ -119,9 +119,11 @@ namespace ProbuildBackend.Controllers
         [HttpGet("has-active-subscription/{userId}")]
         public async Task<ActionResult> HasActiveSubscription(string userId)
         {
-            var hasActive = await _context.PaymentRecords
-                .AnyAsync(p => p.UserId == userId && p.Status == "Active" && p.ValidUntil > DateTime.UtcNow);
-
+            var hasActive = await _context.PaymentRecords.AnyAsync(p =>
+                p.Status == "Active"
+                && p.ValidUntil > DateTime.UtcNow
+                && (p.UserId == userId || p.AssignedUser == userId)   // <- check either
+            );
             return Ok(new { hasActive });
         }
 
@@ -330,8 +332,6 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-
-
                 var user = await _context.Users.FindAsync(dto.UserId);
                 if (user == null) return NotFound("User not found.");
 
@@ -346,7 +346,7 @@ namespace ProbuildBackend.Controllers
                     UserId = dto.UserId,
                     Package = dto.PackageName,
                     StripeSessionId = "TRIAL-NO-SESSION",
-                    Status = "Success",
+                    Status = "Active",
                     PaidAt = DateTime.UtcNow,
                     ValidUntil = DateTime.UtcNow.AddDays(7),
                     Amount = 0,
