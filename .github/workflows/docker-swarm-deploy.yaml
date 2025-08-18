@@ -1,20 +1,22 @@
-name: Build and Deploy to Azure Container Apps
+name: Build and Deploy to Azure Container Apps (Dev + Prod)
 
 on:
   push:
     branches:
       - master
+      - Development
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
+    env:
+      IS_PROD: ${{ github.ref == 'refs/heads/master' }}
+
     steps:
-      # Checkout the repository
       - name: Check out code
         uses: actions/checkout@v4
 
-      # Ensure PromptTemplates is available inside the Docker context
       - name: Ensure PromptTemplates directory is included
         run: |
           echo "Ensuring PromptTemplates is available in build context..."
@@ -22,64 +24,70 @@ jobs:
           cp -r ./PromptTemplates/* ./ProbuildBackend/PromptTemplates/ || true
           ls -al ./ProbuildBackend/PromptTemplates || echo "No templates found"
 
-      # Debug: Print the Service Principal credentials and secrets
-      - name: Debug Service Principal credentials and secrets
-        run: |
-          echo "AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}"
-          echo "AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}"
-          echo "AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}"
-          echo "SQL_USER: ${{ secrets.SQL_USER }}"
-          echo "SQL_PASSWORD: ${{ secrets.SQL_PASSWORD }}"
-          echo "AZURE_BLOB_KEY: ${{ secrets.AZURE_BLOB_KEY }}"
-          echo "JWT_KEY: ${{ secrets.JWT_KEY }}"
-          echo "DB_CONNECTION_STRING: ${{ secrets.DB_CONNECTION_STRING }}"
-          echo "GPTAPIKEY: ${{ secrets.GPTAPIKey }}"
-
-      # Log in to Azure using Service Principal
       - name: Log in to Azure
         uses: azure/login@v1
         with:
           creds: '{"clientId":"${{ secrets.AZURE_CLIENT_ID }}","clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}","tenantId":"${{ secrets.AZURE_TENANT_ID }}","subscriptionId":"0e6dc202-bcae-4b8b-b1de-a8f3a04341d6"}'
 
-      # Log in to Azure Container Registry
       - name: Log in to ACR
-        run: |
-          az acr login --name probuild
+        run: az acr login --name probuild
 
-      # Set up Docker Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Build and push Docker image to ACR
+      - name: Set environment variables
+        id: env-setup
+        run: |
+          if [ "${{ env.IS_PROD }}" = "true" ]; then
+            echo "IMAGE_TAG=prod-${{ github.sha }}" >> $GITHUB_ENV
+            echo "APP_NAME=probuildai-backend" >> $GITHUB_ENV
+            echo "PORT=8080" >> $GITHUB_ENV
+            echo "DOTNET_ENVIRONMENT=Production" >> $GITHUB_ENV
+            echo "DB_CONNECTION_STRING=Server=tcp:azsql-probuild.database.windows.net,1433;Initial Catalog=ProbuildQA;Persist Security Info=False;User ID=${{ secrets.SQL_USER }};Password=${{ secrets.SQL_PASSWORD }};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;" >> $GITHUB_ENV
+            echo "AZURE_BLOB_CONNECTION=DefaultEndpointsProtocol=https;AccountName=qastorageprobuildaiblob;AccountKey=${{ secrets.AZURE_BLOB_KEY }};EndpointSuffix=core.windows.net" >> $GITHUB_ENV
+          else
+            echo "IMAGE_TAG=dev-${{ github.sha }}" >> $GITHUB_ENV
+            echo "APP_NAME=probuildai-backend-dev" >> $GITHUB_ENV
+            echo "PORT=8081" >> $GITHUB_ENV
+            echo "DOTNET_ENVIRONMENT=Development" >> $GITHUB_ENV
+            echo "DB_CONNECTION_STRING=Server=tcp:azsql-probuild.database.windows.net,1433;Initial Catalog=Probuild_DEV;Persist Security Info=False;User ID=${{ secrets.SQL_USER }};Password=${{ secrets.SQL_PASSWORD }};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;" >> $GITHUB_ENV
+            echo "AZURE_BLOB_CONNECTION=DefaultEndpointsProtocol=https;AccountName=qastorageprobuildaiblob;AccountKey=${{ secrets.AZURE_BLOB_KEY }};EndpointSuffix=core.windows.net" >> $GITHUB_ENV
+          fi
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: probuild.azurecr.io/probuildai-backend:${{ github.sha }}
+          tags: probuild.azurecr.io/probuildai-backend:${{ env.IMAGE_TAG }}
 
-      # Deploy to Azure Container Apps
       - name: Deploy to Azure Container Apps
         run: |
           az containerapp update \
-            --name probuildai-backend \
+            --name ${{ env.APP_NAME }} \
             --resource-group rg-Probuild \
-            --image probuild.azurecr.io/probuildai-backend:${{ github.sha }} \
+            --image probuild.azurecr.io/probuildai-backend:${{ env.IMAGE_TAG }} \
             --set-env-vars \
-              "SQL_USER=${{ secrets.SQL_USER }}" \
-              "SQL_PASSWORD=${{ secrets.SQL_PASSWORD }}" \
-              "AZURE_BLOB_KEY=${{ secrets.AZURE_BLOB_KEY }}" \
-              "JWT_KEY=${{ secrets.JWT_KEY }}" \
-              "ASPNETCORE_URLS=http://+:8081" \
-              "ELASTIC_ENABLED=false" \
-              "GPTAPIKEY=${{ secrets.GPTAPIKEY }}" \
-              "DB_CONNECTION_STRING=${{ secrets.DB_CONNECTION_STRING }}" \
-              "FORCE_NEW_REVISION=true" \
+              DOTNET_ENVIRONMENT="${{ env.DOTNET_ENVIRONMENT }}" \
+              ConnectionStrings__DefaultConnection="${{ env.DB_CONNECTION_STRING }}" \
+              ConnectionStrings__AzureBlobConnection="${{ env.AZURE_BLOB_CONNECTION }}" \
+              Jwt__Key="${{ secrets.JWT_KEY }}" \
+              Jwt__Issuer="https://probuildai-backend.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io" \
+              Jwt__Audience="https://probuildai-backend.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io" \
+              SendGrid__ApiKey="${{ secrets.SENDGRID_API_KEY }}" \
+              SendGrid__SendEmail="${{ secrets.SENDGRID_EMAIL }}" \
+              SendGrid__Email="${{ secrets.SENDGRID_FROM_EMAIL }}" \
+              ChatGPTAPI__APIKey="${{ secrets.GPTAPIKEY }}" \
+              GoogleGeminiAPI__APIKey="${{ secrets.GeminiAPIKey }}" \
+              GoogleMapsAPI__APIKey="${{ secrets.MapsAPI }}" \
+              URL__FrontendBaseUrl="${{ secrets.FrontEndUrl }}" \
+              ASPNETCORE_URLS="http://+:${{ env.PORT }}" \
+              ELASTIC_ENABLED="false" \
+              DEPLOY_TIMESTAMP="$(date +%s)" \
             --set template.containers[0].probes=null \
-            --set ingress.targetPort=8081
+            --set ingress.targetPort=${{ env.PORT }}
 
-      # Check logs to diagnose issues
       - name: Check Container App Logs
         run: |
-          az containerapp logs show --name probuildai-backend --resource-group rg-Probuild --follow --tail 100
+          az containerapp logs show --name ${{ env.APP_NAME }} --resource-group rg-Probuild --follow --tail 100
         continue-on-error: true
