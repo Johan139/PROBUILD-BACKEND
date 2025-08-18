@@ -7,7 +7,7 @@
         public int DocumentId { get; set; }
         public string BomJson { get; set; }
         public string MaterialsEstimateJson { get; set; }
-        public string FullResponse { get; set; } // Add this
+        public string FullResponse { get; set; }
         public DateTime CreatedAt { get; set; }
 
         public JobModel Job { get; set; }

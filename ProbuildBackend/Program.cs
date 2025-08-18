@@ -57,6 +57,9 @@ builder.Services.AddCors(options =>
     });
 });
 
+
+// Configure the token provider for password reset
+
 builder.Services.Configure<DataProtectionTokenProviderOptions>(options =>
 {
     options.TokenLifespan = TimeSpan.FromHours(24);
@@ -132,9 +135,31 @@ builder.Services.AddAuthentication(options =>
         ValidAudience = builder.Configuration["Jwt:Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
     };
+
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+
+            // If the request is for our hub...
+            if (!string.IsNullOrEmpty(accessToken) &&
+                (path.StartsWithSegments("/chathub") ||
+                 path.StartsWithSegments("/progressHub") ||
+                 path.StartsWithSegments("/hubs/notifications")))
+            {
+                // Read the token out of the query string
+                context.Token = accessToken;
+            }
+            return Task.CompletedTask;
+        }
+    };
 });
 
-builder.Services.AddScoped<DocumentProcessorService>();
+
+builder.Services.AddScoped<IDocumentProcessorService, DocumentProcessorService>();
+
 builder.Services.AddTransient<IEmailSender, EmailSender>();
 builder.Services.AddSingleton<AzureBlobService>();
 builder.Services.AddEndpointsApiExplorer();
@@ -142,7 +167,8 @@ builder.Services.AddHttpClient();
 builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<WebSocketManager>();
 builder.Services.AddSignalR();
-builder.Services.AddHttpContextAccessor();
+builder.Services.AddLogging(configure => configure.AddConsole());
+builder.Services.AddHttpContextAccessor(); // Required for AzureBlobService
 builder.Services.AddHangfire(config => config
     .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
     .UseSimpleAssemblyNameTypeSerializer()
@@ -157,9 +183,16 @@ builder.Services.AddScoped<IEmailSender, EmailSender>();
 builder.Services.AddScoped<IConversationRepository, SqlConversationRepository>();
 builder.Services.AddScoped<IPromptManagerService, PromptManagerService>();
 builder.Services.AddScoped<IAiService, GeminiAiService>();
+
+builder.Services.AddScoped<IAiAnalysisService, AiAnalysisService>();
+builder.Services.AddScoped<ChatService>();
+
+builder.Services.AddScoped<IPdfImageConverter, PdfImageConverter>(); // Add this line
+builder.Services.AddScoped<IPdfTextExtractionService, PdfTextExtractionService>();
+
 builder.Services.AddScoped<IProjectAnalysisOrchestrator, ProjectAnalysisOrchestrator>();
 builder.Services.AddScoped<IComprehensiveAnalysisService, ComprehensiveAnalysisService>();
-builder.Services.AddScoped<IPdfImageConverter, PdfImageConverter>();
+
 builder.Services.Configure<OcrSettings>(configuration.GetSection("OcrSettings"));
 builder.Services.AddScoped(sp => sp.GetRequiredService<IOptions<OcrSettings>>().Value);
 builder.Services.AddHostedService<TokenCleanupService>();
@@ -192,6 +225,8 @@ using (var scope = app.Services.CreateScope())
 app.MapGet("/health", () => Results.Ok("Healthy"));
 app.MapHub<ProgressHub>("/progressHub");
 app.MapHub<NotificationHub>("/hubs/notifications");
+app.MapHub<ChatHub>("/chathub");
+app.Logger.LogInformation("ChatHub endpoint mapped at /chathub");
 
 var listeningUrls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "Not set";
 app.Logger.LogInformation("Application is listening on: {Urls}", listeningUrls);
