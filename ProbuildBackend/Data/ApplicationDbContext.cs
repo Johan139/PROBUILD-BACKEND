@@ -24,6 +24,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<DocumentProcessingLogModel> DocumentProcessingLog { get; set; }
     public DbSet<UserAddressModel> UserAddress { get; set; }
     public DbSet<PaymentRecord> PaymentRecords { get; set; }
+    public DbSet<PaymentRecordHistoryModel> PaymentRecordsHistory { get; set; }
     public DbSet<UserTermsAgreementModel> UserTermsAgreement { get; set; }
     public DbSet<SubtaskNoteModel> SubtaskNote { get; set; }
     public DbSet<SubtaskNoteUserModel> SubtaskNoteUser { get; set; }
@@ -232,6 +233,9 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
            .HasOne(tp => tp.Permission)
            .WithMany(p => p.TeamMemberPermissions)
            .HasForeignKey(tp => tp.PermissionId);
+
+        modelBuilder.Entity<PaymentRecordHistoryModel>()
+            .HasKey(tp => new { tp.PaymentRecordHistoryId });
 
         base.OnModelCreating(modelBuilder);
      }

@@ -30,6 +30,8 @@ namespace ProbuildBackend.Models {
         public string? State { get; set; }
         public string? City { get; set; }
         public string? SubscriptionPackage { get; set; }
+
+        public string? StripeCustomerId { get; set; }
         public bool IsVerified { get; set; }
 
         public DateTime? DateCreated { get; set; }

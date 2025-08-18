@@ -8,5 +8,7 @@ namespace ProbuildBackend.Models
         public long Id { get; set; }
         public string Subscription { get; set; }
         public decimal Amount { get; set; }
+
+        public string? StripeProductId { get; set; }
     }
 }

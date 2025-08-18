@@ -1,4 +1,6 @@
-﻿namespace ProbuildBackend.Models
+﻿using Microsoft.Identity.Client;
+
+namespace ProbuildBackend.Models
 {
     public class PaymentRecord
     {
@@ -12,5 +14,11 @@
         public DateTime ValidUntil { get; set; }  // ⬅️ New column
 
         public bool IsTrial { get; set; }
+        public string? SubscriptionID { get; set; }
+        public bool? Cancelled { get; set; }
+
+        public DateTime? CancelledDate { get; set; }
+
+        public string? AssignedUser { get; set; }
     }
 }

@@ -1,9 +1,8 @@
 ﻿namespace ProbuildBackend.Models.DTO
 {
-    public class TrialRequestDTO
+    public class userSubscriptionRequestDTO
     {
         public string UserId { get; set; }
 
-        public string PackageName { get; set; }
     }
 }

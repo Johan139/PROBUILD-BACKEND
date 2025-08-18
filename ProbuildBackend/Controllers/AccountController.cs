@@ -95,7 +95,7 @@ namespace ProbuildBackend.Controllers
                 await _context.SaveChangesAsync();
 
                 var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-                var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL");
+                var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["FrontEnd:FRONTEND_URL"];
                 var callbackUrl = $"{frontendUrl}/confirm-email/?userId={user.Id}&code={Uri.EscapeDataString(code)}";
 
                 await _emailSender.SendEmailAsync(model.Email, "Confirm your email",
@@ -120,7 +120,7 @@ namespace ProbuildBackend.Controllers
         public async Task<ActionResult> HasActiveSubscription(string userId)
         {
             var hasActive = await _context.PaymentRecords
-                .AnyAsync(p => p.UserId == userId && p.Status == "Success" && p.ValidUntil > DateTime.UtcNow);
+                .AnyAsync(p => p.UserId == userId && p.Status == "Active" && p.ValidUntil > DateTime.UtcNow);
 
             return Ok(new { hasActive });
         }
@@ -344,11 +344,11 @@ namespace ProbuildBackend.Controllers
                 var trial = new PaymentRecord
                 {
                     UserId = dto.UserId,
-                    Package = "Trial",
+                    Package = dto.PackageName,
                     StripeSessionId = "TRIAL-NO-SESSION",
                     Status = "Success",
                     PaidAt = DateTime.UtcNow,
-                    ValidUntil = DateTime.UtcNow.AddDays(3),
+                    ValidUntil = DateTime.UtcNow.AddDays(7),
                     Amount = 0,
                     IsTrial = true
                 };
