@@ -50,5 +50,10 @@
         public string? CompanyName { get; set; }
         public string? Position { get; set; }
         public int? Progress { get; set; }
+        public string AnalysisType { get; set; }
+        public List<string> PromptKeys { get; set; }
+        public string? UserContextText { get; set; }
+        public IFormFile? UserContextFile { get; set; }
+        public bool GenerateDetailsWithAi { get; set; }
     }
 }

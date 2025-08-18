@@ -18,23 +18,8 @@ using ProbuildBackend.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
-using MongoDB.Driver.Core.Configuration;
 
 var builder = WebApplication.CreateBuilder(args);
-
-// Load configuration and expand env variables
-builder.Configuration
-    .AddJsonFile("appsettings.json", optional: false)
-    .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true)
-    .AddEnvironmentVariables();
-
-foreach (var (key, value) in builder.Configuration.AsEnumerable())
-{
-    if (value != null && value.Contains("${"))
-    {
-        builder.Configuration[key] = Environment.ExpandEnvironmentVariables(value);
-    }
-}
 
 // Configure logging
 builder.Logging.ClearProviders();
@@ -47,65 +32,83 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowAngularApp", policy =>
     {
         policy.WithOrigins(
-            "http://localhost:4200",
-            "https://probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io",
-            "https://app.probuildai.com/"
+            "http://localhost:4200", // For local development
+            "https://probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io", "https://app.probuildai.com/" // For production
         )
         .AllowAnyHeader()
         .AllowAnyMethod()
-        .AllowCredentials();
+        .AllowCredentials(); // Required for SignalR with credentials
     });
 });
 
+
+
+
+
+
+// Configure the token provider for password reset
 builder.Services.Configure<DataProtectionTokenProviderOptions>(options =>
 {
-    options.TokenLifespan = TimeSpan.FromHours(24);
+    options.TokenLifespan = TimeSpan.FromHours(24); // Set expiration to 24 hours
 });
-
+// Add services to the container
 builder.Services.AddControllers(options =>
 {
-    options.Filters.Add(new RequestSizeLimitAttribute(200 * 1024 * 1024));
+    options.Filters.Add(new RequestSizeLimitAttribute(200 * 1024 * 1024)); // 200MB
 })
 .ConfigureApiBehaviorOptions(options =>
 {
     options.SuppressModelStateInvalidFilter = true;
 });
 
+// Configure FormOptions for multipart requests
 builder.Services.Configure<FormOptions>(options =>
 {
-    options.MultipartBodyLengthLimit = 200 * 1024 * 1024;
+    options.MultipartBodyLengthLimit = 200 * 1024 * 1024; // 200MB
     options.ValueLengthLimit = int.MaxValue;
     options.MultipartBoundaryLengthLimit = int.MaxValue;
 });
 
+// Kestrel configuration
 builder.WebHost.ConfigureKestrel(options =>
 {
-    options.Limits.MaxRequestBodySize = 200 * 1024 * 1024;
-    options.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(5);
+    options.Limits.MaxRequestBodySize = 200 * 1024 * 1024; // 200MB
+    options.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(5); // 5-minute timeout
 });
 
 builder.Services.AddDataProtection()
     .SetApplicationName("ProbuildAI")
     .PersistKeysToDbContext<ApplicationDbContext>()
-    .SetDefaultKeyLifetime(TimeSpan.FromDays(90))
+    .SetDefaultKeyLifetime(TimeSpan.FromDays(90)) // Optional: lengthen key lifetime
     .UseCryptographicAlgorithms(new AuthenticatedEncryptorConfiguration
     {
         EncryptionAlgorithm = EncryptionAlgorithm.AES_256_CBC,
         ValidationAlgorithm = ValidationAlgorithm.HMACSHA256
     });
 
-var connectionString =
-    Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
-    ?? builder.Configuration.GetConnectionString("DefaultConnection");
-
+#if(DEBUG)
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 var azureBlobStorage = builder.Configuration.GetConnectionString("AzureBlobConnection");
-var jwtKey = builder.Configuration["Jwt:Key"];
+#else
+var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING");
+var azureBlobStorage = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY");
+#endif
+var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY") ?? builder.Configuration["Jwt:Key"];
+
+
 
 var configuration = builder.Configuration;
+// Configure DbContext with retry policy to handle rate-limiting
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(
         connectionString,
-        sqlServerOptions => sqlServerOptions.EnableRetryOnFailure(3, TimeSpan.FromSeconds(5), null)));
+        sqlServerOptions => sqlServerOptions
+            .EnableRetryOnFailure(
+                maxRetryCount: 3, // Reduced number of retries
+                maxRetryDelay: TimeSpan.FromSeconds(5), // Increased delay between retries
+                errorNumbersToAdd: null
+            )
+    ));
 
 builder.Services.AddIdentity<UserModel, IdentityRole>(options =>
 {
@@ -115,6 +118,10 @@ builder.Services.AddIdentity<UserModel, IdentityRole>(options =>
 .AddEntityFrameworkStores<ApplicationDbContext>()
 .AddDefaultTokenProviders();
 
+builder.Services.Configure<DataProtectionTokenProviderOptions>(options =>
+{
+    options.TokenLifespan = TimeSpan.FromHours(24);
+});
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -132,9 +139,30 @@ builder.Services.AddAuthentication(options =>
         ValidAudience = builder.Configuration["Jwt:Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
     };
+
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+
+            // If the request is for our hub...
+            if (!string.IsNullOrEmpty(accessToken) &&
+                (path.StartsWithSegments("/chathub") ||
+                 path.StartsWithSegments("/progressHub") ||
+                 path.StartsWithSegments("/hubs/notifications")))
+            {
+                // Read the token out of the query string
+                context.Token = accessToken;
+            }
+            return Task.CompletedTask;
+        }
+    };
 });
 
-builder.Services.AddScoped<DocumentProcessorService>();
+
+builder.Services.AddScoped<IDocumentProcessorService, DocumentProcessorService>();
 builder.Services.AddTransient<IEmailSender, EmailSender>();
 builder.Services.AddSingleton<AzureBlobService>();
 builder.Services.AddEndpointsApiExplorer();
@@ -142,42 +170,51 @@ builder.Services.AddHttpClient();
 builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<WebSocketManager>();
 builder.Services.AddSignalR();
-builder.Services.AddHttpContextAccessor();
+builder.Services.AddLogging(configure => configure.AddConsole());
+builder.Services.AddHttpContextAccessor(); // Required for AzureBlobService
 builder.Services.AddHangfire(config => config
     .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
     .UseSimpleAssemblyNameTypeSerializer()
     .UseRecommendedSerializerSettings()
-    .UseSqlServerStorage(connectionString));
+    .UseSqlServerStorage(connectionString)); // Replace with UseSqlServerStorage in production
 builder.Services.AddHangfireServer(options =>
 {
-    options.WorkerCount = 2;
+    options.WorkerCount = 2; // or even 1 if Gemini calls are large
 });
-builder.Services.AddScoped<IEmailService, EmailService>();
-builder.Services.AddScoped<IEmailSender, EmailSender>();
+builder.Services.AddScoped<IEmailService, EmailService>(); // Add this line
+builder.Services.AddScoped<IEmailSender, EmailSender>(); // Add this line
+// Register all services
 builder.Services.AddScoped<IConversationRepository, SqlConversationRepository>();
 builder.Services.AddScoped<IPromptManagerService, PromptManagerService>();
+// The DI container will automatically inject the other services into GeminiAiService's constructor
 builder.Services.AddScoped<IAiService, GeminiAiService>();
-builder.Services.AddScoped<IProjectAnalysisOrchestrator, ProjectAnalysisOrchestrator>();
-builder.Services.AddScoped<IComprehensiveAnalysisService, ComprehensiveAnalysisService>();
-builder.Services.AddScoped<IPdfImageConverter, PdfImageConverter>();
+builder.Services.AddScoped<IAiAnalysisService, AiAnalysisService>();
+builder.Services.AddScoped<ChatService>();
+builder.Services.AddScoped<IPdfImageConverter, PdfImageConverter>(); // Add this line
+builder.Services.AddScoped<IPdfTextExtractionService, PdfTextExtractionService>();
 builder.Services.Configure<OcrSettings>(configuration.GetSection("OcrSettings"));
 builder.Services.AddScoped(sp => sp.GetRequiredService<IOptions<OcrSettings>>().Value);
+
 builder.Services.AddHostedService<TokenCleanupService>();
 builder.Services.AddHangfireServer();
-
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
 {
+
     var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+    // Ensure database is created
     context.Database.EnsureCreated();
 
+    // Initialize data protection keys if none exist
     var keyManager = scope.ServiceProvider.GetRequiredService<IKeyManager>();
     var keys = keyManager.GetAllKeys();
 
     if (!keys.Any())
     {
         app.Logger.LogInformation("No data protection keys found. Creating new key...");
+        // This will trigger key creation
         var dataProtector = scope.ServiceProvider.GetRequiredService<IDataProtectionProvider>()
             .CreateProtector("Microsoft.AspNetCore.Identity.UserManager<UserModel>");
         var testData = dataProtector.Protect("test");
@@ -189,13 +226,20 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
+// Map a simple health endpoint
 app.MapGet("/health", () => Results.Ok("Healthy"));
+
+// Map SignalR hub
 app.MapHub<ProgressHub>("/progressHub");
 app.MapHub<NotificationHub>("/hubs/notifications");
+app.MapHub<ChatHub>("/chathub");
+app.Logger.LogInformation("ChatHub endpoint mapped at /chathub");
 
+// Log the URLs the application is listening on
 var listeningUrls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "Not set";
 app.Logger.LogInformation("Application is listening on: {Urls}", listeningUrls);
 
+// Middleware pipeline
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -208,6 +252,7 @@ else
     app.UseHsts();
 }
 
+// Bypass HTTPS redirection for /health endpoint to ensure compatibility
 app.UseWhen(context => !context.Request.Path.StartsWithSegments("/health"), appBuilder =>
 {
     appBuilder.UseHttpsRedirection();
@@ -215,22 +260,31 @@ app.UseWhen(context => !context.Request.Path.StartsWithSegments("/health"), appB
 
 app.UseStaticFiles();
 
-var elasticEnabledString = Environment.GetEnvironmentVariable("ELASTIC_ENABLED") ?? "false";
-if (bool.TryParse(elasticEnabledString, out var elasticEnabled) && elasticEnabled)
+var elasticEnabledString = Environment.GetEnvironmentVariable("ELASTIC_ENABLED");
+if (string.IsNullOrEmpty(elasticEnabledString))
+{
+    Console.WriteLine("Warning: ELASTIC_ENABLED environment variable is not set. Defaulting to false.");
+    elasticEnabledString = "false";
+}
+var elasticEnabled = bool.Parse(elasticEnabledString);
+if (elasticEnabled)
 {
     app.UseAllElasticApm(builder.Configuration);
 }
 
 app.UseWebSockets();
 app.UseRouting();
-app.UseCors("AllowAngularApp");
+app.UseCors("AllowAngularApp"); // Apply the named CORS policy after health endpoint
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
+// Wrap the application startup in a try-catch to log any errors with retry logic
 try
 {
     app.Logger.LogInformation("Application starting...");
+
+    // Test database connection with retry logic and exponential backoff
     app.Logger.LogInformation("Attempting to connect to the database...");
     bool connected = false;
     int maxRetries = 3;
@@ -258,13 +312,15 @@ try
                 throw;
             }
             await Task.Delay(TimeSpan.FromSeconds(retryDelaySeconds));
-            retryDelaySeconds *= 2;
+            retryDelaySeconds *= 2; // Exponential backoff
         }
     }
 
+    // Test Blob Storage connection
     app.Logger.LogInformation("Attempting to initialize Azure Blob Service...");
     var blobService = app.Services.GetRequiredService<AzureBlobService>();
     app.Logger.LogInformation("Successfully initialized Azure Blob Service");
+
 
     using (var scope = app.Services.CreateScope())
     {

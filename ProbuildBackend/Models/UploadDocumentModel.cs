@@ -7,6 +7,6 @@
         public List<string> FileUrls { get; set; }
         public List<string> FileNames { get; set; }
         public string Message { get; set; }
-        public List<BomWithCosts> BillOfMaterials { get; set; } // Add this
+        public List<BomWithCosts> BillOfMaterials { get; set; } 
     }
 }

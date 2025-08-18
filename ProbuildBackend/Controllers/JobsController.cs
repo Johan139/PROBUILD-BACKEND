@@ -11,6 +11,7 @@ using System.Globalization;
 using Hangfire;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using BomWithCosts = ProbuildBackend.Models.BomWithCosts;
+using ProbuildBackend.Interface;
 
 namespace ProbuildBackend.Controllers
 {
@@ -22,8 +23,8 @@ namespace ProbuildBackend.Controllers
         private readonly IHubContext<ProgressHub> _hubContext;
         private readonly AzureBlobService _azureBlobservice;
         private readonly IHttpContextAccessor _httpContextAccessor;
-        private readonly DocumentProcessorService _documentProcessorService;
-        private readonly IEmailSender _emailService; // Add this
+        private readonly IDocumentProcessorService _documentProcessorService;
+        private readonly IEmailSender _emailService; 
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IConfiguration _config;
         private readonly WebSocketManager _webSocketManager;
@@ -33,7 +34,7 @@ namespace ProbuildBackend.Controllers
             AzureBlobService azureBlobservice,
             IHubContext<ProgressHub> hubContext,
             IHttpContextAccessor httpContextAccessor,
-            DocumentProcessorService documentProcessorService,
+            IDocumentProcessorService documentProcessorService,
             IEmailSender emailService,
             IHttpClientFactory httpClientFactory,
             IConfiguration config,
@@ -167,6 +168,34 @@ namespace ProbuildBackend.Controllers
                 return StatusCode(500, $"An error occurred while fetching the blob: {ex.Message}");
             }
         }
+
+        [HttpPost("view")]
+        public async Task<IActionResult> ViewDocument([FromBody] ViewDocumentRequest request)
+        {
+            try
+            {
+                var document = await _context.JobDocuments.FirstOrDefaultAsync(doc => doc.BlobUrl == request.DocumentUrl);
+
+                if (document == null)
+                {
+                    return NotFound("Document not found.");
+                }
+
+                var sasUrl = _azureBlobservice.GenerateTemporaryPublicUrl(document.BlobUrl);
+
+                if (string.IsNullOrEmpty(sasUrl))
+                {
+                    return StatusCode(500, "Could not generate viewable URL.");
+                }
+
+                return Ok(sasUrl);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An error occurred: {ex.Message}");
+            }
+        }
+
         [HttpGet("downloadFile")]
         public async Task<IActionResult> DownloadFile([FromQuery(Name = "fileUrl")] string fileUrl)
         {
@@ -371,8 +400,13 @@ namespace ProbuildBackend.Controllers
                             BuildingSize = jobRequest.BuildingSize,
                             OperatingArea = jobRequest.OperatingArea,
                             UserId = jobRequest.UserId,
-                            Status = jobRequest.Status
+                            Status = jobRequest.Status,
                         };
+
+                        if (jobRequest.UserContextFile != null)
+                        {
+                            var userContextFileUrl = (await _azureBlobservice.UploadFiles(new List<IFormFile> { jobRequest.UserContextFile }, null, null)).FirstOrDefault();
+                        }
 
                         _context.Jobs.Add(job);
                         await _context.SaveChangesAsync();
@@ -451,17 +485,28 @@ namespace ProbuildBackend.Controllers
 
                         if (documentUrls.Any())
                         {
-                            string connectionId =
-                                _httpContextAccessor.HttpContext?.Connection.Id ?? string.Empty;
-                            BackgroundJob.Enqueue(
-                                () =>
-                                    _documentProcessorService.ProcessDocumentsForJobAsync(
-                                        job.Id,
-                                        documentUrls,
-                                        connectionId
-                                    )
-                            );
+                            string connectionId = _httpContextAccessor.HttpContext?.Connection.Id ?? string.Empty;
+
+                            if (jobRequest.AnalysisType == "Comprehensive")
+                            {
+                                var userContextFileUrl = "";
+                                if (jobRequest.UserContextFile != null)
+                                {
+                                    userContextFileUrl = (await _azureBlobservice.UploadFiles(new List<IFormFile> { jobRequest.UserContextFile }, null, null)).FirstOrDefault();
+                                }
+                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessDocumentsForJobAsync(job.Id, documentUrls, connectionId, jobRequest.GenerateDetailsWithAi, jobRequest.UserContextText, userContextFileUrl));
+                            }
+                            else if (jobRequest.AnalysisType == "Selected")
+                            {
+                                var userContextFileUrl = "";
+                                if (jobRequest.UserContextFile != null)
+                                {
+                                    userContextFileUrl = (await _azureBlobservice.UploadFiles(new List<IFormFile> { jobRequest.UserContextFile }, null, null)).FirstOrDefault();
+                                }
+                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessSelectedAnalysisForJobAsync(job.Id, documentUrls, jobRequest.PromptKeys, connectionId, jobRequest.GenerateDetailsWithAi, jobRequest.UserContextText, userContextFileUrl));
+                            }
                         }
+
                         return Ok(jobRequest);
                     }
                     catch (Exception ex)
@@ -986,8 +1031,13 @@ namespace ProbuildBackend.Controllers
         }
     }
 
-    public class DeleteTemporaryFilesRequest
+    public class ViewDocumentRequest
     {
-        public List<string> BlobUrls { get; set; }
+        public string DocumentUrl { get; set; }
     }
+
+    public class DeleteTemporaryFilesRequest
+  {
+    public List<string> BlobUrls { get; set; }
+  }
 }

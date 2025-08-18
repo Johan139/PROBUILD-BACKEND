@@ -1,2 +1,1 @@
-// ProbuildBackend/Interface/IPromptManagerService.cs
-public interface IPromptManagerService { Task<string> GetPromptAsync(string promptName); }
+public interface IPromptManagerService { Task<string> GetPromptAsync(string userType, string fileName); }

@@ -1,0 +1,586 @@
+[
+  {
+    "tradeName": "ACOUSTICAL_CONTRACTORS",
+    "promptFileName": "Acoustical_Subcontractor_Prompt.txt",
+    "displayName": "Acoustical Contractors",
+    "description": "Performs a comprehensive analysis of blueprints to generate a detailed bid package for acoustical treatments, including sound control, performance verification, and a full bill of materials.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["ACOUSTICAL_CONTRACTORS"]
+  },
+  {
+    "tradeName": "ASBESTOS_ABATEMENT",
+    "promptFileName": "Asbestos_Subcontractor_Prompt.txt",
+    "displayName": "Asbestos Abatement",
+    "description": "Analyzes blueprints and hazardous material reports to create a complete bid package for asbestos abatement, covering containment, removal, monitoring, and disposal.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["ASBESTOS_ABATEMENT"]
+  },
+  {
+    "tradeName": "AUTOMATION_TECHNOLOGY",
+    "promptFileName": "Automation_Technology_Subcontractor_Prompt.txt",
+    "displayName": "Automation Technology",
+    "description": "Conducts a full analysis of blueprints to produce a detailed bid package for automation technology, including system design, integration of smart systems, and commissioning.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["AUTOMATION_TECHNOLOGY"]
+  },
+  {
+    "tradeName": "CARPENTRY_MLWK",
+    "promptFileName": "Carpentry_Subcontractor_Prompt.txt",
+    "displayName": "Carpentry Mlwk",
+    "description": "Generates a comprehensive bid package for all carpentry and millwork by analyzing blueprints, covering structural framing, interior woodwork, and finishes.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["CARPENTRY_MLWK", "WOODWORK_INTERIOR"]
+  },
+  {
+    "tradeName": "WOODWORK_INTERIOR",
+    "promptFileName": "Carpentry_Subcontractor_Prompt.txt",
+    "displayName": "Woodwork Interior",
+    "description": "Creates a detailed bid package for interior woodwork and finishes by analyzing blueprints, including trim, millwork, and decorative paneling.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["CARPENTRY_MLWK", "WOODWORK_INTERIOR"]
+  },
+  {
+    "tradeName": "COMMUNICATIONS",
+    "promptFileName": "Communications_Subcontractor_Prompt.txt",
+    "displayName": "Communications",
+    "description": "Produces a complete bid package for communications infrastructure by analyzing blueprints, including structured cabling, hardware termination, and system certification.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["COMMUNICATIONS"]
+  },
+  {
+    "tradeName": "COMPUTER_FACILITIES",
+    "promptFileName": "Computer_Facilities_Subcontractor_Prompt.txt",
+    "displayName": "Computer Facilities",
+    "description": "Analyzes blueprints to create a detailed bid package for computer facilities, including specialized fit-outs, critical systems, and commissioning.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["COMPUTER_FACILITIES"]
+  },
+  {
+    "tradeName": "CONCRETE",
+    "promptFileName": "Concrete_Subcontractor_Prompt.txt",
+    "displayName": "Concrete",
+    "description": "Generates a comprehensive bid package for all concrete work by analyzing blueprints, covering foundations, flatwork, and decorative finishes.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["CONCRETE", "CONCRETE_DECORATIVE", "CONCRETE_POLISHING", "COUNTERTOPS"]
+  },
+  {
+    "tradeName": "CONCRETE_DECORATIVE",
+    "promptFileName": "Concrete_Subcontractor_Prompt.txt",
+    "displayName": "Concrete Decorative",
+    "description": "Creates a detailed bid package for decorative concrete work by analyzing blueprints, including stamped, colored, and polished finishes.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["CONCRETE", "CONCRETE_DECORATIVE", "CONCRETE_POLISHING", "COUNTERTOPS"]
+  },
+  {
+    "tradeName": "CONCRETE_POLISHING",
+    "promptFileName": "Concrete_Subcontractor_Prompt.txt",
+    "displayName": "Concrete Polishing",
+    "description": "Produces a complete bid package for concrete polishing by analyzing blueprints, covering grinding, honing, and sealing to specified finishes.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["CONCRETE", "CONCRETE_DECORATIVE", "CONCRETE_POLISHING", "COUNTERTOPS"]
+  },
+  {
+    "tradeName": "COUNTERTOPS",
+    "promptFileName": "Concrete_Subcontractor_Prompt.txt",
+    "displayName": "Countertops",
+    "description": "Performs a full analysis of blueprints to generate a detailed bid package for concrete countertops, including fabrication, installation, and finishing.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["CONCRETE", "CONCRETE_DECORATIVE", "CONCRETE_POLISHING", "COUNTERTOPS"]
+  },
+  {
+    "tradeName": "CRANES",
+    "promptFileName": "Crane_Rigging_Subcontractor_Prompt.txt",
+    "displayName": "Cranes",
+    "description": "Analyzes blueprints to create a comprehensive bid package for crane and rigging services, including lift plans, mobilization, and certified operators.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["CRANES", "RIGGING_HAULING"]
+  },
+  {
+    "tradeName": "RIGGING_HAULING",
+    "promptFileName": "Crane_Rigging_Subcontractor_Prompt.txt",
+    "displayName": "Rigging Hauling",
+    "description": "Generates a detailed bid package for rigging and hauling services by analyzing blueprints, covering the safe hoisting and transport of materials.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["CRANES", "RIGGING_HAULING"]
+  },
+  {
+    "tradeName": "CURTAIN_WALL",
+    "promptFileName": "Curtain_Wall_Glass_Subcontractor_Prompt.txt",
+    "displayName": "Curtain Wall",
+    "description": "Creates a complete bid package for curtain wall systems by analyzing blueprints, including framing, panels, and waterproofing.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["CURTAIN_WALL", "GLASS_GLAZING", "WINDOWS"]
+  },
+  {
+    "tradeName": "GLASS_GLAZING",
+    "promptFileName": "Curtain_Wall_Glass_Subcontractor_Prompt.txt",
+    "displayName": "Glass Glazing",
+    "description": "Produces a comprehensive bid package for glass and glazing by analyzing blueprints, including windows, doors, and curtain wall panels.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["CURTAIN_WALL", "GLASS_GLAZING", "WINDOWS"]
+  },
+  {
+    "tradeName": "WINDOWS",
+    "promptFileName": "Curtain_Wall_Glass_Subcontractor_Prompt.txt",
+    "displayName": "Windows",
+    "description": "Performs a full analysis of blueprints to generate a detailed bid package for window installation, including flashing, sealing, and waterproofing.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["CURTAIN_WALL", "GLASS_GLAZING", "WINDOWS"]
+  },
+  {
+    "tradeName": "DISASTER_RECOVERY",
+    "promptFileName": "Disaster_Recovery_Subcontractor_Prompt.txt",
+    "displayName": "Disaster Recovery",
+    "description": "Analyzes blueprints to create a proposal for a disaster recovery master service agreement, covering emergency response and restoration services.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["DISASTER_RECOVERY"]
+  },
+  {
+    "tradeName": "DOORS_HARDWARE",
+    "promptFileName": "Doors_Hardware_Subcontractor_Prompt.txt",
+    "displayName": "Doors Hardware",
+    "description": "Analyzes blueprints to create a detailed bid package for the installation of doors and hardware, including frames, locksets, and functionality adjustments.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["DOORS_HARDWARE"]
+  },
+  {
+    "tradeName": "DRYWALL_PLASTER_ACOUSTIC",
+    "promptFileName": "Drywall_Plaster_Acoustic_Subcontractor_Prompt.txt",
+    "displayName": "Drywall Plaster Acoustic",
+    "description": "Generates a comprehensive bid package for drywall, plaster, and acoustic systems by analyzing blueprints, covering installation, finishing, and sound-rated assemblies.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["DRYWALL_PLASTER_ACOUSTIC"]
+  },
+  {
+    "tradeName": "ELECTRICAL",
+    "promptFileName": "Electrical_Subcontractor_Prompt.txt",
+    "displayName": "Electrical",
+    "description": "Creates a complete bid package for electrical systems by analyzing blueprints, including site service, wiring, fixtures, and life safety devices.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["ELECTRICAL", "LIGHTENING_PROTECTION"]
+  },
+  {
+    "tradeName": "LIGHTENING_PROTECTION",
+    "promptFileName": "Electrical_Subcontractor_Prompt.txt",
+    "displayName": "Lightening Protection",
+    "description": "Produces a detailed bid package for lightning protection systems by analyzing blueprints, covering air terminals, conductors, and grounding.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["ELECTRICAL", "LIGHTENING_PROTECTION"]
+  },
+  {
+    "tradeName": "ELEVATOR_ESCALATOR",
+    "promptFileName": "Elevator_Subcontractor_Prompt.txt",
+    "displayName": "Elevator Escalator",
+    "description": "Performs a full analysis of blueprints to generate a comprehensive bid package for elevator and escalator systems, including design, installation, and commissioning.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["ELEVATOR_ESCALATOR"]
+  },
+  {
+    "tradeName": "ENVIRONMENTAL",
+    "promptFileName": "Environmental_Subcontractor_Prompt.txt",
+    "displayName": "Environmental",
+    "description": "Analyzes blueprints and site data to create a detailed bid package for environmental services, including site assessments, remediation planning, and regulatory reporting.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["ENVIRONMENTAL"]
+  },
+  {
+    "tradeName": "EXCAVATING_EARTHMOVING",
+    "promptFileName": "Excavation_Site_Preparation_Subcontractor_Prompt.txt",
+    "displayName": "Excavating Earthmoving",
+    "description": "Analyzes blueprints to create a detailed bid package for excavation and earthmoving, including site preparation, grading, and trenching.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["EXCAVATING_EARTHMOVING", "FOUNDATION_DRILLING", "GEOTECHNICAL_CONSTRUCTION", "SITE_PREPARATION", "WATER_WELL_DRILLING"]
+  },
+  {
+    "tradeName": "FOUNDATION_DRILLING",
+    "promptFileName": "Excavation_Site_Preparation_Subcontractor_Prompt.txt",
+    "displayName": "Foundation Drilling",
+    "description": "Generates a comprehensive bid package for foundation drilling by analyzing blueprints, covering soil stabilization and engineered fill.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["EXCAVATING_EARTHMOVING", "FOUNDATION_DRILLING", "GEOTECHNICAL_CONSTRUCTION", "SITE_PREPARATION", "WATER_WELL_DRILLING"]
+  },
+  {
+    "tradeName": "GEOTECHNICAL_CONSTRUCTION",
+    "promptFileName": "Excavation_Site_Preparation_Subcontractor_Prompt.txt",
+    "displayName": "Geotechnical Construction",
+    "description": "Creates a complete bid package for geotechnical construction by analyzing blueprints, including soil stabilization and engineered fill.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["EXCAVATING_EARTHMOVING", "FOUNDATION_DRILLING", "GEOTECHNICAL_CONSTRUCTION", "SITE_PREPARATION", "WATER_WELL_DRILLING"]
+  },
+  {
+    "tradeName": "SITE_PREPARATION",
+    "promptFileName": "Excavation_Site_Preparation_Subcontractor_Prompt.txt",
+    "displayName": "Site Preparation",
+    "description": "Produces a detailed bid package for site preparation by analyzing blueprints, covering clearing, grubbing, and grading.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["EXCAVATING_EARTHMOVING", "FOUNDATION_DRILLING", "GEOTECHNICAL_CONSTRUCTION", "SITE_PREPARATION", "WATER_WELL_DRILLING"]
+  },
+  {
+    "tradeName": "WATER_WELL_DRILLING",
+    "promptFileName": "Excavation_Site_Preparation_Subcontractor_Prompt.txt",
+    "displayName": "Water Well Drilling",
+    "description": "Performs a full analysis of blueprints to generate a comprehensive bid package for water well drilling, including casing, pump installation, and development.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["EXCAVATING_EARTHMOVING", "FOUNDATION_DRILLING", "GEOTECHNICAL_CONSTRUCTION", "SITE_PREPARATION", "WATER_WELL_DRILLING"]
+  },
+  {
+    "tradeName": "EXTERIOR_IMPROVEMENT",
+    "promptFileName": "Exterior_Improvement_Subcontractor_Prompt.txt",
+    "displayName": "Exterior Improvement",
+    "description": "Analyzes blueprints to create a detailed bid package for exterior improvements, including decks, patios, and outdoor structures.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["EXTERIOR_IMPROVEMENT"]
+  },
+  {
+    "tradeName": "FENCE",
+    "promptFileName": "Fence_Subcontractor_Prompt.txt",
+    "displayName": "Fence",
+    "description": "Generates a comprehensive bid package for fencing and gates by analyzing blueprints, covering installation, hardware, and automation.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["FENCE"]
+  },
+  {
+    "tradeName": "FIRE_PROOFING",
+    "promptFileName": "Fire_Protection_Subcontractor_Prompt.txt",
+    "displayName": "Fire Proofing",
+    "description": "Creates a complete bid package for fireproofing by analyzing blueprints, including spray-applied materials and fire-stopping sealants.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["FIRE_PROOFING", "FIRE_PROTECTION", "FIRE_SPRINKLING"]
+  },
+  {
+    "tradeName": "FIRE_PROTECTION",
+    "promptFileName": "Fire_Protection_Subcontractor_Prompt.txt",
+    "displayName": "Fire Protection",
+    "description": "Produces a detailed bid package for fire protection systems by analyzing blueprints, covering standpipes and sprinkler systems.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["FIRE_PROOFING", "FIRE_PROTECTION", "FIRE_SPRINKLING"]
+  },
+  {
+    "tradeName": "FIRE_SPRINKLING",
+    "promptFileName": "Fire_Protection_Subcontractor_Prompt.txt",
+    "displayName": "Fire Sprinkling",
+    "description": "Performs a full analysis of blueprints to generate a comprehensive bid package for fire sprinkling systems, including heads, piping, and testing.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["FIRE_PROOFING", "FIRE_PROTECTION", "FIRE_SPRINKLING"]
+  },
+  {
+    "tradeName": "FLOORING",
+    "promptFileName": "Flooring_Subcontractor_Prompt.txt",
+    "displayName": "Flooring",
+    "description": "Analyzes blueprints to create a detailed bid package for flooring, including substrate preparation, installation of various materials, and finishing.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["FLOORING", "TILE_TERRAZZO_MARBLE"]
+  },
+  {
+    "tradeName": "TILE_TERRAZZO_MARBLE",
+    "promptFileName": "Flooring_Subcontractor_Prompt.txt",
+    "displayName": "Tile Terrazzo Marble",
+    "description": "Generates a comprehensive bid package for tile, terrazzo, and marble work by analyzing blueprints, covering substrate preparation, installation, and finishing.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["FLOORING", "TILE_TERRAZZO_MARBLE"]
+  },
+  {
+    "tradeName": "HIGHWAYS_STREETS_BRIDGES",
+    "promptFileName": "Highways_Streets_Bridges_Subcontractor_Prompt.txt",
+    "displayName": "Highways Streets Bridges",
+    "description": "Analyzes blueprints to create a detailed bid package for highways, streets, and bridges, including roadworks, structures, and ancillary items.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["HIGHWAYS_STREETS_BRIDGES"]
+  },
+  {
+    "tradeName": "HVAC",
+    "promptFileName": "HVAC_Mechanical_Subcontractor_Prompt.txt",
+    "displayName": "HVAC",
+    "description": "Generates a comprehensive bid package for HVAC systems by analyzing blueprints, covering equipment installation, distribution, and controls.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["HVAC", "MECHANICAL", "MECHANICAL_INSULATION", "TESTING_BALANCING"]
+  },
+  {
+    "tradeName": "MECHANICAL",
+    "promptFileName": "HVAC_Mechanical_Subcontractor_Prompt.txt",
+    "displayName": "Mechanical",
+    "description": "Creates a complete bid package for mechanical systems by analyzing blueprints, including equipment installation, distribution, and controls.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["HVAC", "MECHANICAL", "MECHANICAL_INSULATION", "TESTING_BALANCING"]
+  },
+  {
+    "tradeName": "MECHANICAL_INSULATION",
+    "promptFileName": "HVAC_Mechanical_Subcontractor_Prompt.txt",
+    "displayName": "Mechanical Insulation",
+    "description": "Produces a detailed bid package for mechanical insulation by analyzing blueprints, covering ductwork, piping, and equipment.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["HVAC", "MECHANICAL", "MECHANICAL_INSULATION", "TESTING_BALANCING"]
+  },
+  {
+    "tradeName": "TESTING_BALANCING",
+    "promptFileName": "HVAC_Mechanical_Subcontractor_Prompt.txt",
+    "displayName": "Testing Balancing",
+    "description": "Performs a full analysis of blueprints to generate a comprehensive bid package for testing and balancing of mechanical systems.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["HVAC", "MECHANICAL", "MECHANICAL_INSULATION", "TESTING_BALANCING"]
+  },
+  {
+    "tradeName": "INSULATION",
+    "promptFileName": "Insulation_Subcontractor_Prompt.txt",
+    "displayName": "Insulation",
+    "description": "Analyzes blueprints to create a detailed bid package for insulation, including thermal, acoustic, and moisture protection systems.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["INSULATION", "THERMAL_MOISTURE_PROTECTION"]
+  },
+  {
+    "tradeName": "THERMAL_MOISTURE_PROTECTION",
+    "promptFileName": "Insulation_Subcontractor_Prompt.txt",
+    "displayName": "Thermal Moisture Protection",
+    "description": "Generates a comprehensive bid package for thermal and moisture protection by analyzing blueprints, covering air sealing and vapor barriers.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["INSULATION", "THERMAL_MOISTURE_PROTECTION"]
+  },
+  {
+    "tradeName": "INTERIOR_FINISHING",
+    "promptFileName": "Interior_Finishing_Subcontractor_Prompt.txt",
+    "displayName": "Interior Finishing",
+    "description": "Creates a complete bid package for interior finishing by analyzing blueprints, including doors, trim, millwork, and closet systems.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["INTERIOR_FINISHING"]
+  },
+  {
+    "tradeName": "LANDSCAPING",
+    "promptFileName": "Landscaping_Subcontractor_Prompt.txt",
+    "displayName": "Landscaping",
+    "description": "Produces a detailed bid package for landscaping by analyzing blueprints, covering site preparation, planting, and irrigation systems.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["LANDSCAPING"]
+  },
+  {
+    "tradeName": "MASONRY",
+    "promptFileName": "Masonry_Subcontractor_Prompt.txt",
+    "displayName": "Masonry",
+    "description": "Analyzes blueprints to create a detailed bid package for masonry work, including installation of units, reinforcement, and finishing.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["MASONRY"]
+  },
+  {
+    "tradeName": "METAL_DECK",
+    "promptFileName": "Metal_Steel_Subcontractor_Prompt.txt",
+    "displayName": "Metal Deck",
+    "description": "Generates a comprehensive bid package for metal deck installation by analyzing blueprints, covering fastening and side-lap connections.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["METAL_DECK", "STEEL_ERECTOR", "STEEL_FABRICATION", "WELDING", "SHEET_METAL_FABRICATION"]
+  },
+  {
+    "tradeName": "STEEL_ERECTOR",
+    "promptFileName": "Metal_Steel_Subcontractor_Prompt.txt",
+    "displayName": "Steel Erector",
+    "description": "Creates a complete bid package for steel erection by analyzing blueprints, including structural steel components and on-site welding.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["METAL_DECK", "STEEL_ERECTOR", "STEEL_FABRICATION", "WELDING", "SHEET_METAL_FABRICATION"]
+  },
+  {
+    "tradeName": "STEEL_FABRICATION",
+    "promptFileName": "Metal_Steel_Subcontractor_Prompt.txt",
+    "displayName": "Steel Fabrication",
+    "description": "Produces a detailed bid package for steel fabrication by analyzing blueprints, covering structural components and shop coatings.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["METAL_DECK", "STEEL_ERECTOR", "STEEL_FABRICATION", "WELDING", "SHEET_METAL_FABRICATION"]
+  },
+  {
+    "tradeName": "WELDING",
+    "promptFileName": "Metal_Steel_Subcontractor_Prompt.txt",
+    "displayName": "Welding",
+    "description": "Performs a full analysis of blueprints to generate a comprehensive bid package for welding services, including on-site structural connections.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["METAL_DECK", "STEEL_ERECTOR", "STEEL_FABRICATION", "WELDING", "SHEET_METAL_FABRICATION"]
+  },
+  {
+    "tradeName": "SHEET_METAL_FABRICATION",
+    "promptFileName": "Metal_Steel_Subcontractor_Prompt.txt",
+    "displayName": "Sheet Metal Fabrication",
+    "description": "Analyzes blueprints to create a detailed bid package for sheet metal fabrication, including custom components and decorative elements.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["METAL_DECK", "STEEL_ERECTOR", "STEEL_FABRICATION", "WELDING", "SHEET_METAL_FABRICATION"]
+  },
+  {
+    "tradeName": "PAINT_DECORATE",
+    "promptFileName": "Painting_Decorating_Subcontractor_Prompt.txt",
+    "displayName": "Paint Decorate",
+    "description": "Generates a comprehensive bid package for painting and decorating by analyzing blueprints, covering surface preparation, application of coatings, and finishing.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["PAINT_DECORATE", "SEALANTS"]
+  },
+  {
+    "tradeName": "SEALANTS",
+    "promptFileName": "Painting_Decorating_Subcontractor_Prompt.txt",
+    "displayName": "Sealants",
+    "description": "Creates a complete bid package for sealants by analyzing blueprints, including exterior and interior caulking for a weather-tight seal.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["PAINT_DECORATE", "SEALANTS"]
+  },
+  {
+    "tradeName": "PAVING",
+    "promptFileName": "Paving_Subcontractor_Prompt.txt",
+    "displayName": "Paving",
+    "description": "Produces a detailed bid package for paving and hardscaping by analyzing blueprints, covering base preparation, installation, and finishing.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["PAVING"]
+  },
+  {
+    "tradeName": "PLUMBING",
+    "promptFileName": "Plumbing_Subcontractor_Prompt.txt",
+    "displayName": "Plumbing",
+    "description": "Performs a full analysis of blueprints to generate a comprehensive bid package for plumbing systems, including site utilities, piping, and fixtures.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["PLUMBING", "SEWER", "UTILITY"]
+  },
+  {
+    "tradeName": "SEWER",
+    "promptFileName": "Plumbing_Subcontractor_Prompt.txt",
+    "displayName": "Sewer",
+    "description": "Analyzes blueprints to create a detailed bid package for sewer systems, including site utilities and connections.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["PLUMBING", "SEWER", "UTILITY"]
+  },
+  {
+    "tradeName": "UTILITY",
+    "promptFileName": "Plumbing_Subcontractor_Prompt.txt",
+    "displayName": "Utility",
+    "description": "Generates a comprehensive bid package for site utility installation by analyzing blueprints, covering water and sewer line connections.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["PLUMBING", "SEWER", "UTILITY"]
+  },
+  {
+    "tradeName": "GUTTERS",
+    "promptFileName": "Roofing_Subcontractor_Prompt.txt",
+    "displayName": "Gutters",
+    "description": "Analyzes blueprints to create a detailed bid package for gutter systems, including installation and finishing.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["GUTTERS", "ROOFING"]
+  },
+  {
+    "tradeName": "ROOFING",
+    "promptFileName": "Roofing_Subcontractor_Prompt.txt",
+    "displayName": "Roofing",
+    "description": "Generates a comprehensive bid package for roofing systems by analyzing blueprints, covering installation, flashing, and waterproofing.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["GUTTERS", "ROOFING"]
+  },
+  {
+    "tradeName": "SCAFFOLDING",
+    "promptFileName": "Scaffolding_Subcontractor_Prompt.txt",
+    "displayName": "Scaffolding",
+    "description": "Analyzes blueprints to create a detailed bid package for scaffolding services, including erection, dismantling, and rental.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["SCAFFOLDING"]
+  },
+  {
+    "tradeName": "SECURITY_SYSTEMS",
+    "promptFileName": "Security_Systems_Subcontractor_Prompt.txt",
+    "displayName": "Security Systems",
+    "description": "Generates a comprehensive bid package for security systems by analyzing blueprints, covering surveillance, intrusion detection, and access control.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["SECURITY_SYSTEMS"]
+  },
+  {
+    "tradeName": "SIGNAGE",
+    "promptFileName": "Signage_Subcontractor_Prompt.txt",
+    "displayName": "Signage",
+    "description": "Creates a complete bid package for interior and exterior signage by analyzing blueprints, including fabrication, installation, and illumination.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["SIGNAGE"]
+  },
+  {
+    "tradeName": "SOLAR",
+    "promptFileName": "Solar_Installation_Subcontractor_Prompt.txt",
+    "displayName": "Solar",
+    "description": "Produces a detailed bid package for solar PV system installation by analyzing blueprints, covering panels, inverters, and commissioning.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["SOLAR"]
+  },
+  {
+    "tradeName": "SPECIAL_CONSTRUCTION",
+    "promptFileName": "Special_Construction_Subcontractor_Prompt.txt",
+    "displayName": "Special Construction",
+    "description": "Analyzes blueprints to create a detailed bid package for special construction projects, including purpose-built rooms and unique structures.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["SPECIAL_CONSTRUCTION"]
+  },
+  {
+    "tradeName": "WATERPROOFING",
+    "promptFileName": "Waterproofing_Subcontractor_Prompt.txt",
+    "displayName": "Waterproofing",
+    "description": "Generates a comprehensive bid package for waterproofing and damp-proofing by analyzing blueprints, covering below-grade and above-grade systems.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["WATERPROOFING"]
+  },
+  {
+    "tradeName": "WRECKING_DEMOLITION",
+    "promptFileName": "Wrecking_Demolition_Subcontractor_Prompt.txt",
+    "displayName": "Wrecking Demolition",
+    "description": "Creates a complete bid package for wrecking and demolition by analyzing blueprints, including material handling and site safety.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": ["WRECKING_DEMOLITION"]
+  },
+  {
+    "tradeName": "SUBCONTRACTOR_COMPARISON",
+    "promptFileName": "Subcontractor_Comparison_Prompt.txt",
+    "displayName": "Subcontractor Comparison",
+    "description": "Performs a detailed comparative analysis of subcontractor bids against a Request for Quotation (RFQ) and project blueprints to provide a ranked recommendation.",
+    "allowedUserTypes": ["GENERAL_CONTRACTOR"],
+    "associatedTrades": []
+  },
+  {
+    "tradeName": "VENDOR_COMPARISON",
+    "promptFileName": "Vendor_Comparison_Prompt.txt",
+    "displayName": "Vendor Comparison",
+    "description": "Conducts a thorough comparative analysis of vendor quotes for material packages against a Bill of Materials (BOM) to determine the best value.",
+    "allowedUserTypes": ["GENERAL_CONTRACTOR"],
+    "associatedTrades": []
+  },
+  {
+    "tradeName": "SYSTEM",
+    "promptFileName": "SYSTEM_COMPREHENSIVE_ANALYSIS",
+    "displayName": "Full Blueprint Analysis",
+    "description": "Conduct a comprehensive analysis of construction blueprints, including scope identification, risk assessment, and value engineering opportunities. This system is designed to provide a detailed understanding of the project requirements and potential challenges.",
+    "allowedUserTypes": ["GENERAL_CONTRACTOR", "SUBCONTRACTOR", "CLIENT"],
+    "associatedTrades": []
+  },
+  {
+    "tradeName": "PERSONA",
+    "promptFileName": "sub-contractor-selected-prompt-master-prompt.txt",
+    "displayName": "Persona - Sub-Contractor Master",
+    "description": "This master prompt is designed to guide the AI in generating responses tailored to the specific needs and characteristics of subcontractors, ensuring that the analysis and bid packages are comprehensive and aligned with industry standards.",
+    "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": []
+  },
+  {
+    "tradeName": "SYSTEM",
+    "promptFileName": "ProBuildAI_Renovation_Prompt.txt",
+    "displayName": "Renovation Analysis",
+    "description": "Executes a comprehensive, multi-phase analysis of renovation projects, covering everything from demolition and structural alterations to final fit-out and cost summaries.",
+    "allowedUserTypes": ["GENERAL_CONTRACTOR", "GENERAL_CONTRACTOR"],
+    "associatedTrades": []
+  },
+  {
+    "tradeName": "SYSTEM",
+    "promptFileName": "prompt-failure-corrective-action.txt",
+    "displayName": "System - Failure Correction",
+    "description": "Generates a formal Corrective Action Report when an analysis fails due to errors or non-compliance, detailing all issues and halting the project until rectified.",
+    "allowedUserTypes": ["GENERAL_CONTRACTOR", "SUBCONTRACTOR", "CLIENT"],
+    "associatedTrades": []
+  },
+  {
+    "tradeName": "SYSTEM",
+    "promptFileName": "prompt-revision.txt",
+    "displayName": "System - Prompt Revision",
+    "description": "Implements client- or design-driven changes to a previously completed cost analysis, documenting the impact on material quantities and costs.",
+    "allowedUserTypes": ["GENERAL_CONTRACTOR", "SUBCONTRACTOR", "CLIENT"],
+    "associatedTrades": []
+  },
+  {
+    "tradeName": "SYSTEM",
+    "promptFileName": "prompt-22-rebuttal.txt",
+    "displayName": "System - Prompt Rebuttal",
+    "description": "Creates a professional, data-driven response to client inquiries or concerns about project costs, justifying the bid with evidence from the analysis.",
+    "allowedUserTypes": ["GENERAL_CONTRACTOR", "SUBCONTRACTOR", "CLIENT"],
+    "associatedTrades": []
+  }
+]
