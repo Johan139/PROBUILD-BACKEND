@@ -95,7 +95,7 @@ namespace ProbuildBackend.Controllers
                 await _context.SaveChangesAsync();
 
                 var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-                var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL");
+                var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["FrontEnd:FRONTEND_URL"];
                 var callbackUrl = $"{frontendUrl}/confirm-email/?userId={user.Id}&code={Uri.EscapeDataString(code)}";
 
                 await _emailSender.SendEmailAsync(model.Email, "Confirm your email",
@@ -119,9 +119,11 @@ namespace ProbuildBackend.Controllers
         [HttpGet("has-active-subscription/{userId}")]
         public async Task<ActionResult> HasActiveSubscription(string userId)
         {
-            var hasActive = await _context.PaymentRecords
-                .AnyAsync(p => p.UserId == userId && p.Status == "Success" && p.ValidUntil > DateTime.UtcNow);
-
+            var hasActive = await _context.PaymentRecords.AnyAsync(p =>
+                p.Status == "Active"
+                && p.ValidUntil > DateTime.UtcNow
+                && (p.UserId == userId || p.AssignedUser == userId)   // <- check either
+            );
             return Ok(new { hasActive });
         }
 
@@ -330,8 +332,6 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-
-
                 var user = await _context.Users.FindAsync(dto.UserId);
                 if (user == null) return NotFound("User not found.");
 
@@ -344,11 +344,11 @@ namespace ProbuildBackend.Controllers
                 var trial = new PaymentRecord
                 {
                     UserId = dto.UserId,
-                    Package = "Trial",
+                    Package = dto.PackageName,
                     StripeSessionId = "TRIAL-NO-SESSION",
-                    Status = "Success",
+                    Status = "Active",
                     PaidAt = DateTime.UtcNow,
-                    ValidUntil = DateTime.UtcNow.AddDays(3),
+                    ValidUntil = DateTime.UtcNow.AddDays(7),
                     Amount = 0,
                     IsTrial = true
                 };
@@ -368,12 +368,15 @@ namespace ProbuildBackend.Controllers
             var claims = new[]
             {
                 new Claim(JwtRegisteredClaimNames.Sub, user.Email ?? ""),
+                new Claim(ClaimTypes.Email, user.Email), 
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
                 new Claim("UserId", user.Id),
+                new Claim("userId", user.Id), 
+                new Claim(ClaimTypes.NameIdentifier, user.Id), 
                 new Claim("UserType", user.UserType ?? ""),
                 new Claim("FirstName", user.FirstName ?? ""),
                 new Claim("LastName", user.LastName ?? ""),
-                new Claim("CompanyName", user.CompanyName ?? ""),
+                new Claim("CompanyName", user.CompanyName ?? "")
             };
 
             var JWTKEY = Environment.GetEnvironmentVariable("JWT_KEY") ?? _configuration["Jwt:Key"];

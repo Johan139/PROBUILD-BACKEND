@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Identity;
+﻿using Elastic.Apm.Api;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -7,6 +8,7 @@ using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Services;
 using System.IO.Compression;
+using static iText.StyledXmlParser.Jsoup.Select.Evaluator;
 
 namespace ProbuildBackend.Controllers
 {
@@ -76,6 +78,33 @@ namespace ProbuildBackend.Controllers
 
             return Ok(documentDetails);
         }
+
+        [HttpGet("getusersubscription/{userId}")]
+        public async Task<ActionResult<IEnumerable<PaymentRecord>>> GetUserSubscription(string userId)
+        {
+            try
+            {
+
+      
+            if (string.IsNullOrWhiteSpace(userId))
+                return BadRequest("Id parameter cannot be null or empty.");
+
+            var PaymentRecord = await _context.PaymentRecords
+                .Where(p => p.UserId == userId).ToListAsync();
+
+            if (PaymentRecord == null || !PaymentRecord.Any())
+                return NotFound("No payment record found with the specified user id.");
+
+
+            return Ok(PaymentRecord);
+            }
+            catch (Exception ex)
+            {
+
+                throw;
+            }
+        }
+
 
         [HttpGet("GetProfile/{id}")]
         public async Task<ActionResult<IEnumerable<UserModel>>> GetUserById(string id)
@@ -250,6 +279,60 @@ namespace ProbuildBackend.Controllers
                 return StatusCode(500, new { error = "Failed to upload files", details = ex.Message });
             }
         }
+
+        [HttpGet("managesubscriptions/{userId}")]
+        public async Task<IActionResult> ManageSubscription(string userId)
+        {
+            try
+            {
+                var normUserId = (userId ?? "").Trim().ToLower();
+
+                // Get the viewer's email once (for matching AssignedUser by email)
+                var viewerEmail = await _context.Users.AsNoTracking()
+                    .Where(u => (u.Id ?? "").ToLower() == normUserId)
+                    .Select(u => u.Email)
+                    .FirstOrDefaultAsync();
+
+                var normEmail = (viewerEmail ?? "").Trim().ToLower();
+
+                var result = await _context.PaymentRecords.AsNoTracking()
+                    .Where(pr =>
+                        // payer
+                        ((pr.UserId ?? "").ToLower().Trim() == normUserId)
+                        // assignee by id
+                        || ((pr.AssignedUser ?? "").ToLower().Trim() == normUserId)
+                        // assignee by email
+                        || (normEmail != "" && ((pr.AssignedUser ?? "").ToLower().Trim() == normEmail))
+                    )
+                    .Select(pr => new UserPaymentRecordDTO
+                    {
+                        Package = pr.Package,
+                        ValidUntil = pr.ValidUntil,
+                        Amount = pr.Amount,
+                        AssignedUser = pr.AssignedUser,   // raw AssignedUser (id/email)
+                        Status = pr.Status,
+                        SubscriptionID = pr.SubscriptionID,
+
+                        // Resolve a displayable name/email for the assignee (id OR email)
+                        AssignedUserName = _context.Users.AsNoTracking()
+                            .Where(u =>
+                                ((u.Id ?? "").ToLower() == (pr.AssignedUser ?? "").ToLower().Trim()) ||
+                                ((u.Email ?? "").ToLower() == (pr.AssignedUser ?? "").ToLower().Trim())
+                            )
+                            .Select(u => u.Email)          // or $"{u.FirstName} {u.LastName}" if you prefer
+                            .FirstOrDefault()
+                    })
+                    .ToListAsync();
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                // log ex
+                return StatusCode(500, "Failed to load subscriptions.");
+            }
+        }
+
 
         [HttpGet("download/{documentId}")]
         public async Task<IActionResult> DownloadBlob(int documentId)

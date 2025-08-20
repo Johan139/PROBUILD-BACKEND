@@ -1,11 +1,21 @@
 trigger:
-
   branches:
     include:
       - master
+      - development
 
 pool:
   vmImage: 'ubuntu-latest'
+
+variables:
+  isProd: $[eq(variables['Build.SourceBranchName'], 'master')]
+  ACR_NAME: probuild
+  ACR_IMAGE: $[eq(variables['Build.SourceBranchName'], 'master') ? 'probuild-backend' : 'qa-probuild-backend']
+  AZURE_CONTAINER_APP: $[eq(variables['Build.SourceBranchName'], 'master') ? 'probuild-backend' : 'qa-probuild-backend']
+  AZURE_RESOURCE_GROUP: rg-Probuild
+  FRONTEND_URL: $[eq(variables['Build.SourceBranchName'], 'master') ? 'https://probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io' : 'https://probuildai-backend-dev.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io']
+  DOCKER_TAG: $[eq(variables['Build.SourceBranchName'], 'master') ? 'latest' : 'qa']
+  ASPNETCORE_ENVIRONMENT: $[eq(variables['Build.SourceBranchName'], 'master') ? 'Production' : 'Staging']
 
 stages:
 - stage: BuildAndDeploy
@@ -33,9 +43,9 @@ stages:
       displayName: Build and push Docker image to ACR
       inputs:
         command: buildAndPush
-        repository: $(ACR_NAME).azurecr.io/probuild-backend
+        repository: $(ACR_NAME).azurecr.io/$(ACR_IMAGE)
         dockerfile: 'Dockerfile'
-        tags: 'latest'
+        tags: $(DOCKER_TAG)
 
     - task: AzureCLI@2
       displayName: Deploy to Azure Container Apps
@@ -47,8 +57,19 @@ stages:
           az containerapp update \
             --name $(AZURE_CONTAINER_APP) \
             --resource-group $(AZURE_RESOURCE_GROUP) \
-            --image $(ACR_NAME).azurecr.io/$(ACR_IMAGE) \
+            --image $(ACR_NAME).azurecr.io/$(ACR_IMAGE):$(DOCKER_TAG) \
             --cpu 2 \
             --memory 4.0Gi \
-            --env-vars DB_CONNECTION_STRING="$(DB_CONNECTION_STRING)" \
-            FRONTEND_URL="$(FRONTEND_URL)"
+            --env-vars \
+              DB_CONNECTION_STRING="$(DB_CONNECTION_STRING)" \
+              FRONTEND_URL="$(FRONTEND_URL)" \
+              JWT_KEY="$(JWT_KEY)" \
+              GPTAPIKEY="$(GPTAPIKEY)" \
+              SENDGRID_API_KEY="$(SENDGRID_API_KEY)" \
+              SENDGRID_EMAIL="$(SENDGRID_EMAIL)" \
+              SENDGRID_FROM_EMAIL="$(SENDGRID_FROM_EMAIL)" \
+              STRIPE_KEY="$(STRIPE_KEY)" \
+              AZURE_BLOB_KEY="$(AZURE_BLOB_KEY)" \
+              MapsAPI="$(MapsAPI)" \
+              GeminiAPIKey="$(GeminiAPIKey)" \
+              ASPNETCORE_ENVIRONMENT="$(ASPNETCORE_ENVIRONMENT)"
