@@ -23,12 +23,16 @@ namespace ProbuildBackend.Middleware
             return base.OnConnectedAsync();
         }
 
-        public override Task OnDisconnectedAsync(Exception exception)
+        public override Task OnDisconnectedAsync(Exception? exception)
         {
-            _logger.LogError(exception, "Client disconnected: {ConnectionId}", Context.ConnectionId);
+            if (exception != null)
+                _logger.LogWarning(exception, "Client disconnected due to error: {ConnectionId}", Context.ConnectionId);
+            else
+                _logger.LogInformation("Client disconnected: {ConnectionId}", Context.ConnectionId);
             return base.OnDisconnectedAsync(exception);
         }
-
+        public Task LeaveConversation(string conversationId) =>
+            Groups.RemoveFromGroupAsync(Context.ConnectionId, conversationId);
         public async Task JoinConversationGroup(string conversationId)
         {
             _logger.LogInformation("JoinConversationGroup called for conversation {ConversationId} by connection {ConnectionId}", conversationId, Context.ConnectionId);

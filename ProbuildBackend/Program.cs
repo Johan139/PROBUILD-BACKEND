@@ -94,7 +94,9 @@ var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING"
 var azureBlobStorage = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY");
 #endif
 var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY") ?? builder.Configuration["Jwt:Key"];
-
+var signalrConn =
+    builder.Configuration["Azure:SignalR:ConnectionString"]
+    ?? Environment.GetEnvironmentVariable("AzureSignalRConnectionString");
 
 
 var configuration = builder.Configuration;
@@ -169,7 +171,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddHttpClient();
 builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<WebSocketManager>();
-builder.Services.AddSignalR();
+builder.Services.AddSignalR().AddAzureSignalR(o => o.ConnectionString = signalrConn); ;
 builder.Services.AddLogging(configure => configure.AddConsole());
 builder.Services.AddHttpContextAccessor(); // Required for AzureBlobService
 builder.Services.AddHangfire(config => config

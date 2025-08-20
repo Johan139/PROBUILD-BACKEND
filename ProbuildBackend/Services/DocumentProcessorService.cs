@@ -39,6 +39,7 @@ namespace ProbuildBackend.Services
     {
       try
       {
+
         var job = await _context.Jobs.FindAsync(jobId);
         if (job == null)
         {

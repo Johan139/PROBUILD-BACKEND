@@ -210,7 +210,7 @@ namespace ProbuildBackend.Services
                 Content = aiResponse,
                 Timestamp = DateTime.UtcNow
             };
-            //await _conversationRepository.AddMessageAsync(aiMessage);
+            await _conversationRepository.AddMessageAsync(aiMessage);
 
             var frontendMessage = new SignalRMessage
             {
