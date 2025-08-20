@@ -172,7 +172,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddHttpClient();
 builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<WebSocketManager>();
-builder.Services.AddSignalR().AddAzureSignalR(o => o.ConnectionString = signalrConn); ;
+builder.Services.AddSignalR().AddAzureSignalR(o => { o.ConnectionString = signalrConn; o.MaxHubServerConnectionCount = 3; o.InitialHubServerConnectionCount = 3; });
 builder.Services.AddLogging(configure => configure.AddConsole());
 builder.Services.AddHttpContextAccessor(); // Required for AzureBlobService
 builder.Services.AddHangfire(config => config
