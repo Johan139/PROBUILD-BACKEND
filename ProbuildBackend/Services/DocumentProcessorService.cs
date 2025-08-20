@@ -84,14 +84,14 @@ namespace ProbuildBackend.Services
           }
         }
 
-        if (!string.IsNullOrEmpty(connectionId))
-        {
-          await _hubContext.Clients.Client(connectionId).SendAsync("JobProcessingComplete", new
-          {
-            JobId = jobId,
-            Message = "Document processing complete. The analysis report is available."
-          });
-        }
+        //if (!string.IsNullOrEmpty(connectionId))
+        //{
+        //  await _hubContext.Clients.Client(connectionId).SendAsync("JobProcessingComplete", new
+        //  {
+        //    JobId = jobId,
+        //    Message = "Document processing complete. The analysis report is available."
+        //  });
+        //}
       }
       catch (Exception ex)
       {
@@ -159,7 +159,7 @@ namespace ProbuildBackend.Services
         job.Status = "PROCESSED";
         await _context.SaveChangesAsync();
 
-        await _hubContext.Clients.Client(connectionId).SendAsync("AnalysisComplete", jobId, "Selected analysis is complete.");
+       // await _hubContext.Clients.Client(connectionId).SendAsync("AnalysisComplete", jobId, "Selected analysis is complete.");
       }
       catch (Exception ex)
       {
