@@ -89,14 +89,15 @@ builder.Services.AddDataProtection()
 #if(DEBUG)
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 var azureBlobStorage = builder.Configuration.GetConnectionString("AzureBlobConnection");
+var signalrConn =
+    builder.Configuration["Azure:SignalR:ConnectionString"];
 #else
 var connectionString = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING");
 var azureBlobStorage = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY");
+var signalrConn = Environment.GetEnvironmentVariable("AzureSignalRConnectionString");
 #endif
 var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY") ?? builder.Configuration["Jwt:Key"];
-var signalrConn =
-    builder.Configuration["Azure:SignalR:ConnectionString"]
-    ?? Environment.GetEnvironmentVariable("AzureSignalRConnectionString");
+
 
 
 var configuration = builder.Configuration;
