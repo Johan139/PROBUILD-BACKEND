@@ -195,12 +195,17 @@ namespace ProbuildBackend.Services
                     ConversationId = conversationId
                 };
                 aiResponse = await _aiAnalysisService.PerformSelectedAnalysisAsync(userId, analysisRequest, false, conversationId);
-            }
-            else
-            {
-                var (continueResponse, _) = await _aiService.ContinueConversationAsync(conversationId, userId, dto.Message, fileUrls);
-                aiResponse = continueResponse;
-            }
+             }
+             else if (dto.PromptKeys.Contains("SYSTEM_RENOVATION_ANALYSIS"))
+             {
+                var jobDetails = new JobModel { UserId = userId };
+                aiResponse = await _aiAnalysisService.PerformRenovationAnalysisAsync(userId, fileUrls, jobDetails, false, dto.Message, "");
+             }
+             else
+             {
+                 var (continueResponse, _) = await _aiService.ContinueConversationAsync(conversationId, userId, dto.Message, fileUrls);
+                 aiResponse = continueResponse;
+             }
 
 
             var aiMessage = new Message

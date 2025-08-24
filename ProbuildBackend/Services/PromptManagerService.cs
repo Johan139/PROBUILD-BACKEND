@@ -28,7 +28,7 @@ public class PromptManagerService : IPromptManagerService
         {
             fullBlobName = $"SubcontractorPrompts/{fileName}";
         }
-        else if (fileName == "ProBuildAI_Renovation_Prompt.txt")
+        else if (fileName.StartsWith("renovation-"))
         {
             fullBlobName = $"RenovationPrompts/{fileName}";
         }

@@ -16,6 +16,8 @@ namespace ProbuildBackend.Models.DTO
 
     public string UserContext { get; set; }
 
+    public string? UserContextFileUrl { get; set; }
+
     public int JobId { get; set; }
 
     public string UserId { get; set; }

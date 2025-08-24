@@ -24,7 +24,7 @@ namespace ProbuildBackend.Controllers
         private readonly AzureBlobService _azureBlobservice;
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly IDocumentProcessorService _documentProcessorService;
-        private readonly IEmailSender _emailService; 
+        private readonly IEmailSender _emailService;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IConfiguration _config;
         private readonly WebSocketManager _webSocketManager;
@@ -504,6 +504,15 @@ namespace ProbuildBackend.Controllers
                                     userContextFileUrl = (await _azureBlobservice.UploadFiles(new List<IFormFile> { jobRequest.UserContextFile }, null, null)).FirstOrDefault();
                                 }
                                 BackgroundJob.Enqueue(() => _documentProcessorService.ProcessSelectedAnalysisForJobAsync(job.Id, documentUrls, jobRequest.PromptKeys, connectionId, jobRequest.GenerateDetailsWithAi, jobRequest.UserContextText, userContextFileUrl));
+                            }
+                            else if (jobRequest.AnalysisType == "Renovation")
+                            {
+                                var userContextFileUrl = "";
+                                if (jobRequest.UserContextFile != null)
+                                {
+                                    userContextFileUrl = (await _azureBlobservice.UploadFiles(new List<IFormFile> { jobRequest.UserContextFile }, null, null)).FirstOrDefault();
+                                }
+                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessRenovationAnalysisForJobAsync(job.Id, documentUrls, connectionId, jobRequest.GenerateDetailsWithAi, jobRequest.UserContextText, userContextFileUrl));
                             }
                         }
 
