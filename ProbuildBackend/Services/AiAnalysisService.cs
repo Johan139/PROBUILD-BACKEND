@@ -170,32 +170,52 @@ namespace ProbuildBackend.Services
             }
         }
 
-        public async Task<AnalysisResponseDto> PerformRenovationAnalysisAsync(RenovationAnalysisRequestDto request, List<IFormFile> pdfFiles)
+        public async Task<string> PerformRenovationAnalysisAsync(string userId, IEnumerable<string> documentUris, JobModel jobDetails, bool generateDetailsWithAi, string userContextText, string userContextFileUrl, string promptKey = "renovation-00-initial-analysis.txt")
         {
-            var prompt = await _promptManager.GetPromptAsync("RenovationPrompts/", RenovationAnalysisPersonaKey);
+            _logger.LogInformation("START: PerformRenovationAnalysisAsync for User {UserId}, Job {JobId}", userId, jobDetails.Id);
 
-            var combinedPdfText = new StringBuilder();
-            if (pdfFiles != null)
+            try
             {
-                foreach (var pdfFile in pdfFiles)
+                _logger.LogInformation("Fetching renovation persona prompt.");
+                var personaPrompt = await _promptManager.GetPromptAsync("RenovationPrompts/", "renovation-persona.txt");
+                _logger.LogInformation("Fetching initial renovation analysis prompt.");
+                var initialAnalysisPrompt = await _promptManager.GetPromptAsync("RenovationPrompts/", promptKey);
+
+                _logger.LogInformation("Getting user context as string.");
+                var userContext = await GetUserContextAsString(userContextText, userContextFileUrl);
+
+                var initialUserPrompt = $"{initialAnalysisPrompt}\n\n{userContext}";
+
+                _logger.LogInformation("Calling StartMultimodalConversationAsync for renovation analysis.");
+                var (initialResponse, conversationId) = await _aiService.StartMultimodalConversationAsync(userId, documentUris, personaPrompt, initialUserPrompt);
+                _logger.LogInformation("Started multimodal conversation {ConversationId} for user {UserId}. Initial response length: {Length}", conversationId, userId, initialResponse?.Length ?? 0);
+
+                if (initialResponse.Contains("BLUEPRINT FAILURE", StringComparison.OrdinalIgnoreCase))
                 {
-                    using var memoryStream = new MemoryStream();
-                    await pdfFile.CopyToAsync(memoryStream);
-                    memoryStream.Position = 0;
-                    var pdfText = await _pdfTextExtractionService.ExtractTextAsync(memoryStream);
-                    combinedPdfText.AppendLine(pdfText);
+                    _logger.LogWarning("Initial renovation analysis failed for conversation {ConversationId}. Triggering corrective action.", conversationId);
+                    return await HandleFailureAsync(conversationId, userId, documentUris, initialResponse);
                 }
+
+                _logger.LogInformation("Blueprint fitness check PASSED for renovation conversation {ConversationId}. Proceeding with full sequential analysis.", conversationId);
+
+                if (generateDetailsWithAi)
+                {
+                    _logger.LogInformation("Parsing and saving AI job details for Job {JobId}", jobDetails.Id);
+                    await ParseAndSaveAiJobDetails(jobDetails.Id, initialResponse);
+                }
+
+                _logger.LogInformation("Executing sequential renovation prompts for conversation {ConversationId}", conversationId);
+                return await ExecuteSequentialRenovationPromptsAsync(conversationId, userId, initialResponse);
             }
-
-            var fullPrompt = $"{prompt}\n\n{combinedPdfText}";
-
-            var (analysisResult, conversationId) = await _aiService.StartMultimodalConversationAsync(request.UserId, null, fullPrompt, "Analyze the renovation project based on the provided details.");
-
-            return new AnalysisResponseDto
+            catch (Exception ex)
             {
-                AnalysisResult = analysisResult,
-                ConversationId = conversationId
-            };
+                _logger.LogError(ex, "EXCEPTION in PerformRenovationAnalysisAsync for User {UserId}, Job {JobId}", userId, jobDetails.Id);
+                throw;
+            }
+            finally
+            {
+                _logger.LogInformation("END: PerformRenovationAnalysisAsync for User {UserId}, Job {JobId}", userId, jobDetails.Id);
+            }
         }
 
         public async Task<AnalysisResponseDto> PerformComparisonAnalysisAsync(ComparisonAnalysisRequestDto request, List<IFormFile> pdfFiles)
@@ -358,6 +378,39 @@ namespace ProbuildBackend.Services
            {
                _logger.LogError(ex, "Failed to extract and update job details from AI response.");
            }
+       }
+
+       private async Task<string> ExecuteSequentialRenovationPromptsAsync(string conversationId, string userId, string initialResponse)
+       {
+           var stringBuilder = new StringBuilder();
+           stringBuilder.Append(initialResponse);
+
+           var promptNames = new[] {
+               "renovation-01-demolition", "renovation-02-structural-alterations", "renovation-03-rough-in-mep",
+               "renovation-04-insulation-drywall", "renovation-05-interior-finishes", "renovation-06-fixtures-fittings-equipment",
+               "renovation-07-cost-breakdown-summary", "renovation-08-project-timeline", "renovation-09-environmental-impact",
+               "renovation-10-final-review-rebuttal"
+           };
+
+           string lastResponse;
+           int step = 1;
+           foreach (var promptName in promptNames)
+           {
+               _logger.LogInformation("Executing step {Step} of {TotalSteps}: {PromptName} for conversation {ConversationId}", step, promptNames.Length, promptName, conversationId);
+               var promptText = await _promptManager.GetPromptAsync("RenovationPrompts/", $"{promptName}.txt");
+               (lastResponse, _) = await _aiService.ContinueConversationAsync(conversationId, userId, promptText, null, true);
+
+               await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "model", Content = lastResponse });
+
+               stringBuilder.Append("\n\n---\n\n");
+               stringBuilder.Append(lastResponse);
+
+               step++;
+           }
+
+           _logger.LogInformation("Full sequential renovation analysis completed successfully for conversation {ConversationId}", conversationId);
+
+           return stringBuilder.ToString();
        }
     }
 }

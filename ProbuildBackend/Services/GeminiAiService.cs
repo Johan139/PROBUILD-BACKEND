@@ -130,12 +130,21 @@ public class GeminiAiService : IAiService
     {
         var history = new List<Content>();
 
-        // For prompt-based conversations, fetch and add the system prompt.
+        // For prompt-based conversations, fetch and add the correct system prompt.
         if (conv.PromptKeys != null && conv.PromptKeys.Any() && history.Count == 0)
         {
-            var systemPrompt = await _promptManager.GetPromptAsync("", "system-persona.txt");
-            history.Add(new Content { Role = Roles.User, Parts = new List<Part> { new Part { Text = systemPrompt } } });
-            history.Add(new Content { Role = Roles.Model, Parts = new List<Part> { new Part { Text = "Understood. I will act as a construction Project Manager, Quantity Surveyor and Financial Advisor. I am ready to begin." } } });
+            if (conv.PromptKeys.Any(p => p.PromptKey == "SYSTEM_RENOVATION_ANALYSIS"))
+            {
+                var renovationPrompt = await _promptManager.GetPromptAsync("", "renovation-persona.txt");
+                history.Add(new Content { Role = Roles.User, Parts = new List<Part> { new Part { Text = renovationPrompt } } });
+                history.Add(new Content { Role = Roles.Model, Parts = new List<Part> { new Part { Text = "Understood. I will act as a construction Project Manager, Quantity Surveyor and Financial Advisor with specialized expertise in renovation and restoration projects. I am ready to begin." } } });
+            }
+            else
+            {
+                var systemPrompt = await _promptManager.GetPromptAsync("", "system-persona.txt");
+                history.Add(new Content { Role = Roles.User, Parts = new List<Part> { new Part { Text = systemPrompt } } });
+                history.Add(new Content { Role = Roles.Model, Parts = new List<Part> { new Part { Text = "Understood. I will act as a construction Project Manager, Quantity Surveyor and Financial Advisor. I am ready to begin." } } });
+            }
         }
 
         // Add conversation summary if it exists.

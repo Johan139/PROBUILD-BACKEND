@@ -553,7 +553,7 @@
   },
   {
     "tradeName": "SYSTEM",
-    "promptFileName": "ProBuildAI_Renovation_Prompt.txt",
+    "promptFileName": "SYSTEM_RENOVATION_ANALYSIS",
     "displayName": "Renovation Analysis",
     "description": "Executes a comprehensive, multi-phase analysis of renovation projects, covering everything from demolition and structural alterations to final fit-out and cost summaries.",
     "allowedUserTypes": ["GENERAL_CONTRACTOR", "GENERAL_CONTRACTOR"],

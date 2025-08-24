@@ -70,15 +70,27 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("renovation/analyze")]
-        public async Task<IActionResult> AnalyzeRenovation([FromForm] RenovationAnalysisRequestDto request, IFormFileCollection files)
+        public async Task<IActionResult> AnalyzeRenovation([FromBody] AnalysisRequestDto request)
         {
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
             }
 
-            var response = await _aiAnalysisService.PerformRenovationAnalysisAsync(request, files.ToList());
-            return Ok(response);
+            var userId = User.FindFirstValue("UserId");
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized();
+            }
+
+            var jobDetails = new ProbuildBackend.Models.JobModel
+            {
+                Id = request.JobId,
+                UserId = userId
+            };
+
+            var response = await _aiAnalysisService.PerformRenovationAnalysisAsync(userId, request.DocumentUrls, jobDetails, request.GenerateDetailsWithAi, request.UserContext, request.UserContextFileUrl);
+            return Ok(new { report = response });
         }
 
         [HttpPost("comparison/analyze")]
