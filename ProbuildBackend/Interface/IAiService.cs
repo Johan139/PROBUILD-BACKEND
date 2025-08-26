@@ -6,7 +6,7 @@ namespace ProbuildBackend.Interface
     public interface IAiService
     {
         Task<(string response, string conversationId)> ContinueConversationAsync(
-            string? conversationId, string userId, string userPrompt, IEnumerable<string>? documentUris, bool isAnalysis = false);
+            string? conversationId, string userId, string userPrompt, IEnumerable<string>? documentUris, bool isAnalysis = false, string? systemPersonaPrompt = null);
         Task<string> AnalyzePageWithAssistantAsync(byte[] imageBytes, int pageIndex, string blobUrl, JobModel job);
         Task<string> RefineTextWithAiAsync(string extractedText, string blobUrl);
         Task<BillOfMaterials> GenerateBomFromText(string documentText);

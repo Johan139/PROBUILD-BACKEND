@@ -81,14 +81,38 @@ namespace ProbuildBackend.Services
                 var reportBuilder = new StringBuilder();
                 reportBuilder.Append(initialResponse);
 
+                // Remove the JSON requirement from the persona for subsequent calls
+                var personaWithoutJson = new Regex(@"CRITICAL OUTPUT REQUIREMENT:.*?\}", RegexOptions.Singleline).Replace(personaPrompt, "");
+
                 foreach (var promptKey in requestDto.PromptKeys)
                 {
                     var subPrompt = await _promptManager.GetPromptAsync(null, promptKey);
-                    var (analysisResult, _) = await _aiService.ContinueConversationAsync(conversationId, userId, subPrompt, null, true);
+                    var (analysisResult, _) = await _aiService.ContinueConversationAsync(conversationId, userId, subPrompt, requestDto.DocumentUrls, true, personaWithoutJson);
                     var message = new Message { ConversationId = conversationId, Role = "model", Content = analysisResult, Timestamp = DateTime.UtcNow };
                     await _conversationRepo.AddMessageAsync(message);
                     reportBuilder.Append("\n\n---\n\n");
                     reportBuilder.Append(analysisResult);
+                }
+
+                // Extract and execute Timeline and Cost prompts
+                var timelinePromptRegex = new Regex(@"2\. Timeline Prompt:.*?(?=3\. Cost Prompt:)", RegexOptions.Singleline);
+                var timelineMatch = timelinePromptRegex.Match(personaPrompt);
+                if (timelineMatch.Success)
+                {
+                    var timelinePrompt = timelineMatch.Value;
+                    var (timelineResult, _) = await _aiService.ContinueConversationAsync(conversationId, userId, timelinePrompt, requestDto.DocumentUrls, true, personaWithoutJson);
+                    reportBuilder.Append("\n\n---\n\n");
+                    reportBuilder.Append(timelineResult);
+                }
+
+                var costPromptRegex = new Regex(@"3\. Cost Prompt:.*", RegexOptions.Singleline);
+                var costMatch = costPromptRegex.Match(personaPrompt);
+                if (costMatch.Success)
+                {
+                    var costPrompt = costMatch.Value;
+                    var (costResult, _) = await _aiService.ContinueConversationAsync(conversationId, userId, costPrompt, requestDto.DocumentUrls, true, personaWithoutJson);
+                    reportBuilder.Append("\n\n---\n\n");
+                    reportBuilder.Append(costResult);
                 }
 
                 if (job != null && generateDetailsWithAi)
