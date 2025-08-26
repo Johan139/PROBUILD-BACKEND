@@ -34,7 +34,7 @@ public class GeminiAiService : IAiService
 
     #region Conversational Method
     public async Task<(string response, string conversationId)> ContinueConversationAsync(
-        string? conversationId, string userId, string userPrompt, IEnumerable<string>? documentUris, bool isAnalysis = false)
+        string? conversationId, string userId, string userPrompt, IEnumerable<string>? documentUris, bool isAnalysis = false, string? systemPersonaPrompt = null)
     {
         var conversation = await GetOrCreateConversation(conversationId, userId, userPrompt);
         conversationId = conversation.Id;
@@ -45,7 +45,7 @@ public class GeminiAiService : IAiService
         }
         var updatedConv = await _conversationRepo.GetConversationAsync(conversationId) ?? conversation;
 
-        var history = await BuildHistoryAsync(updatedConv);
+        var history = await BuildHistoryAsync(updatedConv, systemPersonaPrompt);
 
         var request = new GenerateContentRequest { Contents = history };
 
@@ -126,12 +126,17 @@ public class GeminiAiService : IAiService
         return await _conversationRepo.GetConversationAsync(newId) ?? throw new Exception("Failed to create or retrieve conversation.");
     }
 
-    private async Task<List<Content>> BuildHistoryAsync(Conversation conv)
+    private async Task<List<Content>> BuildHistoryAsync(Conversation conv, string? systemPersonaPrompt = null)
     {
         var history = new List<Content>();
 
-        // For prompt-based conversations, fetch and add the correct system prompt.
-        if (conv.PromptKeys != null && conv.PromptKeys.Any() && history.Count == 0)
+        // For prompt-based conversations, fetch and add the correct system prompt
+        if (!string.IsNullOrEmpty(systemPersonaPrompt))
+        {
+            history.Add(new Content { Role = Roles.User, Parts = new List<Part> { new Part { Text = systemPersonaPrompt } } });
+            history.Add(new Content { Role = Roles.Model, Parts = new List<Part> { new Part { Text = "Understood. I will act as a construction Project Manager, Quantity Surveyor and Financial Advisor. I am ready to begin." } } });
+        }
+        else if (conv.PromptKeys != null && conv.PromptKeys.Any() && history.Count == 0)
         {
             if (conv.PromptKeys.Any(p => p.PromptKey == "SYSTEM_RENOVATION_ANALYSIS"))
             {
@@ -342,20 +347,23 @@ JSON Output:";
         var userContent = new Content { Role = Roles.User };
         userContent.AddText(initialUserPrompt);
 
-        _logger.LogInformation("Processing {DocumentCount} document URIs.", documentUris.Count());
-        foreach (var fileUri in documentUris)
+        if (documentUris != null)
         {
-            try
+            _logger.LogInformation("Processing {DocumentCount} document URIs.", documentUris.Count());
+            foreach (var fileUri in documentUris)
             {
-                _logger.LogInformation("Downloading blob: {FileUri}", fileUri);
-                var (fileBytes, mimeType) = await _azureBlobService.DownloadBlobAsBytesAsync(fileUri);
-                var base64String = Convert.ToBase64String(fileBytes);
-                userContent.AddInlineData(base64String, mimeType);
-                _logger.LogInformation("Added file to request: {FileUri}, MimeType: {MimeType}, Size: {Size} bytes", fileUri, mimeType, fileBytes.Length);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to download or add file for analysis: {FileUri}", fileUri);
+                try
+                {
+                    _logger.LogInformation("Downloading blob: {FileUri}", fileUri);
+                    var (fileBytes, mimeType) = await _azureBlobService.DownloadBlobAsBytesAsync(fileUri);
+                    var base64String = Convert.ToBase64String(fileBytes);
+                    userContent.AddInlineData(base64String, mimeType);
+                    _logger.LogInformation("Added file to request: {FileUri}, MimeType: {MimeType}, Size: {Size} bytes", fileUri, mimeType, fileBytes.Length);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to download or add file for analysis: {FileUri}", fileUri);
+                }
             }
         }
 
