@@ -133,20 +133,17 @@ namespace ProbuildBackend.Services
             if (!promptKeys.Any())
             {
                 // Text-only: stream directly from your existing streaming source
+               var (initialResponse, _) = await _aiService.StartMultimodalConversationAsync(conversationId, blueprintUrls, systemPersonaPrompt, initialMessage);
+
+                var words = (initialResponse ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 var sb = new System.Text.StringBuilder();
-                await foreach (var chunk in _aiService.StreamTextResponseAsync(conversationId, initialMessage, new List<string>()))
+
+                foreach (var w in words)
                 {
-                    if (!string.IsNullOrWhiteSpace(chunk))
-                    {
-                        // Optional: break into words for �typewriter� feel (matches your SendMessageAsync UX)
-                        foreach (var word in chunk.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-                        {
-                            var textWithSpace = word + " ";
-                            await SendChunkAsync(conversationId, userId, textWithSpace);
-                            sb.Append(textWithSpace);
-                            await Task.Delay(30); // pacing (same as SendMessageAsync)
-                        }
-                    }
+                    var textWithSpace = w + " ";
+                    await SendChunkAsync(conversationId, userId, textWithSpace);
+                    sb.Append(textWithSpace);
+                    await Task.Delay(15); // a bit faster for precomputed text
                 }
 
                 await SendCompleteAsync(conversationId, userId);
@@ -269,21 +266,17 @@ namespace ProbuildBackend.Services
         
              else
              {
+                var (continueResponse, _) = await _aiService.ContinueConversationAsync(conversationId, userId, dto.Message, fileUrls);
+
+                var words = (continueResponse ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 var sb = new System.Text.StringBuilder();
 
-                await foreach (var chunk in _aiService.StreamTextResponseAsync(conversationId, dto.Message, fileUrls))
+                foreach (var w in words)
                 {
-                    if (!string.IsNullOrWhiteSpace(chunk))
-                    {
-                        var words = chunk.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                        foreach (var word in words)
-                        {
-                            var textWithSpace = word + " ";
-                            await SendChunkAsync(conversationId, userId, textWithSpace);
-                            sb.Append(textWithSpace);
-                            await Task.Delay(30); // optional for pacing
-                        }
-                    }
+                    var textWithSpace = w + " ";
+                    await SendChunkAsync(conversationId, userId, textWithSpace);
+                    sb.Append(textWithSpace);
+                    await Task.Delay(15); // a bit faster for precomputed text
                 }
 
                 await SendCompleteAsync(conversationId, userId);

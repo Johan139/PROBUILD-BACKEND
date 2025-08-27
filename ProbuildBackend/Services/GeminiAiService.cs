@@ -468,12 +468,33 @@ JSON Output:";
 
         var history = await BuildHistoryAsync(conversation);
 
+        // Insert Mason's persona (system message + initial model reply)
+        var systemContent = new Content
+        {
+            Role = Roles.User,
+            Parts = new List<Part>
+        {
+            new Part { Text = "You are Mason, an expert construction Project Manager, Quantity Surveyor, and Financial Advisor. Provide guidance in a professional and proactive tone." }
+        }
+        };
+        var modelResponseToSystem = new Content
+        {
+            Role = Roles.Model,
+            Parts = new List<Part>
+        {
+            new Part { Text = "Understood. I will act as a construction Project Manager, Quantity Surveyor and Financial Advisor. I am ready to begin." }
+        }
+        };
+
+        // Prepend to the conversation history
+        history.Insert(0, modelResponseToSystem);
+        history.Insert(0, systemContent);
+
         var request = new GenerateContentRequest { Contents = history };
 
         var userContent = new Content { Role = Roles.User };
         userContent.AddText(prompt);
 
-        // Attach files (inline data)
         foreach (var fileUri in files)
         {
             try
@@ -490,18 +511,17 @@ JSON Output:";
 
         request.Contents.Add(userContent);
 
-        _logger.LogInformation("[STREAM-FAKE] Calling Gemini GenerateContentAsync, then chunking result.");
+        _logger.LogInformation("[STREAM] Sending request to Gemini with Mason persona...");
 
-        // 1) Call once (non-streaming)
         var response = await _generativeModel.GenerateContentAsync(request);
         var fullText = response.Text() ?? string.Empty;
 
-        // 2) Emit in chunks to simulate streaming
         await foreach (var chunk in ChunkStringAsync(fullText, maxCharsPerChunk: 200))
         {
             yield return chunk;
         }
     }
+
 
     // Helper: async iterator producing chunks
     private async IAsyncEnumerable<string> ChunkStringAsync(string text, int maxCharsPerChunk)
