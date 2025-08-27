@@ -138,7 +138,7 @@ namespace ProbuildBackend.Services
                 {
                     if (!string.IsNullOrWhiteSpace(chunk))
                     {
-                        // Optional: break into words for “typewriter” feel (matches your SendMessageAsync UX)
+                        // Optional: break into words for �typewriter� feel (matches your SendMessageAsync UX)
                         foreach (var word in chunk.Split(' ', StringSplitOptions.RemoveEmptyEntries))
                         {
                             var textWithSpace = word + " ";
@@ -258,8 +258,13 @@ namespace ProbuildBackend.Services
                 };
                 aiResponse = await _aiAnalysisService.PerformSelectedAnalysisAsync(userId, analysisRequest, false, conversationId);
             }
-            else
-            {
+             else if (dto.PromptKeys.Contains("SYSTEM_RENOVATION_ANALYSIS"))
+             {
+                var jobDetails = new JobModel { UserId = userId };
+                aiResponse = await _aiAnalysisService.PerformRenovationAnalysisAsync(userId, fileUrls, jobDetails, false, dto.Message, "");
+             }
+             else
+             {
                 var sb = new System.Text.StringBuilder();
 
                 await foreach (var chunk in _aiService.StreamTextResponseAsync(conversationId, dto.Message, fileUrls))

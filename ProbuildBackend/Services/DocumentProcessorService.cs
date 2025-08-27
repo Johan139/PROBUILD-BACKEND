@@ -204,5 +204,42 @@ namespace ProbuildBackend.Services
 
            return contextBuilder.ToString();
         }
+
+       public async Task ProcessRenovationAnalysisForJobAsync(int jobId, List<string> documentUrls, string connectionId, bool generateDetailsWithAi, string userContextText, string userContextFileUrl)
+       {
+           var job = await _context.Jobs.FindAsync(jobId);
+           if (job == null)
+           {
+               // Log error
+               return;
+           }
+
+           try
+           {
+               string finalReport = await _aiAnalysisService.PerformRenovationAnalysisAsync(job.UserId, documentUrls, job, generateDetailsWithAi, userContextText, userContextFileUrl);
+
+               var result = new DocumentProcessingResult
+               {
+                   JobId = jobId,
+                   BomJson = JsonSerializer.Serialize(""),
+                   MaterialsEstimateJson = JsonSerializer.Serialize(""),
+                   FullResponse = finalReport,
+                   CreatedAt = DateTime.UtcNow
+               };
+
+               _context.DocumentProcessingResults.Add(result);
+               job.Status = "PROCESSED";
+               await _context.SaveChangesAsync();
+
+               await _hubContext.Clients.Client(connectionId).SendAsync("AnalysisComplete", jobId, "Renovation analysis is complete.");
+           }
+           catch (Exception ex)
+           {
+               // Log error
+               job.Status = "FAILED";
+               await _context.SaveChangesAsync();
+               await _hubContext.Clients.Client(connectionId).SendAsync("AnalysisFailed", jobId, "Renovation analysis failed.");
+           }
+       }
     }
 }
