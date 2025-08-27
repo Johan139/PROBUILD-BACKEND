@@ -248,21 +248,25 @@ namespace ProbuildBackend.Services
 
             if (dto.PromptKeys != null && dto.PromptKeys.Any())
             {
-                var analysisRequest = new AnalysisRequestDto
+                if (dto.PromptKeys.Contains("SYSTEM_RENOVATION_ANALYSIS"))
                 {
-                    AnalysisType = AnalysisType.Selected, // Or determine from context
-                    PromptKeys = dto.PromptKeys,
-                    DocumentUrls = fileUrls,
-                    UserContext = dto.Message,
-                    ConversationId = conversationId
-                };
-                aiResponse = await _aiAnalysisService.PerformSelectedAnalysisAsync(userId, analysisRequest, false, conversationId);
+                    var jobDetails = new JobModel { UserId = userId };
+                    aiResponse = await _aiAnalysisService.PerformRenovationAnalysisAsync(userId, fileUrls, jobDetails, false, dto.Message, "");
+                }
+                else
+                {
+                    var analysisRequest = new AnalysisRequestDto
+                    {
+                        AnalysisType = AnalysisType.Selected, // Or determine from context
+                        PromptKeys = dto.PromptKeys,
+                        DocumentUrls = fileUrls,
+                        UserContext = dto.Message,
+                        ConversationId = conversationId
+                    };
+                    aiResponse = await _aiAnalysisService.PerformSelectedAnalysisAsync(userId, analysisRequest, false, conversationId);
+                }
             }
-             else if (dto.PromptKeys.Contains("SYSTEM_RENOVATION_ANALYSIS"))
-             {
-                var jobDetails = new JobModel { UserId = userId };
-                aiResponse = await _aiAnalysisService.PerformRenovationAnalysisAsync(userId, fileUrls, jobDetails, false, dto.Message, "");
-             }
+        
              else
              {
                 var sb = new System.Text.StringBuilder();
