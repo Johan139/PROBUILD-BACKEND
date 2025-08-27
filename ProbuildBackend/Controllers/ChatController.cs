@@ -83,7 +83,7 @@ namespace ProbuildBackend.Controllers
             }
             _logger.LogInformation($"CreateConversation - Found UserId: {userId}");
 
-            var conversation = await _chatService.CreateConversationAsync(userId, "New Conversation");
+            var conversation = await _chatService.CreateConversationAsync(userId, "Document Analysis " + DateTime.Now.ToString("yyyy-MM-dd"));
             _logger.LogInformation($"CreateConversation - Returning new conversation with ID: {conversation.Id}");
             return Ok(conversation);
         }

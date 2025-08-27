@@ -1,4 +1,4 @@
-using ProbuildBackend.Interface;
+﻿using ProbuildBackend.Interface;
 using Microsoft.AspNetCore.Identity;
 using System.Text.Json;
 using ProbuildBackend.Models;
@@ -20,7 +20,6 @@ namespace ProbuildBackend.Services
         private readonly AzureBlobService _azureBlobService;
         private readonly IHubContext<ChatHub> _hubContext;
         private readonly IAiAnalysisService _aiAnalysisService;
-
 
         public ChatService(
             IConversationRepository conversationRepository,
@@ -50,6 +49,22 @@ namespace ProbuildBackend.Services
             return JsonSerializer.Deserialize<List<PromptMapping>>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         }
 
+        // --- NEW HELPERS: dual-cast chunks to user AND group (no client changes required) ---
+        private Task SendChunkAsync(string conversationId, string userId, string textWithSpace)
+        {
+            return Task.WhenAll(
+                _hubContext.Clients.User(userId).SendAsync("ReceiveStreamChunk", conversationId, textWithSpace),
+                _hubContext.Clients.Group(conversationId).SendAsync("ReceiveStreamChunk", conversationId, textWithSpace)
+            );
+        }
+
+        private Task SendCompleteAsync(string conversationId, string userId)
+        {
+            return Task.WhenAll(
+                _hubContext.Clients.User(userId).SendAsync("StreamComplete", conversationId),
+                _hubContext.Clients.Group(conversationId).SendAsync("StreamComplete", conversationId)
+            );
+        }
 
         public async Task<List<object>> GetAvailablePromptsAsync(string userId)
         {
@@ -84,51 +99,98 @@ namespace ProbuildBackend.Services
             return prompts;
         }
 
-        public async Task<Conversation> StartConversationAsync(string userId, string userType, string initialMessage, List<string>? promptKeys = null, List<string>? blueprintUrls = null)
+        public async Task<Conversation> StartConversationAsync(
+            string userId,
+            string userType,
+            string initialMessage,
+            List<string>? promptKeys = null,
+            List<string>? blueprintUrls = null)
         {
             promptKeys ??= new List<string>();
             blueprintUrls ??= new List<string>();
 
             var title = promptKeys.Any()
                 ? string.Join(", ", promptKeys)
-                : (initialMessage.Length > 50 ? initialMessage.Substring(0, 50) : initialMessage);
+                : (initialMessage.Length > 50 ? initialMessage[..50] : initialMessage);
 
             var conversationId = await _conversationRepository.CreateConversationAsync(userId, title, promptKeys);
 
-            var systemPersonaPrompt = await _promptManager.GetPromptAsync(userType, promptKeys.FirstOrDefault() ?? "generic-prompt.txt");
-
-            string initialResponse;
-
-            if (!promptKeys.Any())
-            {
-                (initialResponse, _) = await _aiService.StartTextConversationAsync(userId, systemPersonaPrompt, initialMessage, conversationId);
-            }
-            else
-            {
-                (initialResponse, _) = await _aiService.StartMultimodalConversationAsync(conversationId, blueprintUrls, systemPersonaPrompt, initialMessage);
-            }
-
-            var userMessage = new Message
+            // Save the user's initial message (recommended so history looks right)
+            await _conversationRepository.AddMessageAsync(new Message
             {
                 ConversationId = conversationId,
                 Role = "user",
                 Content = initialMessage,
                 Timestamp = DateTime.UtcNow
-            };
-            // await _conversationRepository.AddMessageAsync(userMessage);
+            });
 
+            var systemPersonaPrompt = await _promptManager.GetPromptAsync(
+                userType, promptKeys.FirstOrDefault() ?? "generic-prompt.txt");
+
+            string aiResponse;
+
+            // --- STREAMING PATHS ---
+            if (!promptKeys.Any())
+            {
+                // Text-only: stream directly from your existing streaming source
+                var sb = new System.Text.StringBuilder();
+                await foreach (var chunk in _aiService.StreamTextResponseAsync(conversationId, initialMessage, new List<string>()))
+                {
+                    if (!string.IsNullOrWhiteSpace(chunk))
+                    {
+                        // Optional: break into words for “typewriter” feel (matches your SendMessageAsync UX)
+                        foreach (var word in chunk.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                        {
+                            var textWithSpace = word + " ";
+                            await SendChunkAsync(conversationId, userId, textWithSpace);
+                            sb.Append(textWithSpace);
+                            await Task.Delay(30); // pacing (same as SendMessageAsync)
+                        }
+                    }
+                }
+
+                await SendCompleteAsync(conversationId, userId);
+                aiResponse = sb.ToString();
+            }
+            else
+            {
+                // Multimodal or selected analysis case:
+                // If you have a true streaming API for analysis, call it here.
+                // If not, simulate streaming so the UI behaves identically.
+                var (fullResponse, _) = await _aiService.StartMultimodalConversationAsync(
+                    conversationId, blueprintUrls, systemPersonaPrompt, initialMessage);
+
+                var words = (fullResponse ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                var sb = new System.Text.StringBuilder();
+
+                foreach (var w in words)
+                {
+                    var textWithSpace = w + " ";
+                    await SendChunkAsync(conversationId, userId, textWithSpace);
+                    sb.Append(textWithSpace);
+                    await Task.Delay(15); // a bit faster for precomputed text
+                }
+
+                await SendCompleteAsync(conversationId, userId);
+                aiResponse = sb.ToString();
+            }
+
+            // Persist the AI message (so history contains the full response)
             var aiMessage = new Message
             {
                 ConversationId = conversationId,
                 Role = "model",
-                Content = initialResponse,
+                Content = aiResponse,
                 Timestamp = DateTime.UtcNow
             };
-            // await _conversationRepository.AddMessageAsync(aiMessage);
+            await _conversationRepository.AddMessageAsync(aiMessage);
 
-            await _hubContext.Clients.Group(conversationId).SendAsync("ReceiveMessage", aiMessage);
+            // IMPORTANT: do NOT send a single ReceiveMessage here (it would duplicate a final message)
+            // await _hubContext.Clients.Group(conversationId).SendAsync("ReceiveMessage", aiMessage);
 
-            var conversation = await _conversationRepository.GetConversationAsync(conversationId) ?? throw new Exception("Failed to retrieve conversation after creation.");
+            // Return the conversation (frontend can still use it for metadata; content is already streamed)
+            var conversation = await _conversationRepository.GetConversationAsync(conversationId)
+                                ?? throw new Exception("Failed to retrieve conversation after creation.");
 
             return conversation;
         }
@@ -198,10 +260,26 @@ namespace ProbuildBackend.Services
             }
             else
             {
-                var (continueResponse, _) = await _aiService.ContinueConversationAsync(conversationId, userId, dto.Message, fileUrls);
-                aiResponse = continueResponse;
-            }
+                var sb = new System.Text.StringBuilder();
 
+                await foreach (var chunk in _aiService.StreamTextResponseAsync(conversationId, dto.Message, fileUrls))
+                {
+                    if (!string.IsNullOrWhiteSpace(chunk))
+                    {
+                        var words = chunk.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                        foreach (var word in words)
+                        {
+                            var textWithSpace = word + " ";
+                            await SendChunkAsync(conversationId, userId, textWithSpace);
+                            sb.Append(textWithSpace);
+                            await Task.Delay(30); // optional for pacing
+                        }
+                    }
+                }
+
+                await SendCompleteAsync(conversationId, userId);
+                aiResponse = sb.ToString();
+            }
 
             var aiMessage = new Message
             {
@@ -222,7 +300,8 @@ namespace ProbuildBackend.Services
                 Timestamp = aiMessage.Timestamp
             };
 
-            await _hubContext.Clients.Group(conversationId).SendAsync("ReceiveMessage", frontendMessage);
+            // Keep this disabled to avoid double-rendering against the stream
+            // await _hubContext.Clients.Group(conversationId).SendAsync("ReceiveMessage", frontendMessage);
 
             return aiMessage;
         }
@@ -239,7 +318,7 @@ namespace ProbuildBackend.Services
 
         public async Task<IEnumerable<Conversation>> GetUserConversationsAsync(string userId)
         {
-          return await _conversationRepository.GetByUserIdAsync(userId);
+            return await _conversationRepository.GetByUserIdAsync(userId);
         }
 
         public async Task UpdateConversationTitleAsync(string conversationId, string newTitle)
