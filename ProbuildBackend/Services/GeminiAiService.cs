@@ -459,6 +459,67 @@ JSON Output:";
             throw;
         }
     }
+    public async IAsyncEnumerable<string> StreamTextResponseAsync(string conversationId, string prompt, List<string> files)
+    {
+        var conversation = await _conversationRepo.GetConversationAsync(conversationId)
+            ?? throw new Exception("Conversation not found");
+
+        await CompactHistoryIfRequiredAsync(conversation);
+
+        var history = await BuildHistoryAsync(conversation);
+
+        var request = new GenerateContentRequest { Contents = history };
+
+        var userContent = new Content { Role = Roles.User };
+        userContent.AddText(prompt);
+
+        // Attach files (inline data)
+        foreach (var fileUri in files)
+        {
+            try
+            {
+                var (fileBytes, mimeType) = await _azureBlobService.DownloadBlobAsBytesAsync(fileUri);
+                var base64String = Convert.ToBase64String(fileBytes);
+                userContent.AddInlineData(base64String, mimeType);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to attach file for streaming: {FileUri}", fileUri);
+            }
+        }
+
+        request.Contents.Add(userContent);
+
+        _logger.LogInformation("[STREAM-FAKE] Calling Gemini GenerateContentAsync, then chunking result.");
+
+        // 1) Call once (non-streaming)
+        var response = await _generativeModel.GenerateContentAsync(request);
+        var fullText = response.Text() ?? string.Empty;
+
+        // 2) Emit in chunks to simulate streaming
+        await foreach (var chunk in ChunkStringAsync(fullText, maxCharsPerChunk: 200))
+        {
+            yield return chunk;
+        }
+    }
+
+    // Helper: async iterator producing chunks
+    private async IAsyncEnumerable<string> ChunkStringAsync(string text, int maxCharsPerChunk)
+    {
+        if (string.IsNullOrEmpty(text))
+            yield break;
+
+        for (int i = 0; i < text.Length; i += maxCharsPerChunk)
+        {
+            var length = Math.Min(maxCharsPerChunk, text.Length - i);
+            yield return text.Substring(i, length);
+
+            // Small delay keeps UI feeling “live”; tweak or remove as desired
+            await Task.Delay(20);
+        }
+    }
+
+
 
     private static bool LogAndReturnFalse(Exception ex)
     {
