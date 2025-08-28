@@ -336,7 +336,7 @@ namespace ProbuildBackend.Controllers
                 if (user == null) return NotFound("User not found.");
 
                 var existingTrial = await _context.PaymentRecords
-                    .AnyAsync(p => p.UserId == dto.UserId && p.IsTrial);
+                    .AnyAsync(p => p.UserId == dto.UserId && p.IsTrial && p.Status == "Active");
 
                 if (existingTrial)
                     return BadRequest("Trial already used.");
@@ -350,7 +350,8 @@ namespace ProbuildBackend.Controllers
                     PaidAt = DateTime.UtcNow,
                     ValidUntil = DateTime.UtcNow.AddDays(7),
                     Amount = 0,
-                    IsTrial = true
+                    IsTrial = true,
+                    SubscriptionID = GenerateTrialSubscriptionId()
                 };
 
                 _context.PaymentRecords.Add(trial);
@@ -362,6 +363,23 @@ namespace ProbuildBackend.Controllers
 
                 throw;
             }
+        }
+        public static string GenerateTrialSubscriptionId()
+        {
+            // Generate 24 random bytes → longer output
+            var bytes = new byte[24];
+            using (var rng = RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(bytes);
+            }
+
+            // Encode and clean
+            var base64 = Convert.ToBase64String(bytes)
+                .Replace("+", "")
+                .Replace("/", "")
+                .Replace("=", "");
+
+            return $"trial_{base64}";
         }
         private string GenerateJwtToken(UserModel user)
         {

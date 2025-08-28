@@ -7,5 +7,7 @@
         public decimal Amount { get; set; }
         public string Source { get; set; }  // <-- add this
         public string AssignedUser { get; set; }
+
+        public string BillingCycle { get; set; }
     }
 }
