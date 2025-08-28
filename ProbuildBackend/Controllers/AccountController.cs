@@ -322,7 +322,7 @@ namespace ProbuildBackend.Controllers
 
             return Ok(new
             {
-                token = newAccessTokenString,
+                accessToken = newAccessTokenString,
                 refreshToken = newRefreshToken
             });
         }
