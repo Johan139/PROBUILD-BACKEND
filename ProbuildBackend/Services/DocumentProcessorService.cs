@@ -6,6 +6,7 @@ using ProbuildBackend.Middleware;
 using ProbuildBackend.Interface;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using ProbuildBackend.Models.DTO;
+using Elastic.Apm.Api;
 
 
 namespace ProbuildBackend.Services
@@ -159,7 +160,29 @@ namespace ProbuildBackend.Services
         job.Status = "PROCESSED";
         await _context.SaveChangesAsync();
 
-        await _hubContext.Clients.Client(connectionId).SendAsync("AnalysisComplete", jobId, "Selected analysis is complete.");
+                var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == job.UserId);
+                if (user == null)
+                {
+                    Console.WriteLine($"User with ID {job.UserId} not found. Cannot send email.");
+                }
+                if (user != null)
+                {
+                    var subject = $"AI Processing Complete for Job {job.ProjectName}";
+                    var body = $@"<h2>AI Processing Complete</h2>
+                                  <p>The AI has finished processing the documents for your job '{job.ProjectName}'.</p>
+                                  <p><strong>Job ID:</strong> {jobId}</p>
+                                  <p>Check the application for the full analysis report.</p>";
+                    try
+                    {
+                        await _emailService.SendEmailAsync(user.Email, subject, body);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Failed to send email for job {jobId}: {ex.Message}");
+                    }
+                }
+
+                await _hubContext.Clients.Client(connectionId).SendAsync("AnalysisComplete", jobId, "Selected analysis is complete.");
       }
       catch (Exception ex)
       {
@@ -231,7 +254,29 @@ namespace ProbuildBackend.Services
                job.Status = "PROCESSED";
                await _context.SaveChangesAsync();
 
-               await _hubContext.Clients.Client(connectionId).SendAsync("AnalysisComplete", jobId, "Renovation analysis is complete.");
+                var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == job.UserId);
+                if (user == null)
+                {
+                    Console.WriteLine($"User with ID {job.UserId} not found. Cannot send email.");
+                }
+                if (user != null)
+                {
+                    var subject = $"AI Processing Complete for Job {job.ProjectName}";
+                    var body = $@"<h2>AI Processing Complete</h2>
+                                  <p>The AI has finished processing the documents for your job '{job.ProjectName}'.</p>
+                                  <p><strong>Job ID:</strong> {jobId}</p>
+                                  <p>Check the application for the full analysis report.</p>";
+                    try
+                    {
+                        await _emailService.SendEmailAsync(user.Email, subject, body);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Failed to send email for job {jobId}: {ex.Message}");
+                    }
+                }
+
+                await _hubContext.Clients.Client(connectionId).SendAsync("AnalysisComplete", jobId, "Renovation analysis is complete.");
            }
            catch (Exception ex)
            {
