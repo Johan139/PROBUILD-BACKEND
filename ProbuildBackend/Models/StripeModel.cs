@@ -10,5 +10,9 @@ namespace ProbuildBackend.Models
         public decimal Amount { get; set; }
 
         public string? StripeProductId { get; set; }
+
+        public string? StripeProductIdAnually { get; set; }
+
+        public decimal? AnnualAmount { get; set; }
     }
 }

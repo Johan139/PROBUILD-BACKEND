@@ -34,7 +34,7 @@ public class GeminiAiService : IAiService
 
     #region Conversational Method
     public async Task<(string response, string conversationId)> ContinueConversationAsync(
-        string? conversationId, string userId, string userPrompt, IEnumerable<string>? documentUris, bool isAnalysis = false)
+        string? conversationId, string userId, string userPrompt, IEnumerable<string>? documentUris, bool isAnalysis = false, string? systemPersonaPrompt = null)
     {
         var conversation = await GetOrCreateConversation(conversationId, userId, userPrompt);
         conversationId = conversation.Id;
@@ -45,7 +45,7 @@ public class GeminiAiService : IAiService
         }
         var updatedConv = await _conversationRepo.GetConversationAsync(conversationId) ?? conversation;
 
-        var history = await BuildHistoryAsync(updatedConv);
+        var history = await BuildHistoryAsync(updatedConv, systemPersonaPrompt);
 
         var request = new GenerateContentRequest { Contents = history };
 
@@ -126,16 +126,30 @@ public class GeminiAiService : IAiService
         return await _conversationRepo.GetConversationAsync(newId) ?? throw new Exception("Failed to create or retrieve conversation.");
     }
 
-    private async Task<List<Content>> BuildHistoryAsync(Conversation conv)
+    private async Task<List<Content>> BuildHistoryAsync(Conversation conv, string? systemPersonaPrompt = null)
     {
         var history = new List<Content>();
 
-        // For prompt-based conversations, fetch and add the system prompt.
-        if (conv.PromptKeys != null && conv.PromptKeys.Any() && history.Count == 0)
+        // For prompt-based conversations, fetch and add the correct system prompt
+        if (!string.IsNullOrEmpty(systemPersonaPrompt))
         {
-            var systemPrompt = await _promptManager.GetPromptAsync("", "system-persona.txt");
-            history.Add(new Content { Role = Roles.User, Parts = new List<Part> { new Part { Text = systemPrompt } } });
+            history.Add(new Content { Role = Roles.User, Parts = new List<Part> { new Part { Text = systemPersonaPrompt } } });
             history.Add(new Content { Role = Roles.Model, Parts = new List<Part> { new Part { Text = "Understood. I will act as a construction Project Manager, Quantity Surveyor and Financial Advisor. I am ready to begin." } } });
+        }
+        else if (conv.PromptKeys != null && conv.PromptKeys.Any() && history.Count == 0)
+        {
+            if (conv.PromptKeys.Any(p => p.PromptKey == "SYSTEM_RENOVATION_ANALYSIS"))
+            {
+                var renovationPrompt = await _promptManager.GetPromptAsync("", "renovation-persona.txt");
+                history.Add(new Content { Role = Roles.User, Parts = new List<Part> { new Part { Text = renovationPrompt } } });
+                history.Add(new Content { Role = Roles.Model, Parts = new List<Part> { new Part { Text = "Understood. I will act as a construction Project Manager, Quantity Surveyor and Financial Advisor with specialized expertise in renovation and restoration projects. I am ready to begin." } } });
+            }
+            else
+            {
+                var systemPrompt = await _promptManager.GetPromptAsync("", "system-persona.txt");
+                history.Add(new Content { Role = Roles.User, Parts = new List<Part> { new Part { Text = systemPrompt } } });
+                history.Add(new Content { Role = Roles.Model, Parts = new List<Part> { new Part { Text = "Understood. I will act as a construction Project Manager, Quantity Surveyor and Financial Advisor. I am ready to begin." } } });
+            }
         }
 
         // Add conversation summary if it exists.
@@ -333,20 +347,23 @@ JSON Output:";
         var userContent = new Content { Role = Roles.User };
         userContent.AddText(initialUserPrompt);
 
-        _logger.LogInformation("Processing {DocumentCount} document URIs.", documentUris.Count());
-        foreach (var fileUri in documentUris)
+        if (documentUris != null)
         {
-            try
+            _logger.LogInformation("Processing {DocumentCount} document URIs.", documentUris.Count());
+            foreach (var fileUri in documentUris)
             {
-                _logger.LogInformation("Downloading blob: {FileUri}", fileUri);
-                var (fileBytes, mimeType) = await _azureBlobService.DownloadBlobAsBytesAsync(fileUri);
-                var base64String = Convert.ToBase64String(fileBytes);
-                userContent.AddInlineData(base64String, mimeType);
-                _logger.LogInformation("Added file to request: {FileUri}, MimeType: {MimeType}, Size: {Size} bytes", fileUri, mimeType, fileBytes.Length);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to download or add file for analysis: {FileUri}", fileUri);
+                try
+                {
+                    _logger.LogInformation("Downloading blob: {FileUri}", fileUri);
+                    var (fileBytes, mimeType) = await _azureBlobService.DownloadBlobAsBytesAsync(fileUri);
+                    var base64String = Convert.ToBase64String(fileBytes);
+                    userContent.AddInlineData(base64String, mimeType);
+                    _logger.LogInformation("Added file to request: {FileUri}, MimeType: {MimeType}, Size: {Size} bytes", fileUri, mimeType, fileBytes.Length);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to download or add file for analysis: {FileUri}", fileUri);
+                }
             }
         }
 
@@ -442,6 +459,87 @@ JSON Output:";
             throw;
         }
     }
+    public async IAsyncEnumerable<string> StreamTextResponseAsync(string conversationId, string prompt, List<string> files)
+    {
+        var conversation = await _conversationRepo.GetConversationAsync(conversationId)
+            ?? throw new Exception("Conversation not found");
+
+        await CompactHistoryIfRequiredAsync(conversation);
+
+        var history = await BuildHistoryAsync(conversation);
+
+        // Insert Mason's persona (system message + initial model reply)
+        var systemContent = new Content
+        {
+            Role = Roles.User,
+            Parts = new List<Part>
+        {
+            new Part { Text = "You are Mason, an expert construction Project Manager, Quantity Surveyor, and Financial Advisor. Provide guidance in a professional and proactive tone." }
+        }
+        };
+        var modelResponseToSystem = new Content
+        {
+            Role = Roles.Model,
+            Parts = new List<Part>
+        {
+            new Part { Text = "Understood. I will act as a construction Project Manager, Quantity Surveyor and Financial Advisor. I am ready to begin." }
+        }
+        };
+
+        // Prepend to the conversation history
+        history.Insert(0, modelResponseToSystem);
+        history.Insert(0, systemContent);
+
+        var request = new GenerateContentRequest { Contents = history };
+
+        var userContent = new Content { Role = Roles.User };
+        userContent.AddText(prompt);
+
+        foreach (var fileUri in files)
+        {
+            try
+            {
+                var (fileBytes, mimeType) = await _azureBlobService.DownloadBlobAsBytesAsync(fileUri);
+                var base64String = Convert.ToBase64String(fileBytes);
+                userContent.AddInlineData(base64String, mimeType);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to attach file for streaming: {FileUri}", fileUri);
+            }
+        }
+
+        request.Contents.Add(userContent);
+
+        _logger.LogInformation("[STREAM] Sending request to Gemini with Mason persona...");
+
+        var response = await _generativeModel.GenerateContentAsync(request);
+        var fullText = response.Text() ?? string.Empty;
+
+        await foreach (var chunk in ChunkStringAsync(fullText, maxCharsPerChunk: 200))
+        {
+            yield return chunk;
+        }
+    }
+
+
+    // Helper: async iterator producing chunks
+    private async IAsyncEnumerable<string> ChunkStringAsync(string text, int maxCharsPerChunk)
+    {
+        if (string.IsNullOrEmpty(text))
+            yield break;
+
+        for (int i = 0; i < text.Length; i += maxCharsPerChunk)
+        {
+            var length = Math.Min(maxCharsPerChunk, text.Length - i);
+            yield return text.Substring(i, length);
+
+            // Small delay keeps UI feeling “live”; tweak or remove as desired
+            await Task.Delay(20);
+        }
+    }
+
+
 
     private static bool LogAndReturnFalse(Exception ex)
     {
