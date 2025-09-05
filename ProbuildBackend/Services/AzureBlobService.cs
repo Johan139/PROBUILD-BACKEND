@@ -61,6 +61,10 @@ namespace ProbuildBackend.Services
 
         public async Task<List<string>> UploadFiles(List<IFormFile> files, IHubContext<ProgressHub>? hubContext = null, string? connectionId = null)
         {
+            try
+            {
+
+      
             _logger.LogInformation("Starting file upload process for {FileCount} files.", files.Count);
             var uploadedUrls = new List<string>();
             bool useSignalR = hubContext != null && !string.IsNullOrEmpty(connectionId);
@@ -77,13 +81,17 @@ namespace ProbuildBackend.Services
                 BlobClient blobClient = _containerClient.GetBlobClient(fileName);
 
                 var blobHttpHeaders = new BlobHttpHeaders { ContentType = "application/gzip" };
-                var metadata = new Dictionary<string, string>
-                {
-                    { "originalFileName", file.FileName },
-                    { "compression", "gzip" }
-                };
+                    string asciiFileName = new string(file.FileName
+                    .Where(c => c <= 127) // Keep only ASCII characters
+                    .ToArray());
 
-                using var inputStream = file.OpenReadStream();
+                    var metadata = new Dictionary<string, string>
+{
+                    { "originalFileName", asciiFileName },
+                    { "compression", "gzip" }
+};
+
+                    using var inputStream = file.OpenReadStream();
                 using var compressedStream = new MemoryStream();
                 using (var gzipStream = new GZipStream(compressedStream, CompressionLevel.Optimal, leaveOpen: true))
                 {
@@ -129,6 +137,12 @@ namespace ProbuildBackend.Services
 
             _logger.LogInformation("File upload process complete. Returning {FileCount} URLs.", uploadedUrls.Count);
             return uploadedUrls;
+            }
+            catch (Exception ex)
+            {
+
+                throw;
+            }
         }
 
         public async Task<List<BlobItem>> GetUploadedBlobs()
