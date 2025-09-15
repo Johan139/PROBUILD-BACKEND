@@ -21,7 +21,7 @@
         public string? Trade { get; set; }
         public string? SupplierType { get; set; }
         public string? ProductsOffered { get; set; }
-        public string? ProjectPreferences { get; set; }
+        public string? JobPreferences { get; set; }
         public string? DeliveryArea { get; set; }
         public string? DeliveryTime { get; set; }
         public string? Country { get; set; }

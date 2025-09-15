@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New Job Notification</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+        }
+        .container {
+            width: 80%;
+            margin: 0 auto;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .header {
+            background-color: #f4f4f4;
+            padding: 10px;
+            text-align: center;
+        }
+        .content {
+            padding: 20px 0;
+        }
+        .footer {
+            margin-top: 20px;
+            font-size: 0.8em;
+            text-align: center;
+            color: #777;
+        }
+        .button {
+            display: inline-block;
+            background-color: #007bff;
+            color: #fff;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>New Job Opportunity on Probuild</h2>
+        </div>
+        <div class="content">
+            <p>Hello {{UserName}},</p>
+            <p>A new job has been posted in your area that matches your skills and preferences:</p>
+            <h3>{{JobTitle}}</h3>
+            <p><strong>Location:</strong> {{JobLocation}}</p>
+            <p><strong>Description:</strong></p>
+            <p>{{JobDescription}}</p>
+            <p>If you are interested, you can view the full details and submit a quote by clicking the button below:</p>
+            <a href="{{JobDetailsLink}}" class="button">View Job and Submit Quote</a>
+            <p>Please note that quote submission limits may apply based on your subscription tier.</p>
+        </div>
+        <div class="footer">
+            <p>You are receiving this email because you are a registered user on Probuild and have opted in to receive job notifications.</p>
+            <p><a href="{{UnsubscribeLink}}">Unsubscribe</a> from these notifications.</p>
+            <p>&copy; 2023 Probuild. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

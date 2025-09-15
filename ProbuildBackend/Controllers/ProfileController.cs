@@ -1,5 +1,4 @@
-﻿using Elastic.Apm.Api;
-using Microsoft.AspNetCore.Identity;
+﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -8,7 +7,6 @@ using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Services;
 using System.IO.Compression;
-using static iText.StyledXmlParser.Jsoup.Select.Evaluator;
 
 namespace ProbuildBackend.Controllers
 {
@@ -112,11 +110,15 @@ namespace ProbuildBackend.Controllers
             if (string.IsNullOrWhiteSpace(id))
                 return BadRequest("Id parameter cannot be null or empty.");
 
-            var users = await _context.Users.Where(a => a.Id == id).ToListAsync();
-            if (users == null || !users.Any())
-                return NotFound("No users found with the specified id.");
+            var user = await _context.Users
+                .Include(u => u.Portfolio)
+                .ThenInclude(p => p.Jobs)
+                .FirstOrDefaultAsync(a => a.Id == id);
 
-            return Ok(users);
+            if (user == null)
+                return NotFound("No user found with the specified id.");
+
+            return Ok(user);
         }
 
         [HttpPost("Update")]
@@ -150,7 +152,7 @@ namespace ProbuildBackend.Controllers
                 user.Trade = model.Trade;
                 user.ProductsOffered = model.ProductsOffered;
                 user.SupplierType = model.SupplierType;
-                user.ProjectPreferences = model.ProjectPreferences;
+                user.JobPreferences = model.JobPreferences;
                 user.DeliveryArea = model.DeliveryArea;
                 user.DeliveryTime = model.DeliveryTime;
                 user.Country = model.Country;

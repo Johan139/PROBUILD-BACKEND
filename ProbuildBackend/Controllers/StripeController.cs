@@ -1,10 +1,9 @@
-﻿using Elastic.Apm.Api;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
+using ProbuildBackend.Services;
 using Stripe;
 using Stripe.Checkout;
 
@@ -16,11 +15,13 @@ namespace ProbuildBackend.Controllers
     {
         private readonly IConfiguration _configuration;
         private readonly ApplicationDbContext _context;
+        private readonly PaymentService _paymentService;
 
-        public StripeController(IConfiguration configuration, ApplicationDbContext context)
+        public StripeController(IConfiguration configuration, ApplicationDbContext context, PaymentService paymentService)
         {
             _context = context;
             _configuration = configuration;
+            _paymentService = paymentService;
         }
         [HttpPost("create-checkout-session")]
         public ActionResult CreateCheckoutSession([FromBody] SubscriptionPaymentRequestDTO request)
@@ -174,7 +175,7 @@ namespace ProbuildBackend.Controllers
 
                     case "invoice.paid":
                         // Deserialize event data
-                        var invoices = stripeEvent.Data.Object as Invoice;
+                        var invoices = stripeEvent.Data.Object as Stripe.Invoice;
 
                         // Subscription id (newer API puts it under parent.subscription_details)
                         var subscriptionId = invoices.Parent.SubscriptionDetails.SubscriptionId;
@@ -275,7 +276,7 @@ select u.Id
                 return BadRequest("No active price found for the package.");
 
             // Use a local SubscriptionService
-            var subs = new SubscriptionService();
+            var subs = new Stripe.SubscriptionService();
 
             // Load subscription and the item to switch
             var sub = await subs.GetAsync(payload.subscriptionId);
@@ -462,7 +463,7 @@ select u.Id
                     .FirstOrDefaultAsync();
 
                 // Step 2: Cancel subscription on Stripe
-                var stripeService = new SubscriptionService();
+                var stripeService = new Stripe.SubscriptionService();
                 //var cancelOptions = new SubscriptionCancelOptions
                 //{
                 //    InvoiceNow = false,
@@ -519,7 +520,7 @@ select u.Id
                 return BadRequest("Unknown package/price mapping.");
 
             // 2) Load the subscription to infer customer + existing item
-            var subSvc = new SubscriptionService();
+            var subSvc = new Stripe.SubscriptionService();
             var subscription = await subSvc.GetAsync(
                 req.SubscriptionId,
                 new SubscriptionGetOptions
@@ -592,11 +593,40 @@ select u.Id
         }
 
 
+        [HttpPost("process-finders-fee")]
+        public async Task<IActionResult> ProcessFindersFee([FromBody] FindersFeeRequestDTO request)
+        {
+            if (request == null || string.IsNullOrEmpty(request.UserId) || request.WinningBidAmount <= 0)
+            {
+                return BadRequest("Invalid request data.");
+            }
+
+            try
+            {
+                var charge = await _paymentService.ProcessFindersFee(request.UserId, request.WinningBidAmount, request.JobId);
+                if (charge == null)
+                {
+                    return Ok("No finders fee required for this user type.");
+                }
+                return Ok(charge);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error processing finders fee: {ex.Message}");
+            }
+        }
     }
 
     public class PaymentIntentRequest
     {
         public long Amount { get; set; }
         public string Currency { get; set; }
+    }
+
+    public class FindersFeeRequestDTO
+    {
+        public string UserId { get; set; }
+        public decimal WinningBidAmount { get; set; }
+        public string JobId { get; set; }
     }
 }

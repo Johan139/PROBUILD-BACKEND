@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bid Status Update</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+        }
+        .container {
+            width: 80%;
+            margin: 0 auto;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .header {
+            background-color: #f4f4f4;
+            padding: 10px;
+            text-align: center;
+        }
+        .content {
+            padding: 20px 0;
+        }
+        .footer {
+            margin-top: 20px;
+            font-size: 0.8em;
+            text-align: center;
+            color: #777;
+        }
+        .button {
+            display: inline-block;
+            background-color: #007bff;
+            color: #fff;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+        }
+        .status-won {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .status-finalist {
+            color: #ffc107;
+            font-weight: bold;
+        }
+        .status-not-selected {
+            color: #dc3545;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>Update on Your Bid for {{JobTitle}}</h2>
+        </div>
+        <div class="content">
+            <p>Hello {{UserName}},</p>
+            <p>Here is an update on the status of your bid for the job: <strong>{{JobTitle}}</strong>.</p>
+            <p>Your bid status is now: <span class="{{BidStatusClass}}">{{BidStatus}}</span></p>
+
+            <!-- Conditional Content based on Status -->
+            {{#if IsWinner}}
+            <p>Congratulations! Your bid has been selected. We will be in touch shortly with the next steps, including contract signing and project onboarding.</p>
+            <p>As a reminder, a finders' fee of {{FinderFeePercentage}}% will be applied.</p>
+            <a href="{{JobDashboardLink}}" class="button">Go to Job Dashboard</a>
+            {{/if}}
+
+            {{#if IsFinalist}}
+            <p>You have been selected as a finalist! You now have the opportunity to submit a revised, final quote. Please submit your best and final offer by {{FinalBidDeadline}}.</p>
+            <a href="{{SubmitFinalQuoteLink}}" class="button">Submit Final Quote</a>
+            {{/if}}
+
+            {{#if IsNotSelected}}
+            <p>Thank you for your interest and for submitting a quote. At this time, your bid has not been selected to move forward.</p>
+            {{#if IsPaidTier}}
+            <p>As a premium subscriber, you can view a report on why your bid was not selected to help improve your future quotes.</p>
+            <a href="{{BidReportLink}}" class="button">View Bid Report</a>
+            {{/if}}
+            {{^if IsPaidTier}}
+            <p>We encourage you to continue bidding on other jobs available on the platform.</p>
+            <a href="{{FindWorkLink}}" class="button">Find More Work</a>
+            {{/if}}
+            {{/if}}
+        </div>
+        <div class="footer">
+            <p>You are receiving this email because you submitted a bid on a job through Probuild.</p>
+            <p>&copy; 2023 Probuild. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

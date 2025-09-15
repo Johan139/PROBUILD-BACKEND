@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New Connection Request</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+        }
+        .container {
+            width: 80%;
+            margin: 0 auto;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .header {
+            background-color: #f4f4f4;
+            padding: 10px;
+            text-align: center;
+        }
+        .content {
+            padding: 20px 0;
+        }
+        .footer {
+            margin-top: 20px;
+            font-size: 0.8em;
+            text-align: center;
+            color: #777;
+        }
+        .button {
+            display: inline-block;
+            background-color: #007bff;
+            color: #fff;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>You Have a New Connection Request on Probuild</h2>
+        </div>
+        <div class="content">
+            <p>Hello {{ReceiverName}},</p>
+            <p><strong>{{RequesterName}}</strong> has sent you a connection request on Probuild.</p>
+            <p>Connecting with other professionals on Probuild allows you to build your network, receive direct job invitations, and collaborate more effectively.</p>
+            <p>You can view this request and decide whether to accept or decline by visiting your connections page:</p>
+            <a href="{{ConnectionsLink}}" class="button">View Connection Request</a>
+        </div>
+        <div class="footer">
+            <p>You are receiving this email because you are a registered user on Probuild.</p>
+            <p>&copy; 2023 Probuild. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

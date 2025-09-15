@@ -436,6 +436,108 @@ namespace ProbuildBackend.Services
 
            return stringBuilder.ToString();
        }
-    }
+
+        public async Task<string> AnalyzeBidsAsync(List<BidModel> bids, string comparisonType)
+        {
+            string promptKey = comparisonType.Equals("Vendor", StringComparison.OrdinalIgnoreCase)
+                ? "vendor-comparison-prompt.txt"
+                : "subcontractor-comparison-prompt.txt";
+
+            var prompt = await _promptManager.GetPromptAsync("ComparisonPrompts/", promptKey);
+
+            var bidsDetails = new List<object>();
+            foreach (var bid in bids)
+            {
+                string quoteText = bid.Task ?? "No detailed quote text provided.";
+                if (bid.Quote != null && bid.Quote.Length > 0)
+                {
+                    try
+                    {
+                        using var memoryStream = new MemoryStream(bid.Quote);
+                        quoteText = await _pdfTextExtractionService.ExtractTextAsync(memoryStream);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to extract text from PDF for bid {BidId}", bid.Id);
+                        quoteText = "Error extracting text from PDF.";
+                    }
+                }
+
+                bidsDetails.Add(new
+                {
+                    bid.Id,
+                    bid.Amount,
+                    bid.User?.ProbuildRating,
+                    bid.User?.GoogleRating,
+                    bid.User?.JobPreferences,
+                    QuoteDetails = quoteText
+                });
+            }
+
+            var bidsJson = JsonSerializer.Serialize(bidsDetails);
+            var fullPrompt = $"{prompt}\n\nBids:\n{bidsJson}";
+
+            var (analysisResult, _) = await _aiService.StartMultimodalConversationAsync("system-user", null, fullPrompt, $"Analyze the provided {comparisonType} bids and return the top 3 candidates.");
+
+            return analysisResult;
+        }
+
+        public async Task<string> GenerateFeedbackForUnsuccessfulBidderAsync(BidModel bid, BidModel winningBid)
+        {
+            var user = bid.User;
+            if (user != null)
+            {
+                bool isFreeTier = user.SubscriptionPackage == "Basic (Free) ($0.00)" ||
+                                  string.IsNullOrEmpty(user.SubscriptionPackage) ||
+                                  user.SubscriptionPackage.ToUpper() == "BASIC";
+
+                if (isFreeTier)
+                {
+                    return "Feedback reports are only available for users on a paid subscription tier.";
+                }
+            }
+
+            var prompt = await _promptManager.GetPromptAsync("ComparisonPrompts/", "unsuccessful-bid-prompt.txt");
+
+            var unsuccessfulQuote = await _context.Quotes.FindAsync(bid.Id.ToString());
+            var winningQuote = await _context.Quotes.FindAsync(winningBid.Id.ToString());
+
+            var unsuccessfulBidAnalysis = new
+            {
+                bid.Id,
+                bid.Amount,
+                QuoteDetails = unsuccessfulQuote
+            };
+
+            var winningBidBenchmark = new
+            {
+                winningBid.Amount,
+                QuoteDetails = winningQuote
+            };
+
+            var promptInput = new
+            {
+                ProjectName = bid.Job?.ProjectName,
+                WorkPackage = bid.Job?.JobType,
+                OurCompanyName = "Probuild", // Or fetch dynamically
+                UnsuccessfulSubcontractorName = user?.UserName,
+                AnalysisOfUnsuccessfulQuotation = JsonSerializer.Serialize(unsuccessfulBidAnalysis),
+                WinningBidBenchmark = JsonSerializer.Serialize(winningBidBenchmark)
+            };
+
+            var fullPrompt = prompt
+                .Replace("[e.g., The Falcon Heights Residential Development]", promptInput.ProjectName)
+                .Replace("[e.g., Structural Steel Fabrication and Erection]", promptInput.WorkPackage)
+                .Replace("[Your Company Name]", promptInput.OurCompanyName)
+                .Replace("[Enter the name of the company you are writing to]", promptInput.UnsuccessfulSubcontractorName)
+                .Replace("[Paste the detailed analysis of the subcontractor's quote here, including price, schedule, inclusions, exclusions, compliance notes.]", promptInput.AnalysisOfUnsuccessfulQuotation)
+                .Replace("[Summarize the key advantages of the winning bid. For example: \"Final price was R 1,150,000 (8% lower). Proposed schedule was 16 weeks (2 weeks shorter). Fully compliant with specifications. Included a detailed plan for managing material price volatility.\"]", promptInput.WinningBidBenchmark);
+
+
+            var (analysisResult, _) = await _aiService.StartMultimodalConversationAsync("system-user", null, fullPrompt, "Generate a feedback report for the provided bid.");
+
+            return analysisResult;
+        }
+   }
 }
 

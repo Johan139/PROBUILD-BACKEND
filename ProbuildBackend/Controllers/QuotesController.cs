@@ -13,11 +13,13 @@ namespace ProbuildBackend.Controllers
         private readonly ApplicationDbContext _context;
         private readonly EmailSender emailSender;
         private readonly IEmailSender _emailSender;
+        private readonly SubscriptionService _subscriptionService;
 
-        public QuotesController(ApplicationDbContext context, IEmailSender emailSender)
+        public QuotesController(ApplicationDbContext context, IEmailSender emailSender, SubscriptionService subscriptionService)
         {
             _context = context;
             _emailSender = emailSender;
+            _subscriptionService = subscriptionService;
         }
 
         [HttpGet("GetQuotes/{id}")]
@@ -241,6 +243,12 @@ namespace ProbuildBackend.Controllers
                 return BadRequest("Quote cannot be null.");
             }
 
+            var canSubmit = await _subscriptionService.CanSubmitQuote(quote.CreatedID);
+            if (!canSubmit)
+            {
+                return BadRequest("You have reached your quote submission limit for this period.");
+            }
+
             int nextVersion = 1;
 
             if (quote.JobID != null)
@@ -275,6 +283,8 @@ namespace ProbuildBackend.Controllers
 
             _context.Quotes.Add(quote);
             await _context.SaveChangesAsync();
+
+            await _subscriptionService.IncrementQuoteCount(quote.CreatedID);
 
             return CreatedAtAction(nameof(GetQuote), new { id = quote.Id }, quote);
         }

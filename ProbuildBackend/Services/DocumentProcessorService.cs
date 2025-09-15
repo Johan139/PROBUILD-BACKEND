@@ -6,7 +6,6 @@ using ProbuildBackend.Middleware;
 using ProbuildBackend.Interface;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using ProbuildBackend.Models.DTO;
-using Elastic.Apm.Api;
 
 
 namespace ProbuildBackend.Services

@@ -10,6 +10,8 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.DataProtection;
 using System.Security.Cryptography;
+using Microsoft.AspNetCore.Authorization;
+using Newtonsoft.Json;
 
 namespace ProbuildBackend.Controllers
 {
@@ -69,7 +71,7 @@ namespace ProbuildBackend.Controllers
                     Trade = model.Trade,
                     ProductsOffered = model.ProductsOffered,
                     SupplierType = model.SupplierType,
-                    ProjectPreferences = model.ProjectPreferences,
+                    JobPreferences = model.JobPreferences,
                     DeliveryArea = model.DeliveryArea,
                     DeliveryTime = model.DeliveryTime,
                     Country = model.Country,
@@ -165,6 +167,21 @@ namespace ProbuildBackend.Controllers
             {
                 return NotFound("No users found with the specified id.");
             }
+
+            return Ok(users);
+        }
+
+        [HttpGet("search")]
+        public async Task<ActionResult<IEnumerable<UserModel>>> SearchUsers([FromQuery] string term)
+        {
+            if (string.IsNullOrWhiteSpace(term))
+            {
+                return BadRequest("Search term cannot be empty.");
+            }
+
+            var users = await _context.Users
+                .Where(u => u.FirstName.Contains(term) || u.LastName.Contains(term) || u.CompanyName.Contains(term) || u.Trade.Contains(term))
+                .ToListAsync();
 
             return Ok(users);
         }
@@ -485,7 +502,7 @@ namespace ProbuildBackend.Controllers
                 Trade = existingUser.Trade ?? "",
                 SupplierType = existingUser.SupplierType ?? "",
                 ProductsOffered = existingUser.ProductsOffered ?? "",
-                ProjectPreferences = existingUser.ProjectPreferences ?? "",
+                JobPreferences = existingUser.JobPreferences ?? "",
                 DeliveryArea = existingUser.DeliveryArea ?? "",
                 DeliveryTime = existingUser.DeliveryTime ?? "",
                 Country = existingUser.Country ?? "",
@@ -674,6 +691,35 @@ namespace ProbuildBackend.Controllers
                refreshToken = refreshToken
            });
        }
-    }
+
+       [Authorize]
+       [HttpPut("preferences")]
+       public async Task<IActionResult> UpdatePreferences([FromBody] UpdatePreferencesDto model)
+       {
+           var userId = User.FindFirstValue("UserId");
+           if (string.IsNullOrEmpty(userId))
+           {
+               return Unauthorized();
+           }
+
+           var user = await _userManager.FindByIdAsync(userId);
+           if (user == null)
+           {
+               return NotFound("User not found.");
+           }
+
+           user.NotificationRadiusMiles = model.NotificationRadiusMiles;
+           user.JobPreferences = JsonConvert.SerializeObject(model.JobPreferences);
+
+           var result = await _userManager.UpdateAsync(user);
+
+           if (result.Succeeded)
+           {
+               return Ok(new { message = "Preferences updated successfully." });
+           }
+
+           return BadRequest(result.Errors);
+       }
+   }
 }
 

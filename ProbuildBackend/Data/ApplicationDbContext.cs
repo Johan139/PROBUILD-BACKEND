@@ -10,6 +10,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     }
 
     public DbSet<DataProtectionKey> DataProtectionKeys { get; set; }
+    public DbSet<Invoice> Invoices { get; set; }
     public DbSet<UserModel> Users { get; set; }
     public DbSet<ClientDetailsModel> ClientDetails { get; set; }
     public DbSet<ProjectModel> Projects { get; set; }
@@ -24,6 +25,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<DocumentProcessingLogModel> DocumentProcessingLog { get; set; }
     public DbSet<UserAddressModel> UserAddress { get; set; }
     public DbSet<PaymentRecord> PaymentRecords { get; set; }
+    public DbSet<TempSubscriptionAccess> TempSubscriptionAccess { get; set; }
     public DbSet<PaymentRecordHistoryModel> PaymentRecordsHistory { get; set; }
     public DbSet<UserTermsAgreementModel> UserTermsAgreement { get; set; }
     public DbSet<SubtaskNoteModel> SubtaskNote { get; set; }
@@ -43,9 +45,20 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<TeamMemberPermission> TeamMemberPermissions { get; set; }
     public DbSet<Conversation> Conversations { get; set; }
     public DbSet<ConversationPrompt> ConversationPrompts { get; set; }
+    public DbSet<Connection> Connections { get; set; }
+    public DbSet<Rating> Ratings { get; set; }
+    public DbSet<Contract> Contracts { get; set; }
+    public DbSet<Report> Reports { get; set; }
+    public DbSet<JobNotificationRecipient> JobNotificationRecipients { get; set; }
+    public DbSet<PortfolioItem> PortfolioItems { get; set; }
+    public DbSet<Portfolio> Portfolios { get; set; }
+    public DbSet<BidAnalysis> BidAnalyses { get; set; }
 
-      protected override void OnModelCreating(ModelBuilder modelBuilder)
-      {
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Portfolio>()
+            .HasMany(p => p.Jobs)
+            .WithOne();
         modelBuilder.Entity<NotificationView>().HasNoKey().ToView("vw_Notifications");
 
         modelBuilder.Entity<ProjectModel>()
@@ -239,20 +252,19 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
         modelBuilder.Entity<PaymentRecordHistoryModel>()
             .HasKey(tp => new { tp.PaymentRecordHistoryId });
 
- 
         modelBuilder.Entity<Conversation>()
             .HasMany<JobDocumentModel>()
             .WithOne()
             .HasForeignKey(d => d.ConversationId);
 
-       modelBuilder.Entity<Conversation>()
-           .HasMany(c => c.PromptKeys)
-           .WithOne(cp => cp.Conversation)
-           .HasForeignKey(cp => cp.ConversationId);
+        modelBuilder.Entity<Conversation>()
+            .HasMany(c => c.PromptKeys)
+            .WithOne(cp => cp.Conversation)
+            .HasForeignKey(cp => cp.ConversationId);
 
         modelBuilder.Entity<ConversationPrompt>()
             .ToTable("ConversationPrompts");
 
-       base.OnModelCreating(modelBuilder);
-      }
+        base.OnModelCreating(modelBuilder);
+    }
 }

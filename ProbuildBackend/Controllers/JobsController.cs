@@ -60,6 +60,28 @@ namespace ProbuildBackend.Controllers
             return await _context.Jobs.ToListAsync();
         }
 
+        [HttpGet("public")]
+        public async Task<ActionResult<IEnumerable<JobDto>>> GetPublicJobs()
+        {
+            var jobs = await _context.Jobs
+                .Where(j => j.BiddingType == "PUBLIC" && j.Status == "BIDDING")
+                .Include(j => j.JobAddress)
+                .Select(j => new JobDto
+                {
+                    JobId = j.Id,
+                    ProjectName = j.ProjectName,
+                    JobType = j.JobType,
+                    Status = j.Status,
+                    Address = j.Address,
+                    Latitude = j.JobAddress.Latitude.ToString(),
+                    Longitude = j.JobAddress.Longitude.ToString()
+                })
+                .ToListAsync();
+
+            return Ok(jobs);
+        }
+
+
         [HttpGet("Id/{id}")]
         public async Task<ActionResult<JobDto>> GetJob(int id)
         {
@@ -937,6 +959,22 @@ namespace ProbuildBackend.Controllers
             return Ok(jobDtos);
         }
 
+        [HttpPut("{jobId}/status")]
+        public async Task<IActionResult> UpdateJobStatus(int jobId, [FromBody] UpdateStatusRequest request)
+        {
+            var job = await _context.Jobs.FindAsync(jobId);
+
+            if (job == null)
+            {
+                return NotFound();
+            }
+
+            job.Status = request.Status;
+            await _context.SaveChangesAsync();
+
+            return Ok();
+        }
+
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteJob(int id)
@@ -1038,15 +1076,39 @@ namespace ProbuildBackend.Controllers
 
             return Ok();
         }
-    }
 
-    public class ViewDocumentRequest
-    {
-        public string DocumentUrl { get; set; }
-    }
 
-    public class DeleteTemporaryFilesRequest
-  {
-    public List<string> BlobUrls { get; set; }
-  }
+        [HttpGet("bidded/{userId}")]
+        public async Task<ActionResult<IEnumerable<BidStatusDto>>> GetBiddedJobs(string userId)
+        {
+            var test = new BidStatusDto();
+
+            var bids = await _context.Bids
+                .Where(b => b.UserId == userId)
+                .Select(b => new BidStatusDto
+                {
+                    JobId = b.JobId,
+                    ProjectName = b.Job.ProjectName,
+                    Status = b.Status
+                })
+                .ToListAsync();
+
+            return Ok(bids);
+        }
+
+        public class ViewDocumentRequest
+        {
+            public string DocumentUrl { get; set; }
+        }
+
+        public class DeleteTemporaryFilesRequest
+        {
+            public List<string> BlobUrls { get; set; }
+        }
+
+        public class UpdateStatusRequest
+        {
+            public string Status { get; set; }
+        }
+    }
 }
