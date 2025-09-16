@@ -84,6 +84,23 @@ namespace ProbuildBackend.Controllers
                 if (!result.Succeeded)
                     return BadRequest(result.Errors);
 
+                var userMetaData = new UserMetaDataModel
+                {
+                    UserId = user.Id,
+                    City = model.CityFromIP,
+                    Country = model.CountryFromIP,
+                    CreatedAt = DateTime.UtcNow,
+                    IpAddress = model.IpAddress,
+                    Latitude = model.LatitudeFromIP,
+                    Longitude = model.LongitudeFromIP,
+                    Region = model.RegionFromIP,
+                    TimeZone = model.Timezone,
+                    OperatingSystem = model.OperatingSystem
+                };
+
+                 _context.UserMetaData.Add(userMetaData);
+
+
                 // Only save agreement if user was created successfully
                 var userAgree = new UserTermsAgreementModel
                 {
@@ -674,6 +691,30 @@ namespace ProbuildBackend.Controllers
                refreshToken = refreshToken
            });
        }
+        // GET api/users/byUserId/{UserId}
+        [HttpGet("countries")]
+        public async Task<ActionResult<IEnumerable<UserModel>>> GetCountries()
+        {
+            try
+            {
+
+  
+            var countries = await _context.Countries
+                .ToListAsync();
+
+            if (countries == null || !countries.Any())
+            {
+                return NotFound("No countries found.");
+            }
+
+            return Ok(countries);
+            }
+            catch (Exception ex)
+            {
+
+                throw;
+            }
+        }
     }
 }
 
