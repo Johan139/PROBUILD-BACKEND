@@ -46,6 +46,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<ConversationPrompt> ConversationPrompts { get; set; }
 
     public DbSet<CountriesModel> Countries { get; set; }
+    public DbSet<StatesModel> States { get; set; }
 
     public DbSet<CountryNumberCodesModel> CountryNumberCodes { get; set; }
 

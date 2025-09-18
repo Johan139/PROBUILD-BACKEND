@@ -715,6 +715,30 @@ namespace ProbuildBackend.Controllers
                 throw;
             }
         }
+        // GET api/users/byUserId/{UserId}
+        [HttpGet("states")]
+        public async Task<ActionResult<IEnumerable<UserModel>>> GetStates()
+        {
+            try
+            {
+
+
+                var state = await _context.States
+                    .ToListAsync();
+
+                if (state == null || !state.Any())
+                {
+                    return NotFound("No countries found.");
+                }
+
+                return Ok(state);
+            }
+            catch (Exception ex)
+            {
+
+                throw;
+            }
+        }
     }
 }
 

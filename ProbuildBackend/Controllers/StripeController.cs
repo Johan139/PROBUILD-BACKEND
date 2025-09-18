@@ -83,7 +83,6 @@ namespace ProbuildBackend.Controllers
                 SubscriptionData = new SessionSubscriptionDataOptions
                 {
                     Metadata = new Dictionary<string, string>(metadata)
-                
                 },
 
                 SuccessUrl = $"https://app.probuildai.com/payment-success?source={request.Source}",
