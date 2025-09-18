@@ -10,6 +10,7 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.DataProtection;
 using System.Security.Cryptography;
+using Microsoft.AspNetCore.DataProtection;
 
 namespace ProbuildBackend.Controllers
 {
@@ -444,13 +445,16 @@ namespace ProbuildBackend.Controllers
 
 
 
-            var protector = _dataProtectionProvider.CreateProtector($"{user.Id}:Default:ResetPassword");
-            var token = protector.Protect("ResetToken:" + Guid.NewGuid().ToString());
-            var frontendBaseUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["URL:FrontendBaseUrl"]; ;
+            var protector = _dataProtectionProvider
+     .CreateProtector($"{user.Id}:Default:ResetPassword")
+     .ToTimeLimitedDataProtector();
+            var token = protector.Protect("ResetToken:" + Guid.NewGuid(), lifetime: TimeSpan.FromMinutes(15));
+
+            var frontendBaseUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["FrontEnd:FRONTEND_URL"]; ;
             var callbackUrl = $"{frontendBaseUrl}/reset-password?email={Uri.EscapeDataString(user.Email)}&token={Uri.EscapeDataString(token)}";
 
             await _emailSender.SendEmailAsync(model.Email, "Reset Password",
-                $"Please reset your password by <a href='{callbackUrl}'>clicking here</a>.");
+                $"Please reset your password by <a href='{callbackUrl}'>clicking here. Please note the link will expire in 15 minutes.</a>.");
 
             return Ok();
         }
@@ -512,18 +516,26 @@ namespace ProbuildBackend.Controllers
                 IsVerified = existingUser.IsVerified
             };
 
-            var protector = _dataProtectionProvider.CreateProtector($"{user.Id}:Default:ResetPassword");
+            var protector = _dataProtectionProvider
+     .CreateProtector($"{user.Id}:Default:ResetPassword")
+     .ToTimeLimitedDataProtector();
             string unprotectedToken;
             try
             {
                 unprotectedToken = protector.Unprotect(model.Token);
+
                 if (!unprotectedToken.StartsWith("ResetToken:"))
-                    return BadRequest("Invalid token");
+                    return BadRequest("Invalid token.");
+            }
+            catch (CryptographicException ex)
+            {
+                Console.WriteLine($"Token validation failed: {ex.Message}");
+                return BadRequest(new { error = "Token has expired." });
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Token Validation Error: {ex.Message}");
-                return BadRequest("Invalid token");
+                Console.WriteLine($"Unexpected error: {ex.Message}");
+                return StatusCode(500, new { error = "Unexpected error occurred." });
             }
 
             // Log the state before update
