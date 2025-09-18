@@ -53,6 +53,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<PortfolioItem> PortfolioItems { get; set; }
     public DbSet<Portfolio> Portfolios { get; set; }
     public DbSet<BidAnalysis> BidAnalyses { get; set; }
+    public DbSet<Invitation> Invitations { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

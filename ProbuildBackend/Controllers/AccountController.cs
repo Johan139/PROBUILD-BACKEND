@@ -201,6 +201,30 @@ namespace ProbuildBackend.Controllers
 
             return Ok(users);
         }
+        [HttpGet("users")]
+        public async Task<ActionResult<IEnumerable<UserSearchDto>>> GetUsers()
+        {
+            var users = await _context.Users
+                .Select(u => new UserSearchDto
+                {
+                    Id = u.Id,
+                    FirstName = u.FirstName,
+                    LastName = u.LastName,
+                    UserType = u.UserType,
+                    CompanyName = u.CompanyName,
+                    Email = u.Email,
+                    PhoneNumber = u.PhoneNumber,
+                    ConstructionType = u.ConstructionType,
+                    Trade = u.Trade,
+                    SupplierType = u.SupplierType,
+                    ProductsOffered = u.ProductsOffered,
+                    Country = u.Country,
+                    City = u.City
+                })
+                .ToListAsync();
+
+            return Ok(users);
+        }
 
         [HttpGet("confirmemail")]
         public async Task<IActionResult> ConfirmEmail(string userId, string code)
