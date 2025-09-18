@@ -116,12 +116,12 @@ namespace Probuild.Controllers
                     Status = i.IsAccepted ? "ACCEPTED" : "PENDING",
                     IsInSystem = false,
                     FirstName = i.FirstName,
-                    LastName = i.LastName
+                    LastName = i.LastName,
+                    RequesterId = i.InviterId
                 })
                 .ToListAsync();
 
             var allConnections = connections.Concat(invitations);
-
             return Ok(allConnections);
         }
 
