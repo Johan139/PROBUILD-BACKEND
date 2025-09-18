@@ -36,6 +36,12 @@ namespace Probuild.Controllers
                 return Unauthorized();
             }
 
+            var inviter = await _userManager.FindByIdAsync(inviterId);
+            if (inviter == null)
+            {
+                return Unauthorized();
+            }
+
             var existingUser = await _userManager.FindByEmailAsync(invitationDto.Email);
             if (existingUser != null)
             {
@@ -62,11 +68,74 @@ namespace Probuild.Controllers
             _context.Invitations.Add(invitation);
             await _context.SaveChangesAsync();
 
-            var registrationLink = Url.Action("Register", "Account", new { invitationToken = token }, Request.Scheme);
-            await _emailSender.SendEmailAsync(invitationDto.Email, "You have been invited to join ProBuild",
-                $"Please register by clicking on this link: <a href='{registrationLink}'>Join Now</a>");
+            var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
+            var registrationLink = $"{frontendUrl}/register?invitationToken={token}";
+
+            var templatePath = Path.Combine(Directory.GetCurrentDirectory(), "EmailTemplates", "InvitationEmail.html");
+            var emailTemplate = await System.IO.File.ReadAllTextAsync(templatePath);
+
+            emailTemplate = emailTemplate.Replace("{{firstName}}", invitationDto.FirstName);
+            emailTemplate = emailTemplate.Replace("{{lastName}}", invitationDto.LastName);
+            emailTemplate = emailTemplate.Replace("{{inviterFirstName}}", inviter.FirstName);
+            emailTemplate = emailTemplate.Replace("{{inviterLastName}}", inviter.LastName);
+            emailTemplate = emailTemplate.Replace("{{message}}", invitationDto.Message);
+            emailTemplate = emailTemplate.Replace("{{invitationLink}}", registrationLink);
+
+            await _emailSender.SendEmailAsync(invitationDto.Email, "You have been invited to join ProBuild", emailTemplate);
 
             return Ok(new { message = "Invitation sent successfully." });
         }
+
+        [HttpGet("invitation/{token}")]
+        public async Task<IActionResult> GetInvitation(string token)
+        {
+            var invitation = await _context.Invitations
+                .FirstOrDefaultAsync(i => i.Token == token && i.ExpiresAt > DateTime.UtcNow);
+
+            if (invitation == null)
+            {
+                return BadRequest("Invalid or expired invitation token.");
+            }
+
+            return Ok(new { email = invitation.InviteeEmail });
+        }
+
+        [HttpPost("register/invited")]
+        public async Task<IActionResult> RegisterInvited([FromBody] InvitedRegistrationDto dto)
+        {
+            var invitation = await _context.Invitations
+                .FirstOrDefaultAsync(i => i.Token == dto.Token && i.ExpiresAt > DateTime.UtcNow);
+
+            if (invitation == null)
+            {
+                return BadRequest("Invalid or expired invitation token.");
+            }
+
+            var user = new UserModel
+            {
+                UserName = invitation.InviteeEmail,
+                Email = invitation.InviteeEmail,
+                PhoneNumber = dto.PhoneNumber
+            };
+
+            var result = await _userManager.CreateAsync(user, dto.Password);
+
+            if (!result.Succeeded)
+            {
+                return BadRequest(result.Errors);
+            }
+
+            invitation.IsAccepted = true;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Registration successful." });
+        }
+    }
+
+    public class InvitedRegistrationDto
+    {
+        public string Token { get; set; }
+        public string Password { get; set; }
+        public string PhoneNumber { get; set; }
     }
 }

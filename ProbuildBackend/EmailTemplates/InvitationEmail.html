@@ -1,9 +1,7 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>New Connection Request</title>
+    <title>You're Invited!</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -63,14 +61,14 @@
     <div class="container">
         <div class="header">
             <img src="https://probuild.netlify.app/assets/logo.png" alt="ProBuild Logo">
-            <h2>You Have a New Connection Request on ProBuild</h2>
+            <h2>You've been invited to join ProBuild!</h2>
         </div>
         <div class="content">
-            <p>Hello {{ReceiverName}},</p>
-            <p><strong>{{RequesterName}}</strong> has sent you a connection request on ProBuild.</p>
-            <p>Connecting with other professionals on ProBuild allows you to build your network, receive direct job invitations, and collaborate more effectively.</p>
-            <p>You can view this request and decide whether to accept or decline by visiting your connections page:</p>
-            <a href="{{ConnectionsLink}}" class="cta-button">View Connection Request</a>
+            <p>Hello {{firstName}} {{lastName}},</p>
+            <p>You have been invited by {{inviterFirstName}} {{inviterLastName}} to join ProBuild.</p>
+            <p>{{message}}</p>
+            <p>Please click the button below to accept the invitation and create your account.</p>
+            <a href="{{invitationLink}}" class="cta-button">Accept Invitation</a>
         </div>
         <div class="footer">
             <p>This is an automated message. Please do not reply to this email as the inbox is not monitored.</p>
