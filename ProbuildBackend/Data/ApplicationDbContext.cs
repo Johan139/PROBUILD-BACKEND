@@ -56,9 +56,6 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<Portfolio>()
-            .HasMany(p => p.Jobs)
-            .WithOne();
         modelBuilder.Entity<NotificationView>().HasNoKey().ToView("vw_Notifications");
 
         modelBuilder.Entity<ProjectModel>()

@@ -41,5 +41,9 @@ namespace ProbuildBackend.Models
     public long? JobAddressId { get; set; }
     [ForeignKey("JobAddressId")]
     public AddressModel? JobAddress { get; set; }
+
+    public int? PortfolioId { get; set; }
+    [ForeignKey("PortfolioId")]
+    public Portfolio? Portfolio { get; set; }
 }
 }

@@ -48,7 +48,6 @@
     <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
   </None>
-    <InternalsVisibleTo Include="ProbuildBackend.Tests" />
   </ItemGroup>
 
 </Project>

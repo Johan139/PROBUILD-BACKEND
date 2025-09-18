@@ -32,7 +32,7 @@ namespace ProbuildBackend.Controllers
             _emailSender = emailSender;
             _configuration = configuration;
             _context = context;
-            _serviceProvider = serviceProvider; // Initialize the field
+            _serviceProvider = serviceProvider;
             _dataProtectionProvider = dataProtectionProvider;
         }
 
@@ -172,7 +172,7 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpGet("search")]
-        public async Task<ActionResult<IEnumerable<UserModel>>> SearchUsers([FromQuery] string term)
+        public async Task<ActionResult<IEnumerable<UserSearchDto>>> SearchUsers([FromQuery] string term)
         {
             if (string.IsNullOrWhiteSpace(term))
             {
@@ -180,7 +180,23 @@ namespace ProbuildBackend.Controllers
             }
 
             var users = await _context.Users
-                .Where(u => u.FirstName.Contains(term) || u.LastName.Contains(term) || u.CompanyName.Contains(term) || u.Trade.Contains(term))
+                .Where(u => u.FirstName.Contains(term) || u.LastName.Contains(term) || u.CompanyName.Contains(term) || u.Trade.Contains(term) || u.Email.Contains(term) || u.PhoneNumber.Contains(term))
+                .Select(u => new UserSearchDto
+                {
+                    Id = u.Id,
+                    FirstName = u.FirstName,
+                    LastName = u.LastName,
+                    UserType = u.UserType,
+                    CompanyName = u.CompanyName,
+                    Email = u.Email,
+                    PhoneNumber = u.PhoneNumber,
+                    ConstructionType = u.ConstructionType,
+                    Trade = u.Trade,
+                    SupplierType = u.SupplierType,
+                    ProductsOffered = u.ProductsOffered,
+                    Country = u.Country,
+                    City = u.City
+                })
                 .ToListAsync();
 
             return Ok(users);
@@ -353,7 +369,7 @@ namespace ProbuildBackend.Controllers
                 if (user == null) return NotFound("User not found.");
 
                 var existingTrial = await _context.PaymentRecords
-                    .AnyAsync(p => p.UserId == dto.UserId && p.IsTrial && p.Status == "Active");
+                    .AnyAsync(p => p.UserId == dto.UserId && p.IsTrial == true && p.Status == "Active");
 
                 if (existingTrial)
                     return BadRequest("Trial already used.");
