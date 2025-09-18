@@ -72,9 +72,16 @@ namespace ProbuildBackend.Controllers
                     ProjectName = j.ProjectName,
                     JobType = j.JobType,
                     Status = j.Status,
-                    Address = j.Address,
+                    Address = j.JobAddress.FormattedAddress,
+                    StreetNumber = j.JobAddress.StreetNumber,
+                    StreetName = j.JobAddress.StreetName,
+                    City = j.JobAddress.City,
+                    State = j.JobAddress.State,
+                    PostalCode = j.JobAddress.PostalCode,
+                    Country = j.JobAddress.Country,
                     Latitude = j.JobAddress.Latitude.ToString(),
-                    Longitude = j.JobAddress.Longitude.ToString()
+                    Longitude = j.JobAddress.Longitude.ToString(),
+                    GooglePlaceId = j.JobAddress.GooglePlaceId
                 })
                 .ToListAsync();
 
