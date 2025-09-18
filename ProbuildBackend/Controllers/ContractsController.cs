@@ -69,7 +69,7 @@ namespace ProbuildBackend.Controllers
                 return NotFound("Contract not found.");
             }
 
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var userId = User.FindFirstValue("UserId");
 
             if (userId == contract.GcId)
             {

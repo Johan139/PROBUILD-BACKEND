@@ -167,7 +167,7 @@ namespace ProbuildBackend.Controllers
 
         private async Task SendNotificationAsync(int jobId, string message, List<string> recipientIds)
         {
-            var senderId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "system";
+            var senderId = User.FindFirstValue("UserId") ?? "system";
 
             var notification = new NotificationModel
             {

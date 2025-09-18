@@ -263,6 +263,12 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
         modelBuilder.Entity<ConversationPrompt>()
             .ToTable("ConversationPrompts");
 
+        modelBuilder.Entity<Invitation>()
+            .HasOne(i => i.Inviter)
+            .WithMany(u => u.SentInvitations)
+            .HasForeignKey(i => i.InviterId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         base.OnModelCreating(modelBuilder);
     }
 }

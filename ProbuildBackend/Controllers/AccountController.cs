@@ -129,7 +129,6 @@ namespace ProbuildBackend.Controllers
             return Ok(new { hasActive });
         }
 
-        // GET api/users/byrole/{userType}
         [HttpGet("byrole/{userType}")]
         public async Task<ActionResult<IEnumerable<UserModel>>> GetUsersByName(string userType)
         {
@@ -150,7 +149,6 @@ namespace ProbuildBackend.Controllers
             return Ok(users);
         }
 
-        // GET api/users/byUserId/{UserId}
         [HttpGet("byUserId/{id}")]
         public async Task<ActionResult<IEnumerable<UserModel>>> GetUserById(string id)
         {
@@ -379,7 +377,7 @@ namespace ProbuildBackend.Controllers
 
             return Ok(new
             {
-                accessToken = newAccessTokenString,
+                token = newAccessTokenString,
                 refreshToken = newRefreshToken
             });
         }
@@ -623,7 +621,7 @@ namespace ProbuildBackend.Controllers
             return Ok(new { teamMember.FirstName, teamMember.LastName, teamMember.Email, teamMember.Role });
         }
 
-        [HttpPost("register/invited")]
+        [HttpPost("register/team-member")]
         public async Task<IActionResult> RegisterInvited([FromBody] InvitedRegistrationDto dto)
         {
             var protector = _dataProtectionProvider.CreateProtector("TeamMemberInvitation");

@@ -40,5 +40,6 @@ namespace ProbuildBackend.Models {
         public DateTime LastQuoteReset { get; set; } = DateTime.UtcNow;
         public int QuoteRefreshRound { get; set; } = 1;
         public Portfolio? Portfolio { get; set; }
+        public ICollection<Invitation>? SentInvitations { get; set; }
     }
 }

@@ -1,4 +1,3 @@
-using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -15,6 +14,10 @@ namespace ProbuildBackend.Models
         [Required]
         [EmailAddress]
         public string InviteeEmail { get; set; }
+
+        public string FirstName { get; set; }
+
+        public string LastName { get; set; }
 
         [Required]
         public string Token { get; set; }
