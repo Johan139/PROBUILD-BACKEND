@@ -758,6 +758,28 @@ namespace ProbuildBackend.Controllers
 
            return BadRequest(result.Errors);
        }
+
+       [Authorize]
+       [HttpGet("address")]
+       public async Task<IActionResult> GetUserAddress()
+       {
+           var userId = User.FindFirstValue("UserId");
+           if (string.IsNullOrEmpty(userId))
+           {
+               return Unauthorized();
+           }
+
+           var userAddress = await _context.UserAddress
+               .Where(a => a.UserId == userId)
+               .FirstOrDefaultAsync();
+
+           if (userAddress == null)
+           {
+               return NotFound("Address not found.");
+           }
+
+           return Ok(userAddress);
+       }
    }
 }
 

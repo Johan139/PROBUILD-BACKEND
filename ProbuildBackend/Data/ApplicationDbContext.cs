@@ -204,6 +204,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             entity.Property(e => e.CreatedAt).HasColumnName("created_at");
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
             entity.Property(e => e.UserId).HasColumnName("UserId").IsRequired();
+            entity.Property(e => e.Location).HasComputedColumnSql("CASE WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN geography::Point(latitude, longitude, 4326) ELSE NULL END");
         });
 
         modelBuilder.Entity<JobAssignmentModel>()

@@ -49,24 +49,17 @@ namespace ProbuildBackend.Services
                     var jobLocation = new Point((double)job.JobAddress.Longitude.Value, (double)job.JobAddress.Latitude.Value) { SRID = 4326 };
                     var radiusInMeters = 1609.34; // 1 mile in meters
 
-                    var usersWithLocation = await _context.Users
+                    usersToNotify = await _context.Users
                         .Where(u => u.NotificationEnabled)
-                        .Join(_context.UserAddress,
+                        .Join(
+                            _context.UserAddress,
                             user => user.Id,
                             address => address.UserId,
-                            (user, address) => new { User = user, Address = address })
-                        .ToListAsync();
-
-                    usersToNotify = usersWithLocation
-                        .Where(x => x.Address.Latitude.HasValue && x.Address.Longitude.HasValue)
-                        .Select(x => new
-                        {
-                            User = x.User,
-                            Location = new Point((double)x.Address.Longitude.Value, (double)x.Address.Latitude.Value) { SRID = 4326 }
-                        })
-                        .Where(x => x.Location.IsWithinDistance(jobLocation, x.User.NotificationRadiusMiles * radiusInMeters))
+                            (user, address) => new { User = user, Address = address }
+                        )
+                        .Where(x => x.Address.Location.IsWithinDistance(jobLocation, x.User.NotificationRadiusMiles * radiusInMeters))
                         .Select(x => x.User)
-                        .ToList();
+                        .ToListAsync();
 
                     externalUsersToNotify = await _context.JobNotificationRecipients
                         .Where(r => r.notification_enabled == true && r.notification_radius_miles.HasValue && r.location_geo.IsWithinDistance(jobLocation, (double)r.notification_radius_miles.Value * radiusInMeters))
