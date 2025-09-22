@@ -248,7 +248,7 @@ namespace ProbuildBackend.Controllers
                 }
                 if (user != null && !user.EmailConfirmed)
                 {
-                    return Unauthorized(new { error = "Email address has not been confirmed." });
+                    return Unauthorized(new { error = "Email address has not been verified. Please check your inbox and spam folder." });
                 }
                 return Unauthorized(new { error = "Invalid login credentials. Please try again." });
             }
