@@ -30,6 +30,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<SubtaskNoteUserModel> SubtaskNoteUser { get; set; }
     public DbSet<StripeModel> Subscriptions { get; set; }
     public DbSet<JobSubtasksModel> JobSubtasks { get; set; }
+    public DbSet<UserMetaDataModel> UserMetaData { get; set; }
     public DbSet<DocumentProcessingResult> DocumentProcessingResults { get; set; }
     public DbSet<AddressModel> JobAddresses { get; set; }
     public DbSet<JobDocumentModel> JobDocuments { get; set; }
@@ -44,7 +45,12 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<Conversation> Conversations { get; set; }
     public DbSet<ConversationPrompt> ConversationPrompts { get; set; }
 
-      protected override void OnModelCreating(ModelBuilder modelBuilder)
+    public DbSet<CountriesModel> Countries { get; set; }
+    public DbSet<StatesModel> States { get; set; }
+
+    public DbSet<CountryNumberCodesModel> CountryNumberCodes { get; set; }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
       {
         modelBuilder.Entity<NotificationView>().HasNoKey().ToView("vw_Notifications");
 
