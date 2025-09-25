@@ -82,6 +82,10 @@ namespace ProbuildBackend.Controllers
                 var potentialStartDate = subtasks.Any() ? subtasks.Min(s => s.StartDate) : DateTime.MinValue;
                 var potentialEndDate = subtasks.Any() ? subtasks.Max(s => s.EndDate) : DateTime.MinValue;
                 var durationInDays = subtasks.Any() ? (potentialEndDate - potentialStartDate).Days : 0;
+                var numberOfBids = await _context.Bids.CountAsync(b => b.JobId == item.Job.Id);
+                var user = await _context.Users.FindAsync(item.Job.UserId);
+                var ratings = await _context.Ratings.Where(r => r.RatedUserId == item.Job.UserId).ToListAsync();
+                double clientRating = ratings.Any() ? ratings.Average(r => r.RatingValue) : 0;
 
                 jobDtos.Add(new JobDto
                 {
@@ -103,7 +107,11 @@ namespace ProbuildBackend.Controllers
                     PotentialStartDate = potentialStartDate,
                     PotentialEndDate = potentialEndDate,
                     DurationInDays = durationInDays,
-                    Subtasks = subtasks
+                    Subtasks = subtasks,
+                    NumberOfBids = numberOfBids,
+                    ClientName = $"{user.FirstName} {user.LastName}",
+                    ClientCompanyName = user.CompanyName,
+                    ClientRating = clientRating
                 });
             }
 
@@ -1143,18 +1151,11 @@ namespace ProbuildBackend.Controllers
 
 
         [HttpGet("bidded/{userId}")]
-        public async Task<ActionResult<IEnumerable<BidStatusDto>>> GetBiddedJobs(string userId)
+        public async Task<ActionResult<IEnumerable<BidModel>>> GetBiddedJobs(string userId)
         {
-            var test = new BidStatusDto();
-
             var bids = await _context.Bids
                 .Where(b => b.UserId == userId)
-                .Select(b => new BidStatusDto
-                {
-                    JobId = b.JobId,
-                    ProjectName = b.Job.ProjectName,
-                    Status = b.Status
-                })
+                .Include(b => b.Job)
                 .ToListAsync();
 
             return Ok(bids);

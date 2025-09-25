@@ -59,5 +59,9 @@
         public DateTime PotentialEndDate { get; set; }
         public int DurationInDays { get; set; }
         public List<JobSubtasksModel>? Subtasks { get; set; }
+        public int NumberOfBids { get; set; }
+        public string? ClientName { get; set; }
+        public string? ClientCompanyName { get; set; }
+        public double ClientRating { get; set; }
     }
 }
