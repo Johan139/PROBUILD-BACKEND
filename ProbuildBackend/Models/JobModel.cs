@@ -44,5 +44,7 @@ namespace ProbuildBackend.Models
     public int? PortfolioId { get; set; }
     [ForeignKey("PortfolioId")]
     public Portfolio? Portfolio { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? BiddingStartDate { get; set; }
 }
 }

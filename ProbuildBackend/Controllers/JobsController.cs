@@ -111,7 +111,9 @@ namespace ProbuildBackend.Controllers
                     NumberOfBids = numberOfBids,
                     ClientName = $"{user.FirstName} {user.LastName}",
                     ClientCompanyName = user.CompanyName,
-                    ClientRating = clientRating
+                    ClientRating = clientRating,
+                    CreatedAt = item.Job.CreatedAt,
+                    BiddingStartDate = item.Job.BiddingStartDate
                 });
             }
 
@@ -163,6 +165,8 @@ namespace ProbuildBackend.Controllers
                     Stories = job.Stories,
                     BuildingSize = job.BuildingSize,
                     Trades = job.RequiredSubcontractorTypes,
+                    CreatedAt = job.CreatedAt,
+                    BiddingStartDate = job.BiddingStartDate,
                     // The following fields come from the address entity
                     Address = address?.FormattedAddress,
                     StreetNumber = address?.StreetNumber ?? "0",
@@ -462,7 +466,8 @@ namespace ProbuildBackend.Controllers
                             OperatingArea = jobRequest.OperatingArea,
                             UserId = jobRequest.UserId,
                             Status = jobRequest.Status,
-                            BiddingType = "NOT_BIDDING"
+                            BiddingType = "NOT_BIDDING",
+                            CreatedAt = DateTime.UtcNow
                         };
 
                         if (jobRequest.UserContextFile != null)
@@ -829,6 +834,10 @@ namespace ProbuildBackend.Controllers
             {
                 existingJob.BiddingType = jobDto.BiddingType;
                 existingJob.RequiredSubcontractorTypes = jobDto.Trades;
+                if (jobDto.BiddingType == "PUBLIC" || jobDto.BiddingType == "PRIVATE")
+                {
+                    existingJob.BiddingStartDate = DateTime.UtcNow;
+                }
             }
 
             try
