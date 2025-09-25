@@ -157,11 +157,6 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .WithMany()
             .HasForeignKey(j => j.UserId);
 
-        modelBuilder.Entity<JobModel>()
-            .HasMany(j => j.Bids)
-            .WithOne()
-            .HasForeignKey(b => b.JobId);
-
         modelBuilder.Entity<AddressModel>(entity =>
         {
             entity.ToTable("JobAddress");

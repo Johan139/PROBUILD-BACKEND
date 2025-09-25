@@ -86,7 +86,6 @@
         public string? UserId { get; set; }
         public string? Status { get; set; }
 
-        public ICollection<BidModel>? Bids { get; set; }
         // public ICollection<NotificationModel>? Notifications { get; set; }
     }
 }
