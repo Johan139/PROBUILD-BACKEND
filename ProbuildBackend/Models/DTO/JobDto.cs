@@ -42,8 +42,6 @@
         public string? Latitude { get; set; }
         public string? Longitude { get; set; }
         public string GooglePlaceId { get; set; }
-
-        // 👇 Client Details — added
         public string FirstName { get; set; }
         public string LastName { get; set; }
         public string Email { get; set; }
@@ -57,5 +55,9 @@
         public IFormFile? UserContextFile { get; set; }
         public bool GenerateDetailsWithAi { get; set; }
         public List<string>? Trades { get; set; }
+        public DateTime PotentialStartDate { get; set; }
+        public DateTime PotentialEndDate { get; set; }
+        public int DurationInDays { get; set; }
+        public List<JobSubtasksModel>? Subtasks { get; set; }
     }
 }

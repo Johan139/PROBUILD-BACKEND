@@ -68,27 +68,46 @@ namespace ProbuildBackend.Controllers
                 .Join(_context.JobAddresses,
                     j => j.Id,
                     a => a.JobId,
-                    (j, a) => new JobDto
-                    {
-                        JobId = j.Id,
-                        ProjectName = j.ProjectName,
-                        JobType = j.JobType,
-                        Status = j.Status,
-                        Address = a.FormattedAddress,
-                        StreetNumber = a.StreetNumber,
-                        StreetName = a.StreetName,
-                        City = a.City,
-                        State = a.State,
-                        PostalCode = a.PostalCode,
-                        Country = a.Country,
-                        Latitude = a.Latitude.ToString(),
-                        Longitude = a.Longitude.ToString(),
-                        GooglePlaceId = a.GooglePlaceId,
-                        Trades = j.RequiredSubcontractorTypes
-                    })
+                    (j, a) => new { Job = j, Address = a })
                 .ToListAsync();
 
-            return Ok(jobs);
+            var jobDtos = new List<JobDto>();
+
+            foreach (var item in jobs)
+            {
+                var subtasks = await _context.JobSubtasks
+                    .Where(s => s.JobId == item.Job.Id && !s.Deleted)
+                    .ToListAsync();
+
+                var potentialStartDate = subtasks.Any() ? subtasks.Min(s => s.StartDate) : DateTime.MinValue;
+                var potentialEndDate = subtasks.Any() ? subtasks.Max(s => s.EndDate) : DateTime.MinValue;
+                var durationInDays = subtasks.Any() ? (potentialEndDate - potentialStartDate).Days : 0;
+
+                jobDtos.Add(new JobDto
+                {
+                    JobId = item.Job.Id,
+                    ProjectName = item.Job.ProjectName,
+                    JobType = item.Job.JobType,
+                    Status = item.Job.Status,
+                    Address = item.Address.FormattedAddress,
+                    StreetNumber = item.Address.StreetNumber,
+                    StreetName = item.Address.StreetName,
+                    City = item.Address.City,
+                    State = item.Address.State,
+                    PostalCode = item.Address.PostalCode,
+                    Country = item.Address.Country,
+                    Latitude = item.Address.Latitude.ToString(),
+                    Longitude = item.Address.Longitude.ToString(),
+                    GooglePlaceId = item.Address.GooglePlaceId,
+                    Trades = item.Job.RequiredSubcontractorTypes,
+                    PotentialStartDate = potentialStartDate,
+                    PotentialEndDate = potentialEndDate,
+                    DurationInDays = durationInDays,
+                    Subtasks = subtasks
+                });
+            }
+
+            return Ok(jobDtos);
         }
 
 
