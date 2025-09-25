@@ -730,7 +730,6 @@ namespace ProbuildBackend.Controllers
            });
        }
 
-       [Authorize]
        [HttpPut("preferences")]
        public async Task<IActionResult> UpdatePreferences([FromBody] UpdatePreferencesDto model)
        {
@@ -759,7 +758,6 @@ namespace ProbuildBackend.Controllers
            return BadRequest(result.Errors);
        }
 
-       [Authorize]
        [HttpGet("address")]
        public async Task<IActionResult> GetUserAddress()
        {

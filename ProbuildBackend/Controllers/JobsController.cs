@@ -65,24 +65,27 @@ namespace ProbuildBackend.Controllers
         {
             var jobs = await _context.Jobs
                 .Where(j => j.BiddingType == "PUBLIC" && j.Status == "BIDDING")
-                .Include(j => j.JobAddress)
-                .Select(j => new JobDto
-                {
-                    JobId = j.Id,
-                    ProjectName = j.ProjectName,
-                    JobType = j.JobType,
-                    Status = j.Status,
-                    Address = j.JobAddress.FormattedAddress,
-                    StreetNumber = j.JobAddress.StreetNumber,
-                    StreetName = j.JobAddress.StreetName,
-                    City = j.JobAddress.City,
-                    State = j.JobAddress.State,
-                    PostalCode = j.JobAddress.PostalCode,
-                    Country = j.JobAddress.Country,
-                    Latitude = j.JobAddress.Latitude.ToString(),
-                    Longitude = j.JobAddress.Longitude.ToString(),
-                    GooglePlaceId = j.JobAddress.GooglePlaceId
-                })
+                .Join(_context.JobAddresses,
+                    j => j.Id,
+                    a => a.JobId,
+                    (j, a) => new JobDto
+                    {
+                        JobId = j.Id,
+                        ProjectName = j.ProjectName,
+                        JobType = j.JobType,
+                        Status = j.Status,
+                        Address = a.FormattedAddress,
+                        StreetNumber = a.StreetNumber,
+                        StreetName = a.StreetName,
+                        City = a.City,
+                        State = a.State,
+                        PostalCode = a.PostalCode,
+                        Country = a.Country,
+                        Latitude = a.Latitude.ToString(),
+                        Longitude = a.Longitude.ToString(),
+                        GooglePlaceId = a.GooglePlaceId,
+                        Trades = j.RequiredSubcontractorTypes
+                    })
                 .ToListAsync();
 
             return Ok(jobs);
@@ -126,11 +129,13 @@ namespace ProbuildBackend.Controllers
                     ElectricalSupplyNeeds = job.ElectricalSupplyNeeds,
                     ElectricalSupplyNeedsSubtask = job.ElectricalSupplyNeedsSubtask,
                     Status = job.Status,
+                    BiddingType = job.BiddingType,
                     OperatingArea = job.OperatingArea,
                     UserId = job.UserId,
                     //SessionId = job.SessionId,
                     Stories = job.Stories,
                     BuildingSize = job.BuildingSize,
+                    Trades = job.RequiredSubcontractorTypes,
                     // The following fields come from the address entity
                     Address = address?.FormattedAddress,
                     StreetNumber = address?.StreetNumber ?? "0",
@@ -430,6 +435,7 @@ namespace ProbuildBackend.Controllers
                             OperatingArea = jobRequest.OperatingArea,
                             UserId = jobRequest.UserId,
                             Status = jobRequest.Status,
+                            BiddingType = "NOT_BIDDING"
                         };
 
                         if (jobRequest.UserContextFile != null)
@@ -756,15 +762,47 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("{id}")]
-        public async Task<IActionResult> PutJob(int id, [FromBody] JobModel job)
+        public async Task<IActionResult> PutJob(int id, [FromBody] JobDto jobDto)
         {
-            Console.WriteLine(job.Id);
-            if (id != job.Id)
+            if (id != jobDto.JobId)
             {
                 return BadRequest();
             }
 
-            _context.Entry(job).State = EntityState.Modified;
+            var existingJob = await _context.Jobs.FindAsync(id);
+            if (existingJob == null)
+            {
+                return NotFound();
+            }
+
+            existingJob.ProjectName = jobDto.ProjectName;
+            existingJob.JobType = jobDto.JobType;
+            existingJob.Qty = jobDto.Qty;
+            existingJob.DesiredStartDate = jobDto.DesiredStartDate;
+            existingJob.WallStructure = jobDto.WallStructure;
+            existingJob.WallStructureSubtask = jobDto.WallStructureSubtask;
+            existingJob.WallInsulation = jobDto.WallInsulation;
+            existingJob.WallInsulationSubtask = jobDto.WallInsulationSubtask;
+            existingJob.RoofStructure = jobDto.RoofStructure;
+            existingJob.RoofStructureSubtask = jobDto.RoofStructureSubtask;
+            existingJob.RoofTypeSubtask = jobDto.RoofTypeSubtask;
+            existingJob.RoofInsulation = jobDto.RoofInsulation;
+            existingJob.Foundation = jobDto.Foundation;
+            existingJob.FoundationSubtask = jobDto.FoundationSubtask;
+            existingJob.Finishes = jobDto.Finishes;
+            existingJob.FinishesSubtask = jobDto.FinishesSubtask;
+            existingJob.ElectricalSupplyNeeds = jobDto.ElectricalSupplyNeeds;
+            existingJob.ElectricalSupplyNeedsSubtask = jobDto.ElectricalSupplyNeedsSubtask;
+            existingJob.Stories = jobDto.Stories;
+            existingJob.BuildingSize = jobDto.BuildingSize;
+            existingJob.OperatingArea = jobDto.OperatingArea;
+            existingJob.Status = jobDto.Status;
+
+            if (!string.IsNullOrEmpty(jobDto.BiddingType))
+            {
+                existingJob.BiddingType = jobDto.BiddingType;
+                existingJob.RequiredSubcontractorTypes = jobDto.Trades;
+            }
 
             try
             {

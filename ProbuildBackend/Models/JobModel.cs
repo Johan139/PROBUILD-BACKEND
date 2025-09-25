@@ -29,7 +29,7 @@ namespace ProbuildBackend.Models
     public double BuildingSize { get; set; }
     public string? Status { get; set; }
     public string? BiddingType { get; set; }
-    public string? RequiredSubcontractorTypes { get; set; }
+    public List<string>? RequiredSubcontractorTypes { get; set; }
     public string? OperatingArea { get; set; }
     public string? Address { get; set; }
     [Required] public string? UserId { get; set; }

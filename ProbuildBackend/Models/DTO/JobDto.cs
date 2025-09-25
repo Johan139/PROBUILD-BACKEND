@@ -27,6 +27,7 @@
         public int Stories { get; set; }
         public double BuildingSize { get; set; }
         public string? Status { get; set; }
+        public string? BiddingType { get; set; }
         public string? OperatingArea { get; set; }
         public string? UserId { get; set; }
         public List<IFormFile>? Blueprint { get; set; }
@@ -55,5 +56,6 @@
         public string? UserContextText { get; set; }
         public IFormFile? UserContextFile { get; set; }
         public bool GenerateDetailsWithAi { get; set; }
+        public List<string>? Trades { get; set; }
     }
 }

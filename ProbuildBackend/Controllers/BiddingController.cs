@@ -38,7 +38,7 @@ namespace ProbuildBackend.Controllers
 
             job.Status = "BIDDING";
             job.BiddingType = startBiddingDto.BiddingType;
-            job.RequiredSubcontractorTypes = JsonSerializer.Serialize(startBiddingDto.RequiredSubcontractorTypes);
+            job.RequiredSubcontractorTypes = startBiddingDto.RequiredSubcontractorTypes.ToList();
 
             await _context.SaveChangesAsync();
 

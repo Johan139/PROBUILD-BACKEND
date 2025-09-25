@@ -75,7 +75,7 @@ namespace ProbuildBackend.Services
                 }
             }
 
-            var requiredTrades = JsonSerializer.Deserialize<List<string>>(job.RequiredSubcontractorTypes ?? "[]");
+            var requiredTrades = job.RequiredSubcontractorTypes ?? new List<string>();
 
             // Filter existing users
             var filteredUsers = usersToNotify
