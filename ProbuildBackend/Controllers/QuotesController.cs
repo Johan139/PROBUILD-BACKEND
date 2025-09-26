@@ -330,6 +330,12 @@ namespace ProbuildBackend.Controllers
                         break;
 
                     case "Submitted":
+                        var createBidResult = await CreateBidFromQuote(quote);
+                        if (createBidResult is not OkResult)
+                        {
+                            return StatusCode(500, "Failed to create a corresponding bid for the quote.");
+                        }
+
                         var job = await _context.Jobs.FirstOrDefaultAsync(j => j.Id == quote.JobID);
                         if (job == null)
                             return NotFound("Linked job not found.");
@@ -340,7 +346,7 @@ namespace ProbuildBackend.Controllers
 
                         subject = $"Quote submitted for job '{job.ProjectName}'";
                         message = $@"
-                            <p>A new quote <strong>#{quote.Number}</strong> has been <strong>submitted</strong> 
+                            <p>A new quote <strong>#{quote.Number}</strong> has been <strong>submitted</strong>
                             for the job <strong>{job.ProjectName}</strong>.</p>
                             <p>Please log in to review and take action.</p>
                             <p>Thanks,<br/>ProBuildAI</p>";
@@ -357,5 +363,33 @@ namespace ProbuildBackend.Controllers
             }
         }
 
+        private async Task<ActionResult> CreateBidFromQuote(Quote quote)
+        {
+            var job = await _context.Jobs.FirstOrDefaultAsync(j => j.Id == quote.JobID);
+            if (job == null)
+            {
+                return NotFound("Associated job not found.");
+            }
+
+            var bid = new BidModel
+            {
+                JobId = quote.JobID.Value,
+                UserId = quote.CreatedID,
+                Amount = quote.Total,
+                Status = "Submitted",
+                SubmittedAt = DateTime.UtcNow,
+                BiddingRound = 1,
+                IsFinalist = false,
+                Task = job.ProjectName,
+                Duration = 0,
+                DocumentUrl = null,
+                QuoteId = quote.Id 
+            };
+
+            _context.Bids.Add(bid);
+            await _context.SaveChangesAsync();
+
+            return Ok();
+        }
     }
 }

@@ -21,8 +21,8 @@ namespace ProbuildBackend.Controllers
         public async Task<ActionResult<IEnumerable<BidModel>>> GetBids()
         {
             return await _context.Bids
-                .Include(b => b.Job) 
-                .Include(b => b.User)    
+                .Include(b => b.Job)
+                .Include(b => b.User)
                 .ToListAsync();
         }
 
@@ -42,42 +42,11 @@ namespace ProbuildBackend.Controllers
             return bid;
         }
 
-        [HttpPost]
-        public async Task<ActionResult<BidModel>> PostBid([FromForm] BidDto bidrequest)
-        {
-            var bid = new BidModel
-            {
-                Task = bidrequest.Task,
-                Duration = bidrequest.Duration,
-                JobId = bidrequest.JobId,
-                UserId = bidrequest.UserId
-            };
-
-            if (bidrequest.Quote != null)
-            {
-                // Read the quote file into a byte array
-                using (var memoryStream = new MemoryStream())
-                {
-                    await bidrequest.Quote.CopyToAsync(memoryStream);
-                    bid.Quote = memoryStream.ToArray();
-                }
-            }
-            else
-            {
-                bid.Quote = null;
-            }
-
-            _context.Bids.Add(bid);
-            await _context.SaveChangesAsync();
-
-            return CreatedAtAction(nameof(GetBid), new { id = bid.Id }, bid);
-        }
-
         [HttpPost("upload")]
         public async Task<ActionResult<BidModel>> PostPdfBid([FromBody] PdfBidDto bidRequest)
         {
             var userId = User.FindFirstValue("UserId");
-            
+
             if (string.IsNullOrEmpty(userId))
             {
                 return Unauthorized();
@@ -130,10 +99,21 @@ namespace ProbuildBackend.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteBid(int id)
         {
+            var userId = User.FindFirstValue("UserId");
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized();
+            }
+
             var bid = await _context.Bids.FindAsync(id);
             if (bid == null)
             {
                 return NotFound();
+            }
+
+            if (bid.UserId != userId)
+            {
+                return Forbid();
             }
 
             _context.Bids.Remove(bid);
@@ -142,6 +122,37 @@ namespace ProbuildBackend.Controllers
             return NoContent();
         }
 
+        [HttpPost("{id}/withdraw")]
+        public async Task<IActionResult> WithdrawBid(int id)
+        {
+            var userId = User.FindFirstValue("UserId");
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized();
+            }
+
+            var bid = await _context.Bids.FindAsync(id);
+            if (bid == null)
+            {
+                return NotFound();
+            }
+
+            if (bid.UserId != userId)
+            {
+                return Forbid();
+            }
+
+            if (bid.Status != "Submitted")
+            {
+                return BadRequest("Only submitted bids can be withdrawn.");
+            }
+
+            bid.Status = "Withdrawn";
+            await _context.SaveChangesAsync();
+
+            return Ok(bid);
+        }
+        
         private bool BidExists(int id)
         {
             return _context.Bids.Any(e => e.Id == id);

@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
@@ -449,12 +450,20 @@ namespace ProbuildBackend.Services
             foreach (var bid in bids)
             {
                 string quoteText = bid.Task ?? "No detailed quote text provided.";
-                if (bid.Quote != null && bid.Quote.Length > 0)
+                if (!string.IsNullOrEmpty(bid.QuoteId))
+                {
+                    var quote = await _context.Quotes.Include(q => q.Rows).FirstOrDefaultAsync(q => q.Id == bid.QuoteId);
+                    if (quote != null)
+                    {
+                        quoteText = JsonSerializer.Serialize(quote);
+                    }
+                }
+                else if (!string.IsNullOrEmpty(bid.DocumentUrl))
                 {
                     try
                     {
-                        using var memoryStream = new MemoryStream(bid.Quote);
-                        quoteText = await _pdfTextExtractionService.ExtractTextAsync(memoryStream);
+                        var (contentStream, _, _) = await _azureBlobService.GetBlobContentAsync(bid.DocumentUrl);
+                        quoteText = await _pdfTextExtractionService.ExtractTextAsync(contentStream);
                     }
                     catch (Exception ex)
                     {
@@ -499,8 +508,8 @@ namespace ProbuildBackend.Services
 
             var prompt = await _promptManager.GetPromptAsync("ComparisonPrompts/", "unsuccessful-bid-prompt.txt");
 
-            var unsuccessfulQuote = await _context.Quotes.FindAsync(bid.Id.ToString());
-            var winningQuote = await _context.Quotes.FindAsync(winningBid.Id.ToString());
+            var unsuccessfulQuote = await _context.Quotes.FirstOrDefaultAsync(q => q.Id == bid.QuoteId);
+            var winningQuote = await _context.Quotes.FirstOrDefaultAsync(q => q.Id == winningBid.QuoteId);
 
             var unsuccessfulBidAnalysis = new
             {
