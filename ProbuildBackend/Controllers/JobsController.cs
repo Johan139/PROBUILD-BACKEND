@@ -136,6 +136,18 @@ using System.Linq;
 
                 var address = await _context.JobAddresses.FirstOrDefaultAsync(a => a.JobId == id);
 
+                var user = await _context.Users.FindAsync(job.UserId);
+                var ratings = await _context.Ratings.Where(r => r.RatedUserId == job.UserId).ToListAsync();
+                double clientRating = ratings.Any() ? ratings.Average(r => r.RatingValue) : 0;
+
+                var subtasks = await _context.JobSubtasks
+                    .Where(s => s.JobId == job.Id && !s.Deleted)
+                    .ToListAsync();
+
+                var potentialStartDate = subtasks.Any() ? subtasks.Min(s => s.StartDate) : DateTime.MinValue;
+                var potentialEndDate = subtasks.Any() ? subtasks.Max(s => s.EndDate) : DateTime.MinValue;
+                var durationInDays = subtasks.Any() ? (potentialEndDate - potentialStartDate).Days : 0;
+
                 var jobDto = new JobDto
                 {
                     JobId = job.Id,
@@ -162,13 +174,11 @@ using System.Linq;
                     BiddingType = job.BiddingType,
                     OperatingArea = job.OperatingArea,
                     UserId = job.UserId,
-                    //SessionId = job.SessionId,
                     Stories = job.Stories,
                     BuildingSize = job.BuildingSize,
                     Trades = job.RequiredSubcontractorTypes,
                     CreatedAt = job.CreatedAt,
                     BiddingStartDate = job.BiddingStartDate,
-                    // The following fields come from the address entity
                     Address = address?.FormattedAddress,
                     StreetNumber = address?.StreetNumber ?? "0",
                     StreetName = address?.StreetName ?? "",
@@ -179,9 +189,14 @@ using System.Linq;
                     Latitude = address?.Latitude.ToString(),
                     Longitude = address?.Longitude.ToString(),
                     GooglePlaceId = address?.GooglePlaceId ?? "",
-                    // The following are optional form values if needed
-                    Blueprint = null, // or populate if coming from elsewhere
-                    TemporaryFileUrls = null // or populate if applicable
+                    ClientName = user != null ? $"{user.FirstName} {user.LastName}" : "",
+                    ClientCompanyName = user?.CompanyName,
+                    ClientRating = clientRating,
+                    PotentialStartDate = potentialStartDate,
+                    PotentialEndDate = potentialEndDate,
+                    DurationInDays = durationInDays,
+                    Blueprint = null,
+                    TemporaryFileUrls = null
                 };
 
                 return Ok(jobDto);
