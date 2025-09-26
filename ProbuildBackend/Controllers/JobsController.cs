@@ -12,9 +12,10 @@ using Hangfire;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using BomWithCosts = ProbuildBackend.Models.BomWithCosts;
 using ProbuildBackend.Interface;
-
-namespace ProbuildBackend.Controllers
-{
+using System.Linq;
+ 
+ namespace ProbuildBackend.Controllers
+ {
     [Route("api/[controller]")]
     [ApiController]
     public class JobsController : ControllerBase
@@ -687,8 +688,58 @@ namespace ProbuildBackend.Controllers
                 );
             }
         }
+ 
+        [HttpPost("UploadQuote")]
+        [RequestSizeLimit(200 * 1024 * 1024)]
+        public async Task<IActionResult> UploadQuote([FromForm] UploadQuoteDto jobRequest)
+        {
+            if (jobRequest == null || jobRequest.Quote == null || !jobRequest.Quote.Any())
+            {
+                return BadRequest(new { error = "No quote file provided" });
+            }
 
+            var quoteFile = jobRequest.Quote.First();
+            var allowedExtensions = new[] { ".pdf" };
+            var extension = Path.GetExtension(quoteFile.FileName).ToLowerInvariant();
 
+            if (!allowedExtensions.Contains(extension))
+            {
+                return BadRequest(new { error = "Invalid file type. Only PDF files are allowed for quotes." });
+            }
+
+            var uploadedFileUrls = await _azureBlobservice.UploadFiles(
+                jobRequest.Quote,
+                _hubContext,
+                jobRequest.connectionId
+            );
+
+            var fileUrl = uploadedFileUrls.FirstOrDefault();
+            if (fileUrl != null)
+            {
+                var jobDocument = new JobDocumentModel
+                {
+                    JobId = null, // This will be associated with a bid, not a job directly
+                    FileName = Path.GetFileName(new Uri(fileUrl).LocalPath),
+                    BlobUrl = fileUrl,
+                    SessionId = jobRequest.sessionId,
+                    UploadedAt = DateTime.Now
+                };
+                _context.JobDocuments.Add(jobDocument);
+                await _context.SaveChangesAsync();
+            }
+
+            var response = new UploadDocumentModel
+            {
+                Id = Guid.NewGuid().ToString(),
+                Status = "Uploaded",
+                FileUrls = uploadedFileUrls,
+                FileNames = jobRequest.Quote.Select(f => f.FileName).ToList(),
+                Message = $"Successfully uploaded {jobRequest.Quote.Count} quote(s)"
+            };
+
+            return Ok(response);
+        }
+ 
         [HttpPost("subtask")]
         public async Task<IActionResult> SaveSubtasks([FromBody] SaveSubtasksRequest subtasks)
         {

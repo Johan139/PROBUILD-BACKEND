@@ -19,5 +19,6 @@ namespace ProbuildBackend.Models
         public string Status { get; set; }
         public byte[]? Quote { get; set; }
         public DateTime SubmittedAt { get; set; }
+        public string? DocumentUrl { get; set; }
     }
 }

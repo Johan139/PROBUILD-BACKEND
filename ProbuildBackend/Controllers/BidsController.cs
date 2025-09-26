@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using System.Security.Claims;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
@@ -16,17 +17,15 @@ namespace ProbuildBackend.Controllers
             _context = context;
         }
 
-        // GET: api/Bids
         [HttpGet]
         public async Task<ActionResult<IEnumerable<BidModel>>> GetBids()
         {
             return await _context.Bids
-                .Include(b => b.Job) // Include related Job
-                .Include(b => b.User)    // Include related user
+                .Include(b => b.Job) 
+                .Include(b => b.User)    
                 .ToListAsync();
         }
 
-        // GET: api/Bids/5
         [HttpGet("{id}")]
         public async Task<ActionResult<BidModel>> GetBid(int id)
         {
@@ -43,7 +42,6 @@ namespace ProbuildBackend.Controllers
             return bid;
         }
 
-        // POST: api/Bids
         [HttpPost]
         public async Task<ActionResult<BidModel>> PostBid([FromForm] BidDto bidrequest)
         {
@@ -75,7 +73,31 @@ namespace ProbuildBackend.Controllers
             return CreatedAtAction(nameof(GetBid), new { id = bid.Id }, bid);
         }
 
-        // PUT: api/Bids/5
+        [HttpPost("upload")]
+        public async Task<ActionResult<BidModel>> PostPdfBid([FromBody] PdfBidDto bidRequest)
+        {
+            var userId = User.FindFirstValue("UserId");
+            
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized();
+            }
+
+            var bid = new BidModel
+            {
+                JobId = bidRequest.JobId,
+                DocumentUrl = bidRequest.DocumentUrl,
+                UserId = userId,
+                Status = "Submitted",
+                SubmittedAt = DateTime.UtcNow
+            };
+
+            _context.Bids.Add(bid);
+            await _context.SaveChangesAsync();
+
+            return CreatedAtAction(nameof(GetBid), new { id = bid.Id }, bid);
+        }
+
         [HttpPut("{id}")]
         public async Task<IActionResult> PutBid(int id, BidModel bid)
         {
@@ -105,7 +127,6 @@ namespace ProbuildBackend.Controllers
             return NoContent();
         }
 
-        // DELETE: api/Bids/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteBid(int id)
         {
