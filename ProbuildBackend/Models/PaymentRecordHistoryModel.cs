@@ -1,6 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
-
-namespace ProbuildBackend.Models
+﻿namespace ProbuildBackend.Models
 {
     public class PaymentRecordHistoryModel
     {

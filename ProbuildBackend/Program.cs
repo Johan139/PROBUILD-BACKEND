@@ -1,5 +1,7 @@
-﻿using Elastic.Apm.NetCoreAll;
+﻿﻿using ProbuildBackend.Services;
+using Elastic.Apm.NetCoreAll;
 using Hangfire;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption.ConfigurationModel;
 using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption;
@@ -8,13 +10,11 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Options;
-using ProbuildBackend.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
@@ -107,6 +107,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(
         connectionString,
         sqlServerOptions => sqlServerOptions
+            .UseNetTopologySuite()
             .EnableRetryOnFailure(
                 maxRetryCount: 3, // Reduced number of retries
                 maxRetryDelay: TimeSpan.FromSeconds(5), // Increased delay between retries
@@ -114,6 +115,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
             )
     ));
 
+builder.Services.AddScoped<ContractService>();
 builder.Services.AddIdentity<UserModel, IdentityRole>(options =>
 {
     options.SignIn.RequireConfirmedEmail = true;
@@ -169,6 +171,8 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddScoped<IDocumentProcessorService, DocumentProcessorService>();
 builder.Services.AddTransient<IEmailSender, EmailSender>();
 builder.Services.AddSingleton<AzureBlobService>();
+builder.Services.AddScoped<PaymentService>();
+builder.Services.AddScoped<SubscriptionService>();
 builder.Services.AddSingleton<Microsoft.AspNetCore.SignalR.IUserIdProvider, UserIdFromClaimProvider>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddHttpClient();
@@ -208,6 +212,7 @@ builder.Services.AddScoped<IPdfImageConverter, PdfImageConverter>(); // Add this
 builder.Services.AddScoped<IPdfTextExtractionService, PdfTextExtractionService>();
 builder.Services.Configure<OcrSettings>(configuration.GetSection("OcrSettings"));
 builder.Services.AddScoped(sp => sp.GetRequiredService<IOptions<OcrSettings>>().Value);
+builder.Services.AddScoped<UserModerationService>();
 
 builder.Services.AddHostedService<TokenCleanupService>();
 builder.Services.AddHangfireServer();

@@ -11,5 +11,7 @@ namespace ProbuildBackend.Interface
         Task<AnalysisResponseDto> PerformComparisonAnalysisAsync(ComparisonAnalysisRequestDto request, List<IFormFile> pdfFiles);
         Task<string> GenerateRebuttalAsync(string conversationId, string clientQuery);
         Task<string> GenerateRevisionAsync(string conversationId, string revisionRequestText);
+        Task<string> AnalyzeBidsAsync(List<BidModel> bids, string comparisonType);
+        Task<string> GenerateFeedbackForUnsuccessfulBidderAsync(BidModel bid, BidModel winningBid);
     }
 }

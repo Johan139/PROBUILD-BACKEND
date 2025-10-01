@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ProbuildBackend.Models
 {
@@ -27,6 +28,8 @@ namespace ProbuildBackend.Models
     public int Stories { get; set; }
     public double BuildingSize { get; set; }
     public string? Status { get; set; }
+    public string? BiddingType { get; set; }
+    public List<string>? RequiredSubcontractorTypes { get; set; }
     public string? OperatingArea { get; set; }
     public string? Address { get; set; }
     [Required] public string? UserId { get; set; }
@@ -35,6 +38,13 @@ namespace ProbuildBackend.Models
     public string? Blueprint { get; set; }
     public ICollection<JobDocumentModel>? Documents { get; set; } // Add the list of associated documents
     public ICollection<NotificationModel>? Notifications { get; set; }
-    //public int? AddressId { get; set; }
+    public long? JobAddressId { get; set; }
+    [ForeignKey("JobAddressId")]
+    public AddressModel? JobAddress { get; set; }
+    public int? PortfolioId { get; set; }
+    [ForeignKey("PortfolioId")]
+    public Portfolio? Portfolio { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? BiddingStartDate { get; set; }
 }
 }

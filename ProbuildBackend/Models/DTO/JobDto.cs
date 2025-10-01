@@ -27,6 +27,7 @@
         public int Stories { get; set; }
         public double BuildingSize { get; set; }
         public string? Status { get; set; }
+        public string? BiddingType { get; set; }
         public string? OperatingArea { get; set; }
         public string? UserId { get; set; }
         public List<IFormFile>? Blueprint { get; set; }
@@ -41,8 +42,6 @@
         public string? Latitude { get; set; }
         public string? Longitude { get; set; }
         public string GooglePlaceId { get; set; }
-
-        // 👇 Client Details — added
         public string FirstName { get; set; }
         public string LastName { get; set; }
         public string Email { get; set; }
@@ -55,5 +54,16 @@
         public string? UserContextText { get; set; }
         public IFormFile? UserContextFile { get; set; }
         public bool GenerateDetailsWithAi { get; set; }
+        public List<string>? Trades { get; set; }
+        public DateTime PotentialStartDate { get; set; }
+        public DateTime PotentialEndDate { get; set; }
+        public int DurationInDays { get; set; }
+        public List<JobSubtasksModel>? Subtasks { get; set; }
+        public int NumberOfBids { get; set; }
+        public string? ClientName { get; set; }
+        public string? ClientCompanyName { get; set; }
+        public double ClientRating { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime? BiddingStartDate { get; set; }
     }
 }

@@ -12,9 +12,10 @@ using Hangfire;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using BomWithCosts = ProbuildBackend.Models.BomWithCosts;
 using ProbuildBackend.Interface;
-
-namespace ProbuildBackend.Controllers
-{
+using System.Linq;
+ 
+ namespace ProbuildBackend.Controllers
+ {
     [Route("api/[controller]")]
     [ApiController]
     public class JobsController : ControllerBase
@@ -60,6 +61,67 @@ namespace ProbuildBackend.Controllers
             return await _context.Jobs.ToListAsync();
         }
 
+        [HttpGet("public")]
+        public async Task<ActionResult<IEnumerable<JobDto>>> GetPublicJobs()
+        {
+            var jobs = await _context.Jobs
+                .Where(j => j.BiddingType == "PUBLIC" && j.Status == "BIDDING")
+                .Join(_context.JobAddresses,
+                    j => j.Id,
+                    a => a.JobId,
+                    (j, a) => new { Job = j, Address = a })
+                .ToListAsync();
+
+            var jobDtos = new List<JobDto>();
+
+            foreach (var item in jobs)
+            {
+                var subtasks = await _context.JobSubtasks
+                    .Where(s => s.JobId == item.Job.Id && !s.Deleted)
+                    .ToListAsync();
+
+                var potentialStartDate = subtasks.Any() ? subtasks.Min(s => s.StartDate) : DateTime.MinValue;
+                var potentialEndDate = subtasks.Any() ? subtasks.Max(s => s.EndDate) : DateTime.MinValue;
+                var durationInDays = subtasks.Any() ? (potentialEndDate - potentialStartDate).Days : 0;
+                var numberOfBids = await _context.Bids.CountAsync(b => b.JobId == item.Job.Id);
+                var user = await _context.Users.FindAsync(item.Job.UserId);
+                var ratings = await _context.Ratings.Where(r => r.RatedUserId == item.Job.UserId).ToListAsync();
+                double clientRating = ratings.Any() ? ratings.Average(r => r.RatingValue) : 0;
+
+                jobDtos.Add(new JobDto
+                {
+                    JobId = item.Job.Id,
+                    ProjectName = item.Job.ProjectName,
+                    JobType = item.Job.JobType,
+                    Status = item.Job.Status,
+                    Address = item.Address.FormattedAddress,
+                    StreetNumber = item.Address.StreetNumber,
+                    StreetName = item.Address.StreetName,
+                    City = item.Address.City,
+                    State = item.Address.State,
+                    PostalCode = item.Address.PostalCode,
+                    Country = item.Address.Country,
+                    Latitude = item.Address.Latitude.ToString(),
+                    Longitude = item.Address.Longitude.ToString(),
+                    GooglePlaceId = item.Address.GooglePlaceId,
+                    Trades = item.Job.RequiredSubcontractorTypes,
+                    PotentialStartDate = potentialStartDate,
+                    PotentialEndDate = potentialEndDate,
+                    DurationInDays = durationInDays,
+                    Subtasks = subtasks,
+                    NumberOfBids = numberOfBids,
+                    ClientName = $"{user.FirstName} {user.LastName}",
+                    ClientCompanyName = user.CompanyName,
+                    ClientRating = clientRating,
+                    CreatedAt = item.Job.CreatedAt,
+                    BiddingStartDate = item.Job.BiddingStartDate
+                });
+            }
+
+            return Ok(jobDtos);
+        }
+
+
         [HttpGet("Id/{id}")]
         public async Task<ActionResult<JobDto>> GetJob(int id)
         {
@@ -73,6 +135,18 @@ namespace ProbuildBackend.Controllers
                 }
 
                 var address = await _context.JobAddresses.FirstOrDefaultAsync(a => a.JobId == id);
+
+                var user = await _context.Users.FindAsync(job.UserId);
+                var ratings = await _context.Ratings.Where(r => r.RatedUserId == job.UserId).ToListAsync();
+                double clientRating = ratings.Any() ? ratings.Average(r => r.RatingValue) : 0;
+
+                var subtasks = await _context.JobSubtasks
+                    .Where(s => s.JobId == job.Id && !s.Deleted)
+                    .ToListAsync();
+
+                var potentialStartDate = subtasks.Any() ? subtasks.Min(s => s.StartDate) : DateTime.MinValue;
+                var potentialEndDate = subtasks.Any() ? subtasks.Max(s => s.EndDate) : DateTime.MinValue;
+                var durationInDays = subtasks.Any() ? (potentialEndDate - potentialStartDate).Days : 0;
 
                 var jobDto = new JobDto
                 {
@@ -97,12 +171,14 @@ namespace ProbuildBackend.Controllers
                     ElectricalSupplyNeeds = job.ElectricalSupplyNeeds,
                     ElectricalSupplyNeedsSubtask = job.ElectricalSupplyNeedsSubtask,
                     Status = job.Status,
+                    BiddingType = job.BiddingType,
                     OperatingArea = job.OperatingArea,
                     UserId = job.UserId,
-                    //SessionId = job.SessionId,
                     Stories = job.Stories,
                     BuildingSize = job.BuildingSize,
-                    // The following fields come from the address entity
+                    Trades = job.RequiredSubcontractorTypes,
+                    CreatedAt = job.CreatedAt,
+                    BiddingStartDate = job.BiddingStartDate,
                     Address = address?.FormattedAddress,
                     StreetNumber = address?.StreetNumber ?? "0",
                     StreetName = address?.StreetName ?? "",
@@ -113,9 +189,14 @@ namespace ProbuildBackend.Controllers
                     Latitude = address?.Latitude.ToString(),
                     Longitude = address?.Longitude.ToString(),
                     GooglePlaceId = address?.GooglePlaceId ?? "",
-                    // The following are optional form values if needed
-                    Blueprint = null, // or populate if coming from elsewhere
-                    TemporaryFileUrls = null // or populate if applicable
+                    ClientName = user != null ? $"{user.FirstName} {user.LastName}" : "",
+                    ClientCompanyName = user?.CompanyName,
+                    ClientRating = clientRating,
+                    PotentialStartDate = potentialStartDate,
+                    PotentialEndDate = potentialEndDate,
+                    DurationInDays = durationInDays,
+                    Blueprint = null,
+                    TemporaryFileUrls = null
                 };
 
                 return Ok(jobDto);
@@ -401,6 +482,8 @@ namespace ProbuildBackend.Controllers
                             OperatingArea = jobRequest.OperatingArea,
                             UserId = jobRequest.UserId,
                             Status = jobRequest.Status,
+                            BiddingType = "NOT_BIDDING",
+                            CreatedAt = DateTime.UtcNow
                         };
 
                         if (jobRequest.UserContextFile != null)
@@ -620,8 +703,58 @@ namespace ProbuildBackend.Controllers
                 );
             }
         }
+ 
+        [HttpPost("UploadQuote")]
+        [RequestSizeLimit(200 * 1024 * 1024)]
+        public async Task<IActionResult> UploadQuote([FromForm] UploadQuoteDto jobRequest)
+        {
+            if (jobRequest == null || jobRequest.Quote == null || !jobRequest.Quote.Any())
+            {
+                return BadRequest(new { error = "No quote file provided" });
+            }
 
+            var quoteFile = jobRequest.Quote.First();
+            var allowedExtensions = new[] { ".pdf" };
+            var extension = Path.GetExtension(quoteFile.FileName).ToLowerInvariant();
 
+            if (!allowedExtensions.Contains(extension))
+            {
+                return BadRequest(new { error = "Invalid file type. Only PDF files are allowed for quotes." });
+            }
+
+            var uploadedFileUrls = await _azureBlobservice.UploadFiles(
+                jobRequest.Quote,
+                _hubContext,
+                jobRequest.connectionId
+            );
+
+            var fileUrl = uploadedFileUrls.FirstOrDefault();
+            if (fileUrl != null)
+            {
+                var jobDocument = new JobDocumentModel
+                {
+                    JobId = null, // This will be associated with a bid, not a job directly
+                    FileName = Path.GetFileName(new Uri(fileUrl).LocalPath),
+                    BlobUrl = fileUrl,
+                    SessionId = jobRequest.sessionId,
+                    UploadedAt = DateTime.Now
+                };
+                _context.JobDocuments.Add(jobDocument);
+                await _context.SaveChangesAsync();
+            }
+
+            var response = new UploadDocumentModel
+            {
+                Id = Guid.NewGuid().ToString(),
+                Status = "Uploaded",
+                FileUrls = uploadedFileUrls,
+                FileNames = jobRequest.Quote.Select(f => f.FileName).ToList(),
+                Message = $"Successfully uploaded {jobRequest.Quote.Count} quote(s)"
+            };
+
+            return Ok(response);
+        }
+ 
         [HttpPost("subtask")]
         public async Task<IActionResult> SaveSubtasks([FromBody] SaveSubtasksRequest subtasks)
         {
@@ -727,15 +860,51 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("{id}")]
-        public async Task<IActionResult> PutJob(int id, [FromBody] JobModel job)
+        public async Task<IActionResult> PutJob(int id, [FromBody] JobDto jobDto)
         {
-            Console.WriteLine(job.Id);
-            if (id != job.Id)
+            if (id != jobDto.JobId)
             {
                 return BadRequest();
             }
 
-            _context.Entry(job).State = EntityState.Modified;
+            var existingJob = await _context.Jobs.FindAsync(id);
+            if (existingJob == null)
+            {
+                return NotFound();
+            }
+
+            existingJob.ProjectName = jobDto.ProjectName;
+            existingJob.JobType = jobDto.JobType;
+            existingJob.Qty = jobDto.Qty;
+            existingJob.DesiredStartDate = jobDto.DesiredStartDate;
+            existingJob.WallStructure = jobDto.WallStructure;
+            existingJob.WallStructureSubtask = jobDto.WallStructureSubtask;
+            existingJob.WallInsulation = jobDto.WallInsulation;
+            existingJob.WallInsulationSubtask = jobDto.WallInsulationSubtask;
+            existingJob.RoofStructure = jobDto.RoofStructure;
+            existingJob.RoofStructureSubtask = jobDto.RoofStructureSubtask;
+            existingJob.RoofTypeSubtask = jobDto.RoofTypeSubtask;
+            existingJob.RoofInsulation = jobDto.RoofInsulation;
+            existingJob.Foundation = jobDto.Foundation;
+            existingJob.FoundationSubtask = jobDto.FoundationSubtask;
+            existingJob.Finishes = jobDto.Finishes;
+            existingJob.FinishesSubtask = jobDto.FinishesSubtask;
+            existingJob.ElectricalSupplyNeeds = jobDto.ElectricalSupplyNeeds;
+            existingJob.ElectricalSupplyNeedsSubtask = jobDto.ElectricalSupplyNeedsSubtask;
+            existingJob.Stories = jobDto.Stories;
+            existingJob.BuildingSize = jobDto.BuildingSize;
+            existingJob.OperatingArea = jobDto.OperatingArea;
+            existingJob.Status = jobDto.Status;
+
+            if (!string.IsNullOrEmpty(jobDto.BiddingType))
+            {
+                existingJob.BiddingType = jobDto.BiddingType;
+                existingJob.RequiredSubcontractorTypes = jobDto.Trades;
+                if (jobDto.BiddingType == "PUBLIC" || jobDto.BiddingType == "PRIVATE")
+                {
+                    existingJob.BiddingStartDate = DateTime.UtcNow;
+                }
+            }
 
             try
             {
@@ -937,6 +1106,22 @@ namespace ProbuildBackend.Controllers
             return Ok(jobDtos);
         }
 
+        [HttpPut("{jobId}/status")]
+        public async Task<IActionResult> UpdateJobStatus(int jobId, [FromBody] UpdateStatusRequest request)
+        {
+            var job = await _context.Jobs.FindAsync(jobId);
+
+            if (job == null)
+            {
+                return NotFound();
+            }
+
+            job.Status = request.Status;
+            await _context.SaveChangesAsync();
+
+            return Ok();
+        }
+
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteJob(int id)
@@ -1038,15 +1223,32 @@ namespace ProbuildBackend.Controllers
 
             return Ok();
         }
-    }
 
-    public class ViewDocumentRequest
-    {
-        public string DocumentUrl { get; set; }
-    }
 
-    public class DeleteTemporaryFilesRequest
-  {
-    public List<string> BlobUrls { get; set; }
-  }
+        [HttpGet("bidded/{userId}")]
+        public async Task<ActionResult<IEnumerable<BidModel>>> GetBiddedJobs(string userId)
+        {
+            var bids = await _context.Bids
+                .Where(b => b.UserId == userId)
+                .Include(b => b.Job)
+                .ToListAsync();
+
+            return Ok(bids);
+        }
+
+        public class ViewDocumentRequest
+        {
+            public string DocumentUrl { get; set; }
+        }
+
+        public class DeleteTemporaryFilesRequest
+        {
+            public List<string> BlobUrls { get; set; }
+        }
+
+        public class UpdateStatusRequest
+        {
+            public string Status { get; set; }
+        }
+    }
 }

@@ -10,6 +10,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     }
 
     public DbSet<DataProtectionKey> DataProtectionKeys { get; set; }
+    public DbSet<Invoice> Invoices { get; set; }
     public DbSet<UserModel> Users { get; set; }
     public DbSet<ClientDetailsModel> ClientDetails { get; set; }
     public DbSet<ProjectModel> Projects { get; set; }
@@ -24,6 +25,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<DocumentProcessingLogModel> DocumentProcessingLog { get; set; }
     public DbSet<UserAddressModel> UserAddress { get; set; }
     public DbSet<PaymentRecord> PaymentRecords { get; set; }
+    public DbSet<TempSubscriptionAccess> TempSubscriptionAccess { get; set; }
     public DbSet<PaymentRecordHistoryModel> PaymentRecordsHistory { get; set; }
     public DbSet<UserTermsAgreementModel> UserTermsAgreement { get; set; }
     public DbSet<SubtaskNoteModel> SubtaskNote { get; set; }
@@ -44,6 +46,17 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<TeamMemberPermission> TeamMemberPermissions { get; set; }
     public DbSet<Conversation> Conversations { get; set; }
     public DbSet<ConversationPrompt> ConversationPrompts { get; set; }
+
+    public DbSet<Connection> Connections { get; set; }
+    public DbSet<Rating> Ratings { get; set; }
+    public DbSet<Contract> Contracts { get; set; }
+    public DbSet<Report> Reports { get; set; }
+    public DbSet<JobNotificationRecipient> JobNotificationRecipients { get; set; }
+    public DbSet<PortfolioItem> PortfolioItems { get; set; }
+    public DbSet<Portfolio> Portfolios { get; set; }
+    public DbSet<BidAnalysis> BidAnalyses { get; set; }
+    public DbSet<Invitation> Invitations { get; set; }
+
 
     public DbSet<CountriesModel> Countries { get; set; }
     public DbSet<StatesModel> States { get; set; }
@@ -152,11 +165,6 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .WithMany()
             .HasForeignKey(j => j.UserId);
 
-        modelBuilder.Entity<JobModel>()
-            .HasMany(j => j.Bids)
-            .WithOne()
-            .HasForeignKey(b => b.JobId);
-
         modelBuilder.Entity<AddressModel>(entity =>
         {
             entity.ToTable("JobAddress");
@@ -177,6 +185,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             entity.Property(e => e.CreatedAt).HasColumnName("created_at");
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
             entity.Property(e => e.JobId).HasColumnName("JobId").IsRequired();
+            entity.Property(e => e.Location).HasComputedColumnSql("CASE WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN geography::Point(latitude, longitude, 4326) ELSE NULL END");
         });
         modelBuilder.Entity<UserAddressModel>(entity =>
         {
@@ -198,6 +207,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             entity.Property(e => e.CreatedAt).HasColumnName("created_at");
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
             entity.Property(e => e.UserId).HasColumnName("UserId").IsRequired();
+            entity.Property(e => e.Location).HasComputedColumnSql("CASE WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN geography::Point(latitude, longitude, 4326) ELSE NULL END");
         });
 
         modelBuilder.Entity<JobAssignmentModel>()
@@ -245,20 +255,25 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
         modelBuilder.Entity<PaymentRecordHistoryModel>()
             .HasKey(tp => new { tp.PaymentRecordHistoryId });
 
- 
         modelBuilder.Entity<Conversation>()
             .HasMany<JobDocumentModel>()
             .WithOne()
             .HasForeignKey(d => d.ConversationId);
 
-       modelBuilder.Entity<Conversation>()
-           .HasMany(c => c.PromptKeys)
-           .WithOne(cp => cp.Conversation)
-           .HasForeignKey(cp => cp.ConversationId);
+        modelBuilder.Entity<Conversation>()
+            .HasMany(c => c.PromptKeys)
+            .WithOne(cp => cp.Conversation)
+            .HasForeignKey(cp => cp.ConversationId);
 
         modelBuilder.Entity<ConversationPrompt>()
             .ToTable("ConversationPrompts");
 
-       base.OnModelCreating(modelBuilder);
-      }
+        modelBuilder.Entity<Invitation>()
+            .HasOne(i => i.Inviter)
+            .WithMany(u => u.SentInvitations)
+            .HasForeignKey(i => i.InviterId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        base.OnModelCreating(modelBuilder);
+    }
 }
