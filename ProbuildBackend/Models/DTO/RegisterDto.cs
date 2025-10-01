@@ -1,4 +1,6 @@
-﻿namespace ProbuildBackend.Models.DTO
+﻿using System.Text.Json.Serialization;
+
+namespace ProbuildBackend.Models.DTO
 {
     public class RegisterDto
     {
@@ -39,5 +41,24 @@
         public string GooglePlaceId { get; set; }
 
         public string? SessionId { get; set; } // Add sessionId to link documents
+
+        [JsonPropertyName("ipAddress")]
+        public string? IpAddress { get; set; }
+        [JsonPropertyName("countryFromIP")]
+        public string? CountryFromIP { get; set; }
+        [JsonPropertyName("regionFromIP")]
+        public string? RegionFromIP { get; set; } // changed
+        [JsonPropertyName("cityFromIP")]
+        public string? CityFromIP { get; set; }
+        [JsonPropertyName("latitudeFromIP")]
+        public decimal? LatitudeFromIP { get; set; }
+        [JsonPropertyName("longitudeFromIP")]
+        public decimal? LongitudeFromIP { get; set; }
+
+        [JsonPropertyName("operatingSystem")]
+        public string? OperatingSystem { get; set; }
+
+        [JsonPropertyName("timezone")]
+        public string? Timezone { get; set; }
     }
 }
