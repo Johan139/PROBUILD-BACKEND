@@ -10,7 +10,6 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.DataProtection;
 using System.Security.Cryptography;
-using Microsoft.AspNetCore.Authorization;
 using Newtonsoft.Json;
 
 namespace ProbuildBackend.Controllers

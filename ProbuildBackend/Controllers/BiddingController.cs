@@ -5,7 +5,6 @@ using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Services;
 using System.Security.Claims;
-using System.Text.Json;
 
 namespace ProbuildBackend.Controllers
 {

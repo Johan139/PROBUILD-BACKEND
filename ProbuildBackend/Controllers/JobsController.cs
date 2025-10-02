@@ -12,9 +12,8 @@ using Hangfire;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using BomWithCosts = ProbuildBackend.Models.BomWithCosts;
 using ProbuildBackend.Interface;
-using System.Linq;
- 
- namespace ProbuildBackend.Controllers
+
+namespace ProbuildBackend.Controllers
  {
     [Route("api/[controller]")]
     [ApiController]

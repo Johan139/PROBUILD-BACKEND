@@ -42,6 +42,15 @@ namespace ProbuildBackend.Controllers
             return bid;
         }
 
+       [HttpGet("job/{jobId}")]
+       public async Task<ActionResult<IEnumerable<BidModel>>> GetBidsForJob(int jobId)
+       {
+           return await _context.Bids
+               .Where(b => b.JobId == jobId)
+               .Include(b => b.User)
+               .ToListAsync();
+       }
+
         [HttpPost("upload")]
         public async Task<ActionResult<BidModel>> PostPdfBid([FromBody] PdfBidDto bidRequest)
         {
