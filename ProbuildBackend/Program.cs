@@ -34,7 +34,7 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins(
             "http://localhost:4200", // For local development
-            "https://probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io", "https://app.probuildai.com/" // For production
+            "https://probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io", "https://app.probuildai.com/", "https://qa-probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io/" // For production
         )
         .AllowAnyHeader()
         .AllowAnyMethod()

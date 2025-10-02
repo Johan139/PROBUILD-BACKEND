@@ -115,10 +115,12 @@ namespace ProbuildBackend.Controllers
                 .ThenInclude(p => p.Jobs)
                 .FirstOrDefaultAsync(a => a.Id == id);
 
+
             if (user == null)
                 return NotFound("No user found with the specified id.");
 
             return Ok(user);
+
         }
 
         [HttpPost("Update")]

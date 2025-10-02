@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.DataProtection;
 using System.Security.Cryptography;
 using Newtonsoft.Json;
+using Microsoft.AspNetCore.DataProtection;
 
 namespace ProbuildBackend.Controllers
 {
@@ -84,6 +85,23 @@ namespace ProbuildBackend.Controllers
 
                 if (!result.Succeeded)
                     return BadRequest(result.Errors);
+
+                var userMetaData = new UserMetaDataModel
+                {
+                    UserId = user.Id,
+                    City = model.CityFromIP,
+                    Country = model.CountryFromIP,
+                    CreatedAt = DateTime.UtcNow,
+                    IpAddress = model.IpAddress,
+                    Latitude = model.LatitudeFromIP,
+                    Longitude = model.LongitudeFromIP,
+                    Region = model.RegionFromIP,
+                    TimeZone = model.Timezone,
+                    OperatingSystem = model.OperatingSystem
+                };
+
+                 _context.UserMetaData.Add(userMetaData);
+
 
                 // Only save agreement if user was created successfully
                 var userAgree = new UserTermsAgreementModel
@@ -284,7 +302,7 @@ namespace ProbuildBackend.Controllers
                 }
                 if (user != null && !user.EmailConfirmed)
                 {
-                    return Unauthorized(new { error = "Email address has not been confirmed." });
+                    return Unauthorized(new { error = "Email address has not been verified. Please check your inbox and spam folder." });
                 }
                 return Unauthorized(new { error = "Invalid login credentials. Please try again." });
             }
@@ -481,13 +499,16 @@ namespace ProbuildBackend.Controllers
 
 
 
-            var protector = _dataProtectionProvider.CreateProtector($"{user.Id}:Default:ResetPassword");
-            var token = protector.Protect("ResetToken:" + Guid.NewGuid().ToString());
-            var frontendBaseUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["URL:FrontendBaseUrl"]; ;
+            var protector = _dataProtectionProvider
+     .CreateProtector($"{user.Id}:Default:ResetPassword")
+     .ToTimeLimitedDataProtector();
+            var token = protector.Protect("ResetToken:" + Guid.NewGuid(), lifetime: TimeSpan.FromMinutes(15));
+
+            var frontendBaseUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["FrontEnd:FRONTEND_URL"]; ;
             var callbackUrl = $"{frontendBaseUrl}/reset-password?email={Uri.EscapeDataString(user.Email)}&token={Uri.EscapeDataString(token)}";
 
             await _emailSender.SendEmailAsync(model.Email, "Reset Password",
-                $"Please reset your password by <a href='{callbackUrl}'>clicking here</a>.");
+                $"Please reset your password by <a href='{callbackUrl}'>clicking here. Please note the link will expire in 15 minutes.</a>.");
 
             return Ok();
         }
@@ -549,18 +570,26 @@ namespace ProbuildBackend.Controllers
                 IsVerified = existingUser.IsVerified
             };
 
-            var protector = _dataProtectionProvider.CreateProtector($"{user.Id}:Default:ResetPassword");
+            var protector = _dataProtectionProvider
+     .CreateProtector($"{user.Id}:Default:ResetPassword")
+     .ToTimeLimitedDataProtector();
             string unprotectedToken;
             try
             {
                 unprotectedToken = protector.Unprotect(model.Token);
+
                 if (!unprotectedToken.StartsWith("ResetToken:"))
-                    return BadRequest("Invalid token");
+                    return BadRequest("Invalid token.");
+            }
+            catch (CryptographicException ex)
+            {
+                Console.WriteLine($"Token validation failed: {ex.Message}");
+                return BadRequest(new { error = "Token has expired." });
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Token Validation Error: {ex.Message}");
-                return BadRequest("Invalid token");
+                Console.WriteLine($"Unexpected error: {ex.Message}");
+                return StatusCode(500, new { error = "Unexpected error occurred." });
             }
 
             // Log the state before update
@@ -777,6 +806,55 @@ namespace ProbuildBackend.Controllers
 
            return Ok(userAddress);
        }
-   }
+   
+        // GET api/users/byUserId/{UserId}
+        [HttpGet("countries")]
+        public async Task<ActionResult<IEnumerable<UserModel>>> GetCountries()
+        {
+            try
+            {
+
+  
+            var countries = await _context.Countries
+                .ToListAsync();
+
+            if (countries == null || !countries.Any())
+            {
+                return NotFound("No countries found.");
+            }
+
+            return Ok(countries);
+            }
+            catch (Exception ex)
+            {
+
+                throw;
+            }
+        }
+        // GET api/users/byUserId/{UserId}
+        [HttpGet("states")]
+        public async Task<ActionResult<IEnumerable<UserModel>>> GetStates()
+        {
+            try
+            {
+
+
+                var state = await _context.States
+                    .ToListAsync();
+
+                if (state == null || !state.Any())
+                {
+                    return NotFound("No countries found.");
+                }
+
+                return Ok(state);
+            }
+            catch (Exception ex)
+            {
+
+                throw;
+            }
+        }
+    }
 }
 
