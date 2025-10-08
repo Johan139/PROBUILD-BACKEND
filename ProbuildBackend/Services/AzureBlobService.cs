@@ -144,6 +144,37 @@ namespace ProbuildBackend.Services
                 throw;
             }
         }
+        public async Task<string> UploadFileAsync(string fileName, Stream content, string contentType, int? jobId = null)
+        {
+            string blobName = jobId.HasValue
+                ? $"job_{jobId}/blueprints/{Guid.NewGuid()}_{fileName}"
+                : $"{Guid.NewGuid()}_{fileName}";
+
+            _logger.LogInformation("Uploading to blob: {BlobName}", blobName);
+            BlobClient blobClient = _containerClient.GetBlobClient(blobName);
+
+            var blobHttpHeaders = new BlobHttpHeaders { ContentType = contentType };
+            
+            var metadata = new Dictionary<string, string>
+            {
+                { "originalFileName", fileName }
+            };
+
+            var uploadOptions = new BlobUploadOptions
+            {
+                HttpHeaders = blobHttpHeaders,
+                Metadata = metadata,
+                TransferOptions = new StorageTransferOptions
+                {
+                    MaximumTransferSize = 4 * 1024 * 1024 // 4MB chunks
+                }
+            };
+
+            await blobClient.UploadAsync(content, uploadOptions);
+            _logger.LogInformation("Successfully uploaded file to Azure Blob Storage: {BlobName}", blobName);
+
+            return blobClient.Uri.ToString();
+        }
 
         public async Task<List<BlobItem>> GetUploadedBlobs()
         {

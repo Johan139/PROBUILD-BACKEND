@@ -17,6 +17,7 @@ namespace ProbuildBackend.Services
         private readonly IAiAnalysisService _aiAnalysisService;
         private readonly IConversationRepository _conversationRepository;
         private readonly AzureBlobService _azureBlobService;
+        private readonly IBlueprintProcessingService _blueprintProcessingService;
 
         public DocumentProcessorService(
             ApplicationDbContext context,
@@ -24,7 +25,8 @@ namespace ProbuildBackend.Services
             IEmailSender emailService,
             IAiAnalysisService aiAnalysisService,
             IConversationRepository conversationRepository,
-            AzureBlobService azureBlobService
+            AzureBlobService azureBlobService,
+            IBlueprintProcessingService blueprintProcessingService
         )
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
@@ -36,6 +38,7 @@ namespace ProbuildBackend.Services
                 conversationRepository
                 ?? throw new ArgumentNullException(nameof(conversationRepository));
             _azureBlobService = azureBlobService;
+            _blueprintProcessingService = blueprintProcessingService;
         }
 
         public async Task ProcessDocumentsForJobAsync(
@@ -69,6 +72,8 @@ namespace ProbuildBackend.Services
                     userContextText,
                     userContextFileUrl
                 );
+
+                await ProcessBlueprintAnalysisForJobAsync(jobId, documentUrls, connectionId);
 
                 var processingResult = new DocumentProcessingResult
                 {
@@ -178,11 +183,14 @@ namespace ProbuildBackend.Services
                     userContextText,
                     userContextFileUrl
                 );
+                
                 string finalReport = await _aiAnalysisService.PerformSelectedAnalysisAsync(
                     job.UserId,
                     request,
                     generateDetailsWithAi
                 );
+
+                await ProcessBlueprintAnalysisForJobAsync(jobId, documentUrls, connectionId);
 
                 var result = new DocumentProcessingResult
                 {
@@ -353,6 +361,35 @@ namespace ProbuildBackend.Services
                 await _hubContext.Clients
                     .Client(connectionId)
                     .SendAsync("AnalysisFailed", jobId, "Renovation analysis failed.");
+            }
+        }
+        
+        public async Task ProcessBlueprintAnalysisForJobAsync(int jobId, List<string> documentUrls, string connectionId)
+        {
+            var job = await _context.Jobs.FindAsync(jobId);
+            if (job == null)
+            {
+                await _hubContext.Clients.Client(connectionId).SendAsync("AnalysisFailed", jobId, "Job not found.");
+                return;
+            }
+
+            try
+            {
+                foreach (var docUrl in documentUrls)
+                {
+                    await _blueprintProcessingService.ProcessBlueprintAsync(job.UserId, docUrl, jobId);
+                }
+
+                job.Status = "PROCESSED";
+                await _context.SaveChangesAsync();
+
+                await _hubContext.Clients.Client(connectionId).SendAsync("AnalysisComplete", jobId, "Blueprint analysis is complete.");
+            }
+            catch (Exception ex)
+            {
+                job.Status = "FAILED";
+                await _context.SaveChangesAsync();
+                await _hubContext.Clients.Client(connectionId).SendAsync("AnalysisFailed", jobId, "Blueprint analysis failed: " + ex.Message);
             }
         }
     }

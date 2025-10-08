@@ -1,4 +1,5 @@
-﻿﻿using ProbuildBackend.Services;
+﻿﻿using ProbuildBackend.Interface;
+using ProbuildBackend.Services;
 using Elastic.Apm.NetCoreAll;
 using Hangfire;
 using Microsoft.EntityFrameworkCore;
@@ -11,7 +12,6 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Options;
@@ -213,6 +213,8 @@ builder.Services.AddScoped<IPdfTextExtractionService, PdfTextExtractionService>(
 builder.Services.Configure<OcrSettings>(configuration.GetSection("OcrSettings"));
 builder.Services.AddScoped(sp => sp.GetRequiredService<IOptions<OcrSettings>>().Value);
 builder.Services.AddScoped<UserModerationService>();
+builder.Services.AddScoped<IPdfConversionService, PdfConversionService>();
+builder.Services.AddScoped<IBlueprintProcessingService, BlueprintProcessingService>();
 
 builder.Services.AddHostedService<TokenCleanupService>();
 builder.Services.AddHangfireServer();

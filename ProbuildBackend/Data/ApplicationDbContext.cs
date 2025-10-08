@@ -36,6 +36,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<DocumentProcessingResult> DocumentProcessingResults { get; set; }
     public DbSet<AddressModel> JobAddresses { get; set; }
     public DbSet<JobDocumentModel> JobDocuments { get; set; }
+    public DbSet<BlueprintAnalysis> BlueprintAnalyses { get; set; }
     public DbSet<LogosModel> Logos { get; set; }
     public DbSet<Quote> Quotes { get; set; }
     public DbSet<QuoteRow> QuoteRows { get; set; }

@@ -13,5 +13,6 @@ namespace ProbuildBackend.Interface
         Task<string> GenerateRevisionAsync(string conversationId, string revisionRequestText);
         Task<string> AnalyzeBidsAsync(List<BidModel> bids, string comparisonType);
         Task<string> GenerateFeedbackForUnsuccessfulBidderAsync(BidModel bid, BidModel winningBid);
+        Task<string> PerformBlueprintAnalysisAsync(string userId, IEnumerable<string> documentUrls);
     }
 }

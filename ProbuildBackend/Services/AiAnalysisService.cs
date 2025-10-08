@@ -547,6 +547,39 @@ namespace ProbuildBackend.Services
 
             return analysisResult;
         }
+
+        private string ExtractBlueprintJson(string aiResponse)
+        {
+            var jsonRegex = new Regex(@"```json\s*(\{.*?\})\s*```", RegexOptions.Singleline);
+            var match = jsonRegex.Match(aiResponse);
+            if (match.Success)
+            {
+                _logger.LogInformation("Successfully extracted blueprint JSON from AI response.");
+                return match.Groups[1].Value;
+            }
+
+            _logger.LogError("Failed to find or extract blueprint JSON from the AI response.");
+            throw new InvalidOperationException("Could not parse blueprint JSON from AI response.");
+        }
+
+        public async Task<string> PerformBlueprintAnalysisAsync(string userId, IEnumerable<string> documentUrls)
+        {
+            const string blueprintPromptKey = "Blueprint_Measurement_Prompt.txt";
+            _logger.LogInformation("START: PerformBlueprintAnalysisAsync for User {UserId}", userId);
+
+            try
+            {
+                var blueprintPrompt = await _promptManager.GetPromptAsync(null, blueprintPromptKey);
+                var (response, conversationId) = await _aiService.StartMultimodalConversationAsync(userId, documentUrls, "", blueprintPrompt);
+                _logger.LogInformation("JSON analysis completed for conversation {ConversationId}.", conversationId);
+                return ExtractBlueprintJson(response);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "EXCEPTION in PerformBlueprintAnalysisAsync for User {UserId}", userId);
+                throw;
+            }
+        }
    }
 }
 
