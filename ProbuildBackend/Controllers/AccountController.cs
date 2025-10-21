@@ -136,6 +136,26 @@ namespace ProbuildBackend.Controllers
         }
 
 
+        [HttpGet("resend-email-verification/{email}")]
+
+        public async Task<ActionResult> ResendEmailLink(string email)
+        {
+
+            var user = _context.Users.Where(p => p.Email == email).FirstOrDefault();
+            var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+            var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["FrontEnd:FRONTEND_URL"];
+            var callbackUrl = $"{frontendUrl}/confirm-email/?userId={user.Id}&code={Uri.EscapeDataString(code)}";
+
+            await _emailSender.SendEmailAsync(user.Email, "Confirm your email",
+                $"Please confirm this account for {user.UserName} by <a href='{callbackUrl}'>clicking here</a>.");
+
+            return Ok(new
+            {
+                message = "Resend successful, please verify your email.",
+                userId = user.Id
+            });
+        }
+
         [HttpGet("has-active-subscription/{userId}")]
         public async Task<ActionResult> HasActiveSubscription(string userId)
         {
