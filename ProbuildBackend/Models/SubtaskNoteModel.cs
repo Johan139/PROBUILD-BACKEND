@@ -10,7 +10,7 @@
 
         public string NoteText { get; set; }
 
-        public string CreatedByUserId { get; set; } // assuming user IDs are stored as strings (e.g., GUIDs)
+        public string CreatedByUserId { get; set; } 
 
         public DateTime CreatedAt { get; set; }
 

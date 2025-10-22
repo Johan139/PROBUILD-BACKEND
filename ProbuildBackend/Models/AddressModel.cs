@@ -1,4 +1,6 @@
-﻿namespace ProbuildBackend.Models
+﻿using NetTopologySuite.Geometries;
+
+namespace ProbuildBackend.Models
 {
     public class AddressModel
     {
@@ -13,6 +15,7 @@
 
         public decimal? Latitude { get; set; }
         public decimal? Longitude { get; set; }
+        public Point Location { get; set; }
         public string? FormattedAddress { get; set; }
         public string? GooglePlaceId { get; set; }
         public DateTime CreatedAt { get; set; }

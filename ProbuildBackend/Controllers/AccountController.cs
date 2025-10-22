@@ -10,6 +10,8 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.DataProtection;
 using System.Security.Cryptography;
+using Microsoft.AspNetCore.Authorization;
+using Newtonsoft.Json;
 using Microsoft.AspNetCore.DataProtection;
 
 namespace ProbuildBackend.Controllers
@@ -31,7 +33,7 @@ namespace ProbuildBackend.Controllers
             _emailSender = emailSender;
             _configuration = configuration;
             _context = context;
-            _serviceProvider = serviceProvider; // Initialize the field
+            _serviceProvider = serviceProvider;
             _dataProtectionProvider = dataProtectionProvider;
         }
 
@@ -70,7 +72,7 @@ namespace ProbuildBackend.Controllers
                     Trade = model.Trade,
                     ProductsOffered = model.ProductsOffered,
                     SupplierType = model.SupplierType,
-                    ProjectPreferences = model.ProjectPreferences,
+                    JobPreferences = model.JobPreferences,
                     DeliveryArea = model.DeliveryArea,
                     DeliveryTime = model.DeliveryTime,
                     Country = model.Country,
@@ -165,7 +167,6 @@ namespace ProbuildBackend.Controllers
             return Ok(new { hasActive });
         }
 
-        // GET api/users/byrole/{userType}
         [HttpGet("byrole/{userType}")]
         public async Task<ActionResult<IEnumerable<UserModel>>> GetUsersByName(string userType)
         {
@@ -186,7 +187,6 @@ namespace ProbuildBackend.Controllers
             return Ok(users);
         }
 
-        // GET api/users/byUserId/{UserId}
         [HttpGet("byUserId/{id}")]
         public async Task<ActionResult<IEnumerable<UserModel>>> GetUserById(string id)
         {
@@ -203,6 +203,61 @@ namespace ProbuildBackend.Controllers
             {
                 return NotFound("No users found with the specified id.");
             }
+
+            return Ok(users);
+        }
+
+        [HttpGet("search")]
+        public async Task<ActionResult<IEnumerable<UserSearchDto>>> SearchUsers([FromQuery] string term)
+        {
+            if (string.IsNullOrWhiteSpace(term))
+            {
+                return BadRequest("Search term cannot be empty.");
+            }
+
+            var users = await _context.Users
+                .Where(u => u.FirstName.Contains(term) || u.LastName.Contains(term) || u.CompanyName.Contains(term) || u.Trade.Contains(term) || u.Email.Contains(term) || u.PhoneNumber.Contains(term))
+                .Select(u => new UserSearchDto
+                {
+                    Id = u.Id,
+                    FirstName = u.FirstName,
+                    LastName = u.LastName,
+                    UserType = u.UserType,
+                    CompanyName = u.CompanyName,
+                    Email = u.Email,
+                    PhoneNumber = u.PhoneNumber,
+                    ConstructionType = u.ConstructionType,
+                    Trade = u.Trade,
+                    SupplierType = u.SupplierType,
+                    ProductsOffered = u.ProductsOffered,
+                    Country = u.Country,
+                    City = u.City
+                })
+                .ToListAsync();
+
+            return Ok(users);
+        }
+        [HttpGet("users")]
+        public async Task<ActionResult<IEnumerable<UserSearchDto>>> GetUsers()
+        {
+            var users = await _context.Users
+                .Select(u => new UserSearchDto
+                {
+                    Id = u.Id,
+                    FirstName = u.FirstName,
+                    LastName = u.LastName,
+                    UserType = u.UserType,
+                    CompanyName = u.CompanyName,
+                    Email = u.Email,
+                    PhoneNumber = u.PhoneNumber,
+                    ConstructionType = u.ConstructionType,
+                    Trade = u.Trade,
+                    SupplierType = u.SupplierType,
+                    ProductsOffered = u.ProductsOffered,
+                    Country = u.Country,
+                    City = u.City
+                })
+                .ToListAsync();
 
             return Ok(users);
         }
@@ -360,7 +415,7 @@ namespace ProbuildBackend.Controllers
 
             return Ok(new
             {
-                accessToken = newAccessTokenString,
+                token = newAccessTokenString,
                 refreshToken = newRefreshToken
             });
         }
@@ -374,7 +429,7 @@ namespace ProbuildBackend.Controllers
                 if (user == null) return NotFound("User not found.");
 
                 var existingTrial = await _context.PaymentRecords
-                    .AnyAsync(p => p.UserId == dto.UserId && p.IsTrial && p.Status == "Active");
+                    .AnyAsync(p => p.UserId == dto.UserId && p.IsTrial == true && p.Status == "Active");
 
                 if (existingTrial)
                     return BadRequest("Trial already used.");
@@ -526,7 +581,7 @@ namespace ProbuildBackend.Controllers
                 Trade = existingUser.Trade ?? "",
                 SupplierType = existingUser.SupplierType ?? "",
                 ProductsOffered = existingUser.ProductsOffered ?? "",
-                ProjectPreferences = existingUser.ProjectPreferences ?? "",
+                JobPreferences = existingUser.JobPreferences ?? "",
                 DeliveryArea = existingUser.DeliveryArea ?? "",
                 DeliveryTime = existingUser.DeliveryTime ?? "",
                 Country = existingUser.Country ?? "",
@@ -615,7 +670,7 @@ namespace ProbuildBackend.Controllers
             return Ok(new { teamMember.FirstName, teamMember.LastName, teamMember.Email, teamMember.Role });
         }
 
-        [HttpPost("register/invited")]
+        [HttpPost("register/team-member")]
         public async Task<IActionResult> RegisterInvited([FromBody] InvitedRegistrationDto dto)
         {
             var protector = _dataProtectionProvider.CreateProtector("TeamMemberInvitation");
@@ -723,6 +778,56 @@ namespace ProbuildBackend.Controllers
                refreshToken = refreshToken
            });
        }
+
+       [HttpPut("preferences")]
+       public async Task<IActionResult> UpdatePreferences([FromBody] UpdatePreferencesDto model)
+       {
+           var userId = User.FindFirstValue("UserId");
+           if (string.IsNullOrEmpty(userId))
+           {
+               return Unauthorized();
+           }
+
+           var user = await _userManager.FindByIdAsync(userId);
+           if (user == null)
+           {
+               return NotFound("User not found.");
+           }
+
+           user.NotificationRadiusMiles = model.NotificationRadiusMiles;
+           user.JobPreferences = JsonConvert.SerializeObject(model.JobPreferences);
+
+           var result = await _userManager.UpdateAsync(user);
+
+           if (result.Succeeded)
+           {
+               return Ok(new { message = "Preferences updated successfully." });
+           }
+
+           return BadRequest(result.Errors);
+       }
+
+       [HttpGet("address")]
+       public async Task<IActionResult> GetUserAddress()
+       {
+           var userId = User.FindFirstValue("UserId");
+           if (string.IsNullOrEmpty(userId))
+           {
+               return Unauthorized();
+           }
+
+           var userAddress = await _context.UserAddress
+               .Where(a => a.UserId == userId)
+               .FirstOrDefaultAsync();
+
+           if (userAddress == null)
+           {
+               return NotFound("Address not found.");
+           }
+
+           return Ok(userAddress);
+       }
+   
         // GET api/users/byUserId/{UserId}
         [HttpGet("countries")]
         public async Task<ActionResult<IEnumerable<UserModel>>> GetCountries()

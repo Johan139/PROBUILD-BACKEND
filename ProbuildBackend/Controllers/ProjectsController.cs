@@ -83,7 +83,7 @@ namespace ProbuildBackend.Controllers
                 Stories = projectrequest.Stories,
                 BuildingSize = projectrequest.BuildingSize,
                 OperatingArea = projectrequest.OperatingArea,
-                Bids = projectrequest.Bids
+                // Bids = projectrequest.Bids - removed 25/09/25 - don't think it's needed
             };
 
 

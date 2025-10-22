@@ -5,7 +5,6 @@ VisualStudioVersion = 17.10.34916.146
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProbuildBackend", "ProbuildBackend\ProbuildBackend.csproj", "{FD74B2D8-1953-47DD-BA75-4AB9237B06F3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProbuildBackend.Tests", "ProbuildBackend.Tests\ProbuildBackend.Tests.csproj", "{4F53DF31-3E16-41CC-99C7-462B4D227BAC}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

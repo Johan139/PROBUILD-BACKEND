@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bid Status Update</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f9f9f9;
+        }
+        .container {
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        .header {
+            text-align: center;
+            padding-bottom: 20px;
+        }
+        .header img {
+            max-width: 150px;
+            margin-bottom: 10px;
+        }
+        .header h2 {
+            color: #333;
+            font-weight: 600;
+        }
+        .content {
+            color: #333;
+            line-height: 1.6;
+        }
+        .cta-button {
+            display: block;
+            width: 200px;
+            margin: 20px auto;
+            padding: 15px 20px;
+            background-color: #fbd008;
+            color: #000000;
+            text-align: center;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .cta-button:hover {
+            background-color: #e6bf00;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+            color: #888888;
+            font-size: 12px;
+        }
+        .status {
+            font-weight: bold;
+        }
+        .status-won {
+            color: #28a745;
+        }
+        .status-finalist {
+            color: #ffc107;
+        }
+        .status-not-selected {
+            color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="https://probuild.netlify.app/assets/logo.png" alt="ProBuild Logo">
+            <h2>Update on Your Bid for {{JobTitle}}</h2>
+        </div>
+        <div class="content">
+            <p>Hello {{UserName}},</p>
+            <p>Here is an update on the status of your bid for the job: <strong>{{JobTitle}}</strong>.</p>
+            <p>Your bid status is now: <span class="status {{BidStatusClass}}">{{BidStatus}}</span></p>
+
+            <!-- Conditional Content based on Status -->
+            {{#if IsWinner}}
+            <p>Congratulations! Your bid has been selected. We will be in touch shortly with the next steps, including contract signing and project onboarding.</p>
+            <p>As a reminder, a finders' fee of {{FinderFeePercentage}}% will be applied.</p>
+            <a href="{{JobDashboardLink}}" class="cta-button">Go to Job Dashboard</a>
+            {{/if}}
+
+            {{#if IsFinalist}}
+            <p>You have been selected as a finalist! You now have the opportunity to submit a revised, final quote. Please submit your best and final offer by {{FinalBidDeadline}}.</p>
+            <a href="{{SubmitFinalQuoteLink}}" class="cta-button">Submit Final Quote</a>
+            {{/if}}
+
+            {{#if IsNotSelected}}
+            <p>Thank you for your interest and for submitting a quote. At this time, your bid has not been selected to move forward.</p>
+            {{#if IsPaidTier}}
+            <p>As a premium subscriber, you can view a report on why your bid was not selected to help improve your future quotes.</p>
+            <a href="{{BidReportLink}}" class="cta-button">View Bid Report</a>
+            {{/if}}
+            {{^if IsPaidTier}}
+            <p>We encourage you to continue bidding on other jobs available on the platform.</p>
+            <a href="{{FindWorkLink}}" class="cta-button">Find More Work</a>
+            {{/if}}
+            {{/if}}
+        </div>
+        <div class="footer">
+            <p>This is an automated message. Please do not reply to this email as the inbox is not monitored.</p>
+            <p>Thanks,</p>
+            <p>The ProBuild Team</p>
+        </div>
+    </div>
+</body>
+</html>

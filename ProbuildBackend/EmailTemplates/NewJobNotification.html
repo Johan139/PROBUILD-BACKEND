@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New Job Notification</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f9f9f9;
+        }
+        .container {
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        .header {
+            text-align: center;
+            padding-bottom: 20px;
+        }
+        .header img {
+            max-width: 150px;
+            margin-bottom: 10px;
+        }
+        .header h2 {
+            color: #333;
+            font-weight: 600;
+        }
+        .content {
+            color: #333;
+            line-height: 1.6;
+        }
+        .cta-button {
+            display: block;
+            width: 200px;
+            margin: 20px auto;
+            padding: 15px 20px;
+            background-color: #fbd008;
+            color: #000000;
+            text-align: center;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .cta-button:hover {
+            background-color: #e6bf00;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+            color: #888888;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="https://probuild.netlify.app/assets/logo.png" alt="ProBuild Logo">
+            <h2>New Job Opportunity on ProBuild</h2>
+        </div>
+        <div class="content">
+            <p>Hello {{UserName}},</p>
+            <p>A new job has been posted in your area that matches your skills and preferences:</p>
+            <h3>{{JobTitle}}</h3>
+            <p><strong>Location:</strong> {{JobLocation}}</p>
+            <p><strong>Description:</strong></p>
+            <p>{{JobDescription}}</p>
+            <p>If you are interested, you can view the full details and submit a quote by clicking the button below:</p>
+            <a href="{{JobDetailsLink}}" class="cta-button">View Job and Submit Quote</a>
+            <p>Please note that quote submission limits may apply based on your subscription tier.</p>
+        </div>
+        <div class="footer">
+            <p>This is an automated message. Please do not reply to this email as the inbox is not monitored.</p>
+            <p><a href="{{UnsubscribeLink}}">Unsubscribe</a> from these notifications.</p>
+            <p>Thanks,</p>
+            <p>The ProBuild Team</p>
+        </div>
+    </div>
+</body>
+</html>
