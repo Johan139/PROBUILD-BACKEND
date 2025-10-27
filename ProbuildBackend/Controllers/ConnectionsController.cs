@@ -1,9 +1,12 @@
+using Hangfire.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
+using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
+using Stripe;
+using System.Security.Claims;
 
 namespace Probuild.Controllers
 {
@@ -12,10 +15,16 @@ namespace Probuild.Controllers
     public class ConnectionsController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
+        private readonly IEmailTemplateService _emailTemplate;
+        private readonly IEmailSender _emailSender;
+        private readonly IConfiguration _configuration;
 
-        public ConnectionsController(ApplicationDbContext context)
+        public ConnectionsController(ApplicationDbContext context, IEmailTemplateService emailTemplate, IEmailSender emailSender, IConfiguration configuration)
         {
             _context = context;
+            _emailTemplate = emailTemplate;
+            _emailSender = emailSender;
+            _configuration = configuration;
         }
 
         [HttpPost("request")]
@@ -46,9 +55,24 @@ namespace Probuild.Controllers
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
+            var receiver =  _context.Users.Where(u => u.Id == request.ReceiverId).FirstOrDefault();
+            var requester =  _context.Users.Where(u => u.Id == requesterId).FirstOrDefault();
+
+            var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["FrontEnd:FRONTEND_URL"];
+            var callbackURL = $"{frontendUrl}/login";
 
             _context.Connections.Add(connection);
             await _context.SaveChangesAsync();
+
+            var ConnectionEmail = await _emailTemplate.GetTemplateAsync("ConnectionRequestEmail");
+
+            ConnectionEmail.Subject = ConnectionEmail.Subject.Replace("{{InviterName}}", requester.FirstName + " " + requester.LastName);
+
+            ConnectionEmail.Body = ConnectionEmail.Body.Replace("{{UserName}}", receiver.FirstName + " " + receiver.LastName).Replace("{{ConnectionLink}}", "")
+                .Replace("{{Header}}", ConnectionEmail.HeaderHtml)
+                .Replace("{{Footer}}", ConnectionEmail.FooterHtml);
+
+            await _emailSender.SendEmailAsync(ConnectionEmail, receiver.Email);
 
             return CreatedAtAction(nameof(GetConnections), new { id = connection.Id }, connection);
         }
