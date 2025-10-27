@@ -698,12 +698,14 @@ namespace ProbuildBackend.Controllers
             {
                 var userEmail = await _context.Users.Where(d => d.Id == item).ToListAsync();
                 var ActionRequired = await _emailTemplate.GetTemplateAsync("TaskActionRequiredEmail");
-
+                var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
+                var callbackUrl = $"{frontendUrl}/login";
                 ActionRequired.Subject = ActionRequired.Subject.Replace("{{job.ProjectName}}", Jobs[0].ProjectName);
 
                 ActionRequired.Body = ActionRequired.Body.Replace("{{UserName}}", userEmail[0].FirstName + " " + userEmail[0].LastName).Replace("{{job.ProjectName}}", Jobs[0].ProjectName)
                 .Replace("{{Header}}", ActionRequired.HeaderHtml)
-                .Replace("{{Footer}}", ActionRequired.FooterHtml);
+                .Replace("{{Footer}}", ActionRequired.FooterHtml)
+                .Replace("{{TaskLink}}", callbackUrl);
 
                 try
                 {
