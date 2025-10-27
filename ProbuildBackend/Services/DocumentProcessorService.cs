@@ -1,12 +1,13 @@
-﻿using System.Text.Json;
+﻿using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.SignalR;
-using ProbuildBackend.Models;
 using Microsoft.EntityFrameworkCore;
-using ProbuildBackend.Middleware;
 using ProbuildBackend.Interface;
-using Microsoft.AspNetCore.Identity.UI.Services;
+using ProbuildBackend.Middleware;
+using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
-
+using System.Text.Json;
+using System.Web;
+using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 namespace ProbuildBackend.Services
 {
     public class DocumentProcessorService : IDocumentProcessorService
@@ -17,14 +18,15 @@ namespace ProbuildBackend.Services
         private readonly IAiAnalysisService _aiAnalysisService;
         private readonly IConversationRepository _conversationRepository;
         private readonly AzureBlobService _azureBlobService;
-
+        private readonly IEmailTemplateService _emailTemplate;
         public DocumentProcessorService(
             ApplicationDbContext context,
             IHubContext<ProgressHub> hubContext,
             IEmailSender emailService,
             IAiAnalysisService aiAnalysisService,
             IConversationRepository conversationRepository,
-            AzureBlobService azureBlobService
+            AzureBlobService azureBlobService,
+            IEmailTemplateService emailTemplate
         )
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
@@ -36,6 +38,7 @@ namespace ProbuildBackend.Services
                 conversationRepository
                 ?? throw new ArgumentNullException(nameof(conversationRepository));
             _azureBlobService = azureBlobService;
+            _emailTemplate = emailTemplate;
         }
 
         public async Task ProcessDocumentsForJobAsync(
@@ -85,15 +88,43 @@ namespace ProbuildBackend.Services
 
                 if (user != null)
                 {
-                    var subject = $"AI Processing Complete for Job {job.ProjectName}";
-                    var body =
-                        $@"<h2>AI Processing Complete</h2>
-                                  <p>The AI has finished processing the documents for your job '{job.ProjectName}'.</p>
-                                  <p><strong>Job ID:</strong> {jobId}</p>
-                                  <p>Check the application for the full analysis report.</p>";
+
+                    var ProjectAnalysisEmail = await _emailTemplate.GetTemplateAsync("ProjectAnalysisReadyEmail");
+
+                    var jobAddress = _context.JobAddresses.Where(j => j.JobId == job.Id).FirstOrDefault();
+
+                    var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
+
+                    var query = HttpUtility.ParseQueryString(string.Empty);
+                    query["jobId"] = job.Id.ToString();
+                    query["operatingArea"] = job.OperatingArea;
+                    query["address"] = job.Address;
+                    query["projectName"] = job.ProjectName;
+                    query["jobType"] = job.JobType;
+                    query["buildingSize"] = job.BuildingSize.ToString();
+                    query["wallStructure"] = job.WallStructure;
+                    query["wallInsulation"] = job.WallInsulation;
+                    query["roofStructure"] = job.RoofStructure;
+                    query["roofInsulation"] = job.RoofInsulation;
+                    query["electricalSupply"] = job.ElectricalSupplyNeeds;
+                    query["finishes"] = job.Finishes;
+                    query["foundation"] = job.Foundation;
+                    query["date"] = job.DesiredStartDate.ToString("MM/dd/yyyy");
+                    query["documents"] = string.Join(",", job.Documents.Select(d => d.Id));
+                    query["latitude"] = jobAddress.Latitude.ToString();
+                    query["longitude"] = jobAddress.Longitude.ToString();
+
+                    var analysisLink = $"{frontendUrl}/view-quote?{query}";
+
+                    ProjectAnalysisEmail.Subject = ProjectAnalysisEmail.Subject.Replace("{{job.ProjectName}}", job.ProjectName);
+
+                    ProjectAnalysisEmail.Body = ProjectAnalysisEmail.Body.Replace("{{UserName}}", user.FirstName + " " + user.LastName)
+                                                                             .Replace("{{job.ProjectName}}", job.ProjectName)
+                                                                             .Replace("{{AnalysisLink}}", analysisLink).Replace("{{Header}}", ProjectAnalysisEmail.HeaderHtml)
+                .Replace("{{Footer}}", ProjectAnalysisEmail.FooterHtml);
                     try
                     {
-                        await _emailService.SendEmailAsync(user.Email, subject, body);
+                        await _emailService.SendEmailAsync(ProjectAnalysisEmail,user.Email);
                     }
                     catch (Exception ex)
                     {
@@ -204,15 +235,43 @@ namespace ProbuildBackend.Services
                 }
                 if (user != null)
                 {
-                    var subject = $"AI Processing Complete for Job {job.ProjectName}";
-                    var body =
-                        $@"<h2>AI Processing Complete</h2>
-                                  <p>The AI has finished processing the documents for your job '{job.ProjectName}'.</p>
-                                  <p><strong>Job ID:</strong> {jobId}</p>
-                                  <p>Check the application for the full analysis report.</p>";
+                    var ProjectAnalysisEmail = await _emailTemplate.GetTemplateAsync("ProjectAnalysisReadyEmail");
+
+                    var jobAddress = _context.JobAddresses.Where(j => j.JobId == job.Id).FirstOrDefault();
+
+                    var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
+
+                    var query = HttpUtility.ParseQueryString(string.Empty);
+                    query["jobId"] = job.Id.ToString();
+                    query["operatingArea"] = job.OperatingArea;
+                    query["address"] = job.Address;
+                    query["projectName"] = job.ProjectName;
+                    query["jobType"] = job.JobType;
+                    query["buildingSize"] = job.BuildingSize.ToString();
+                    query["wallStructure"] = job.WallStructure;
+                    query["wallInsulation"] = job.WallInsulation;
+                    query["roofStructure"] = job.RoofStructure;
+                    query["roofInsulation"] = job.RoofInsulation;
+                    query["electricalSupply"] = job.ElectricalSupplyNeeds;
+                    query["finishes"] = job.Finishes;
+                    query["foundation"] = job.Foundation;
+                    query["date"] = job.DesiredStartDate.ToString("MM/dd/yyyy");
+                    query["documents"] = string.Join(",", job.Documents.Select(d => d.Id));
+                    query["latitude"] = jobAddress.Latitude.ToString();
+                    query["longitude"] = jobAddress.Longitude.ToString();
+
+                    var analysisLink = $"{frontendUrl}/view-quote?{query}";
+
+                    ProjectAnalysisEmail.Subject = ProjectAnalysisEmail.Subject.Replace("{{job.ProjectName}}", job.ProjectName);
+
+                    ProjectAnalysisEmail.Body = ProjectAnalysisEmail.Body.Replace("{{UserName}}", user.FirstName + " " + user.LastName)
+                                                                             .Replace("{{job.ProjectName}}", job.ProjectName)
+                                                                             .Replace("{{AnalysisLink}}", analysisLink).Replace("{{Header}}", ProjectAnalysisEmail.HeaderHtml)
+                .Replace("{{Footer}}", ProjectAnalysisEmail.FooterHtml);
+
                     try
                     {
-                        await _emailService.SendEmailAsync(user.Email, subject, body);
+                        await _emailService.SendEmailAsync(ProjectAnalysisEmail,user.Email);
                     }
                     catch (Exception ex)
                     {
@@ -325,15 +384,43 @@ namespace ProbuildBackend.Services
                 }
                 if (user != null)
                 {
-                    var subject = $"AI Processing Complete for Job {job.ProjectName}";
-                    var body =
-                        $@"<h2>AI Processing Complete</h2>
-                                  <p>The AI has finished processing the documents for your job '{job.ProjectName}'.</p>
-                                  <p><strong>Job ID:</strong> {jobId}</p>
-                                  <p>Check the application for the full analysis report.</p>";
+                    var ProjectAnalysisEmail = await _emailTemplate.GetTemplateAsync("ProjectAnalysisReadyEmail");
+
+                    var jobAddress = _context.JobAddresses.Where(j => j.JobId == job.Id).FirstOrDefault();
+
+                    var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
+
+                    var query = HttpUtility.ParseQueryString(string.Empty);
+                    query["jobId"] = job.Id.ToString();
+                    query["operatingArea"] = job.OperatingArea;
+                    query["address"] = job.Address;
+                    query["projectName"] = job.ProjectName;
+                    query["jobType"] = job.JobType;
+                    query["buildingSize"] = job.BuildingSize.ToString();
+                    query["wallStructure"] = job.WallStructure;
+                    query["wallInsulation"] = job.WallInsulation;
+                    query["roofStructure"] = job.RoofStructure;
+                    query["roofInsulation"] = job.RoofInsulation;
+                    query["electricalSupply"] = job.ElectricalSupplyNeeds;
+                    query["finishes"] = job.Finishes;
+                    query["foundation"] = job.Foundation;
+                    query["date"] = job.DesiredStartDate.ToString("MM/dd/yyyy");
+                    query["documents"] = string.Join(",", job.Documents.Select(d => d.Id));
+                    query["latitude"] = jobAddress.Latitude.ToString();
+                    query["longitude"] = jobAddress.Longitude.ToString();
+
+                    var analysisLink = $"{frontendUrl}/view-quote?{query}";
+
+                    ProjectAnalysisEmail.Subject = ProjectAnalysisEmail.Subject.Replace("{{job.ProjectName}}", job.ProjectName);
+
+                    ProjectAnalysisEmail.Body = ProjectAnalysisEmail.Body.Replace("{{UserName}}", user.FirstName + " " + user.LastName)
+                                                                             .Replace("{{job.ProjectName}}", job.ProjectName)
+                                                                             .Replace("{{AnalysisLink}}", analysisLink).Replace("{{Header}}", ProjectAnalysisEmail.HeaderHtml)
+                .Replace("{{Footer}}", ProjectAnalysisEmail.FooterHtml);
+
                     try
                     {
-                        await _emailService.SendEmailAsync(user.Email, subject, body);
+                        await _emailService.SendEmailAsync(ProjectAnalysisEmail,user.Email);
                     }
                     catch (Exception ex)
                     {
