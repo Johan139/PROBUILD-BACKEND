@@ -3,10 +3,11 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using System.Security.Claims;
-
+using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 namespace Probuild.Controllers
 {
     [ApiController]
@@ -17,13 +18,15 @@ namespace Probuild.Controllers
         private readonly UserManager<UserModel> _userManager;
         private readonly IEmailSender _emailSender;
         private readonly ILogger<InvitationController> _logger;
-
-        public InvitationController(ApplicationDbContext context, UserManager<UserModel> userManager, IEmailSender emailSender, ILogger<InvitationController> logger)
+        private readonly IEmailTemplateService _emailTemplate;
+        public InvitationController(ApplicationDbContext context, UserManager<UserModel> userManager, IEmailSender emailSender, ILogger<InvitationController> logger,
+            IEmailTemplateService emailTemplate)
         {
             _context = context;
             _userManager = userManager;
             _emailSender = emailSender;
             _logger = logger;
+            _emailTemplate = emailTemplate;
         }
 
         [HttpPost("invite")]
@@ -85,30 +88,18 @@ namespace Probuild.Controllers
 
                 var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
                 var registrationLink = $"{frontendUrl}/register?invitationToken={token}";
-                var logoUrl = "https://app.probuildai.com/assets/logo.png";
+                var InvitationEmail = await _emailTemplate.GetTemplateAsync("PlatformInvitationEmail");
 
-                var templatePath = Path.Combine(Directory.GetCurrentDirectory(), "EmailTemplates", "InvitationEmail.html");
-                var emailTemplate = await System.IO.File.ReadAllTextAsync(templatePath);
 
-                emailTemplate = emailTemplate.Replace("{{firstName}}", invitationDto.FirstName);
-                emailTemplate = emailTemplate.Replace("{{lastName}}", invitationDto.LastName);
-                emailTemplate = emailTemplate.Replace("{{inviterFirstName}}", inviter.FirstName);
-                emailTemplate = emailTemplate.Replace("{{inviterLastName}}", inviter.LastName);
+                //var templatePath = Path.Combine(Directory.GetCurrentDirectory(), "EmailTemplates", "InvitationEmail.html");
+                //var emailTemplate = await System.IO.File.ReadAllTextAsync(templatePath);
 
-                if (!string.IsNullOrEmpty(invitationDto.Message))
-                {
-                    emailTemplate = emailTemplate.Replace("{{message}}",
-                        $"<p>They included a personal message: <em>\"{invitationDto.Message}\"</em></p>");
-                }
-                else
-                {
-                    emailTemplate = emailTemplate.Replace("{{message}}", "");
-                }
+                InvitationEmail.Subject = InvitationEmail.Subject.Replace("{InviterName}", invitationDto.FirstName + " " + invitationDto.LastName);
+                InvitationEmail.Body = InvitationEmail.Body.Replace("{InviterName}", invitationDto.FirstName + " " + invitationDto.LastName).Replace("{{InvitationLink}}", "")
+                    .Replace("{{Header}}", InvitationEmail.HeaderHtml)
+                .Replace("{{Footer}}", InvitationEmail.FooterHtml);
 
-                emailTemplate = emailTemplate.Replace("{{invitationLink}}", registrationLink);
-                emailTemplate = emailTemplate.Replace("{{logoUrl}}", logoUrl);
-
-                await _emailSender.SendEmailAsync(invitationDto.Email, "You have been invited to join ProBuild", emailTemplate);
+                await _emailSender.SendEmailAsync(InvitationEmail,invitationDto.Email);
 
                 return Ok(new { message = "Invitation sent successfully." });
             }

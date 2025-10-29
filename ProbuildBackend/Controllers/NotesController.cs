@@ -9,6 +9,7 @@ using ProbuildBackend.Services;
 using System.IO.Compression;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using ProbuildBackend.Interface;
+using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 
 namespace ProbuildBackend.Controllers
 {
@@ -25,6 +26,7 @@ namespace ProbuildBackend.Controllers
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IConfiguration _config;
         private readonly WebSocketManager _webSocketManager;
+        public readonly IEmailTemplateService _emailTemplate;
 
         public NotesController(
             ApplicationDbContext context,
@@ -35,7 +37,8 @@ namespace ProbuildBackend.Controllers
             IEmailSender emailService,
             IHttpClientFactory httpClientFactory,
             IConfiguration config,
-            WebSocketManager webSocketManager
+            WebSocketManager webSocketManager,
+            IEmailTemplateService emailTemplate
         )
         {
             _httpContextAccessor =
@@ -49,6 +52,7 @@ namespace ProbuildBackend.Controllers
                 httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
             _config = config ?? throw new ArgumentNullException(nameof(config));
             _webSocketManager = webSocketManager;
+            _emailTemplate = emailTemplate;
         }
         [HttpGet("downloadNote/{documentId}")]
         public async Task<IActionResult> DownloadNoteBlob(int documentId)
@@ -693,14 +697,19 @@ namespace ProbuildBackend.Controllers
             foreach (var item in useridEmail)
             {
                 var userEmail = await _context.Users.Where(d => d.Id == item).ToListAsync();
+                var ActionRequired = await _emailTemplate.GetTemplateAsync("TaskActionRequiredEmail");
+                var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
+                var callbackUrl = $"{frontendUrl}/login";
+                ActionRequired.Subject = ActionRequired.Subject.Replace("{{job.ProjectName}}", Jobs[0].ProjectName);
 
-                var subject = $"New task requires an action";
-                var body =
-                    $@"<p>A note has been placed for a subtask which requires action. Please check dashboard.</p>";
+                ActionRequired.Body = ActionRequired.Body.Replace("{{UserName}}", userEmail[0].FirstName + " " + userEmail[0].LastName).Replace("{{job.ProjectName}}", Jobs[0].ProjectName)
+                .Replace("{{Header}}", ActionRequired.HeaderHtml)
+                .Replace("{{Footer}}", ActionRequired.FooterHtml)
+                .Replace("{{TaskLink}}", callbackUrl);
 
                 try
                 {
-                    await _emailService.SendEmailAsync(userEmail[0].Email, subject, body);
+                    await _emailService.SendEmailAsync(ActionRequired, userEmail[0].Email);
                 }
                 catch (Exception ex)
                 {

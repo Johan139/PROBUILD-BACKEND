@@ -1,16 +1,19 @@
+using Hangfire.Common;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using ProbuildBackend.Helpers;
+using ProbuildBackend.Interface;
+using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
+using Stripe;
 using System.Security.Claims;
-using Microsoft.AspNetCore.Identity.UI.Services;
-using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.SignalR;
-using ProbuildBackend.Middleware;
-using ProbuildBackend.Helpers;
-
+using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 namespace ProbuildBackend.Controllers
 {
     [Authorize]
@@ -23,19 +26,20 @@ namespace ProbuildBackend.Controllers
         private readonly IEmailSender _emailSender;
         private readonly IDataProtectionProvider _dataProtectionProvider;
         private readonly IHubContext<NotificationHub> _hubContext;
-
+        public readonly IEmailTemplateService _emailTemplate;
         public TeamsController(
             ApplicationDbContext context,
             UserManager<UserModel> userManager,
             IEmailSender emailSender,
             IDataProtectionProvider dataProtectionProvider,
-            IHubContext<NotificationHub> hubContext)
+            IHubContext<NotificationHub> hubContext, IEmailTemplateService emailTemplate)
         {
             _context = context;
             _userManager = userManager;
             _emailSender = emailSender;
             _dataProtectionProvider = dataProtectionProvider;
             _hubContext = hubContext;
+            _emailTemplate = emailTemplate;
         }
 
         [HttpPost("members")]
@@ -109,11 +113,17 @@ namespace ProbuildBackend.Controllers
 
             var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
             var callbackUrl = $"{frontendUrl}/register?token={Uri.EscapeDataString(token)}";
-            var emailMessage = $"You have been invited to join a team by {inviterFullName}. Please <a href='{callbackUrl}'>click here</a> to register.";
 
+            var TeamInvitationEmail = await _emailTemplate.GetTemplateAsync("TeamInvitationEmail");
+
+            TeamInvitationEmail.Subject = TeamInvitationEmail.Subject.Replace("{{inviterFullName}}", inviterFullName);
+
+            TeamInvitationEmail.Body = TeamInvitationEmail.Body.Replace("{{inviterFullName}}", inviterFullName)
+                .Replace("{{InvitationLink}}", callbackUrl).Replace("{{Header}}", TeamInvitationEmail.HeaderHtml)
+                .Replace("{{Footer}}", TeamInvitationEmail.FooterHtml);
             try
             {
-                await _emailSender.SendEmailAsync(dto.Email, emailSubject, emailMessage);
+                await _emailSender.SendEmailAsync(TeamInvitationEmail,dto.Email);
                 Console.WriteLine($"Invitation email sent to {dto.Email}");
             }
             catch (Exception ex)
@@ -214,7 +224,12 @@ namespace ProbuildBackend.Controllers
             teamMember.Status = "Deactivated";
             await _context.SaveChangesAsync();
 
-            await _emailSender.SendEmailAsync(teamMember.Email, "Team Member account Deactivated", "Your Team Member account has been deactivated.");
+            var TeamDeactivateEmail = await _emailTemplate.GetTemplateAsync("AccountDeactivatedEmail");
+
+            TeamDeactivateEmail.Body = TeamDeactivateEmail.Body.Replace("{{UserName}}", teamMember.FirstName + " " + teamMember.LastName).Replace("{{Header}}", TeamDeactivateEmail.HeaderHtml)
+                .Replace("{{Footer}}", TeamDeactivateEmail.FooterHtml);
+
+            await _emailSender.SendEmailAsync(TeamDeactivateEmail,teamMember.Email);
 
             return NoContent();
         }
@@ -237,8 +252,18 @@ namespace ProbuildBackend.Controllers
             _context.TeamMembers.Update(teamMember);
             await _context.SaveChangesAsync();
 
+
+            var TeamReactivateEmail = await _emailTemplate.GetTemplateAsync("AccountReactivatedEmail");
+
+            var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
+            var callbackUrl = $"{frontendUrl}/login";
+
+
+            TeamReactivateEmail.Body = TeamReactivateEmail.Body.Replace("{{UserName}}", teamMember.FirstName + " " + teamMember.LastName)
+                                                                             .Replace("{{LoginLink}}", callbackUrl).Replace("{{Header}}", TeamReactivateEmail.HeaderHtml)
+                .Replace("{{Footer}}", TeamReactivateEmail.FooterHtml);
             // 5. Send a notification email
-            await _emailSender.SendEmailAsync(teamMember.Email, "Team Member Account Reactivated", "Your Team Member account has been reactivated.");
+            await _emailSender.SendEmailAsync(TeamReactivateEmail,teamMember.Email);
 
             return Ok();
         }
@@ -257,7 +282,17 @@ namespace ProbuildBackend.Controllers
             teamMember.Status = "Deleted";
             await _context.SaveChangesAsync();
 
-            await _emailSender.SendEmailAsync(teamMember.Email, "Team Member account Deleted", "Your Team Member account has been deleted from the team.");
+
+            var TeamDeleteEmail = await _emailTemplate.GetTemplateAsync("AccountRemovedFromTeamEmail");
+
+            var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
+            var callbackUrl = $"{frontendUrl}/login";
+
+
+            TeamDeleteEmail.Body = TeamDeleteEmail.Body.Replace("{{UserName}}", teamMember.FirstName + " " + teamMember.LastName).Replace("{{Header}}", TeamDeleteEmail.HeaderHtml)
+                .Replace("{{Footer}}", TeamDeleteEmail.FooterHtml);
+
+            await _emailSender.SendEmailAsync(TeamDeleteEmail,teamMember.Email);
 
             return NoContent();
         }

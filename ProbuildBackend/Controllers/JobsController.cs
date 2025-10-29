@@ -12,9 +12,10 @@ using Hangfire;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using BomWithCosts = ProbuildBackend.Models.BomWithCosts;
 using ProbuildBackend.Interface;
-
+using System.Linq;
+using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 namespace ProbuildBackend.Controllers
- {
+{
     [Route("api/[controller]")]
     [ApiController]
     public class JobsController : ControllerBase
@@ -702,7 +703,7 @@ namespace ProbuildBackend.Controllers
                 );
             }
         }
- 
+
         [HttpPost("UploadQuote")]
         [RequestSizeLimit(200 * 1024 * 1024)]
         public async Task<IActionResult> UploadQuote([FromForm] UploadQuoteDto jobRequest)
@@ -753,7 +754,7 @@ namespace ProbuildBackend.Controllers
 
             return Ok(response);
         }
- 
+
         [HttpPost("subtask")]
         public async Task<IActionResult> SaveSubtasks([FromBody] SaveSubtasksRequest subtasks)
         {
