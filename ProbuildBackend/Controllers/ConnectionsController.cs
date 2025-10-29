@@ -43,7 +43,7 @@ namespace Probuild.Controllers
 
             if (existingConnection != null)
             {
-                return BadRequest("A connection or pending request already exists between these users.");
+                return BadRequest(new { message = "A connection or pending request already exists between these users." });
             }
 
             var connection = new Connection
@@ -101,7 +101,7 @@ namespace Probuild.Controllers
             var userId = User.FindFirstValue("UserId");
             var connection = await _context.Connections.FindAsync(connectionId);
 
-            if (connection == null || connection.ReceiverId != userId || connection.Status != "PENDING")
+            if (connection == null || (connection.ReceiverId != userId && connection.RequesterId != userId) || connection.Status != "PENDING")
             {
                 return NotFound();
             }
@@ -119,7 +119,7 @@ namespace Probuild.Controllers
             var userId = User.FindFirstValue("UserId");
 
             var connections = await _context.Connections
-                .Where(c => c.RequesterId == userId || c.ReceiverId == userId)
+                .Where(c => (c.RequesterId == userId || c.ReceiverId == userId) && c.Status != "DECLINED")
                 .Select(c => new ConnectionDto
                 {
                     Id = c.Id.ToString(),
