@@ -1,24 +1,25 @@
-﻿﻿using ProbuildBackend.Services;
-using Elastic.Apm.NetCoreAll;
+﻿using Elastic.Apm.NetCoreAll;
 using Hangfire;
-using Microsoft.EntityFrameworkCore;
+using Hangfire.Dashboard.BasicAuthorization;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption.ConfigurationModel;
 using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption;
+using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption.ConfigurationModel;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
+using ProbuildBackend.Infrastructure;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Options;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
+﻿using ProbuildBackend.Services;
 using System.Text;
-using ProbuildBackend.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -358,7 +359,27 @@ try
             app.Logger.LogInformation($"🧱 DB Row KeyId: {keyRow.FriendlyName}");
         }
     }
-app.UseHangfireDashboard("/hangfire");
+
+    app.UseHangfireDashboard("/hangfire", new DashboardOptions
+    {
+        Authorization = new[] { new BasicAuthAuthorizationFilter(
+        new BasicAuthAuthorizationFilterOptions
+        {
+            RequireSsl = false, // Azure Container Apps uses TLS termination anyway
+            SslRedirect = false,
+            LoginCaseSensitive = false,
+            Users = new []
+            {
+                new BasicAuthAuthorizationUser
+                {
+                    Login = "admin",
+                    PasswordClear = "3oZ%7E8(T2d6"
+                }
+            }
+        })
+    }
+    });
+
     app.Logger.LogInformation("Application startup completed successfully. Starting to run...");
     app.Run();
 }
