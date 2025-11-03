@@ -358,7 +358,7 @@ try
             app.Logger.LogInformation($"🧱 DB Row KeyId: {keyRow.FriendlyName}");
         }
     }
-
+app.UseHangfireDashboard("/hangfire");
     app.Logger.LogInformation("Application startup completed successfully. Starting to run...");
     app.Run();
 }
