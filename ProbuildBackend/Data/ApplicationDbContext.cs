@@ -14,6 +14,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<UserModel> Users { get; set; }
     public DbSet<ClientDetailsModel> ClientDetails { get; set; }
     public DbSet<ProjectModel> Projects { get; set; }
+    public DbSet<EmailAutomationRuleModel> EmailAutomationRules { get; set; }
     public DbSet<JobModel> Jobs { get; set; }
     public DbSet<EmailTemplate> EmailTemplates { get; set; }
     public DbSet<JobsTermsAgreement> JobsTermsAgreement { get; set; }
@@ -47,7 +48,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<TeamMemberPermission> TeamMemberPermissions { get; set; }
     public DbSet<Conversation> Conversations { get; set; }
     public DbSet<ConversationPrompt> ConversationPrompts { get; set; }
-
+    public DbSet<UserLoginAudit> UserLoginAudit { get; set; }
     public DbSet<Connection> Connections { get; set; }
     public DbSet<Rating> Ratings { get; set; }
     public DbSet<Contract> Contracts { get; set; }

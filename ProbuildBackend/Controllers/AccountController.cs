@@ -1,4 +1,5 @@
 ﻿using Google.Api.Ads.AdWords.v201809;
+using Hangfire;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection;
@@ -11,6 +12,7 @@ using Newtonsoft.Json;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
+using ProbuildBackend.Services;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -30,8 +32,11 @@ namespace ProbuildBackend.Controllers
         private readonly IServiceProvider _serviceProvider;
         private readonly IDataProtectionProvider _dataProtectionProvider;
         public readonly IEmailTemplateService _emailTemplate;
+        public readonly ILogLoginInformationService _logLoginInformationService;
+        private readonly IBackgroundJobClient _jobClient;
+        private readonly EmailAutomationManager _manager;
         public AccountController(UserManager<UserModel> userManager, IDataProtectionProvider dataProtectionProvider, IEmailSender emailSender, IConfiguration configuration, ApplicationDbContext context,
-    IServiceProvider serviceProvider, IEmailTemplateService emailTemplate)
+    IServiceProvider serviceProvider, IEmailTemplateService emailTemplate, ILogLoginInformationService logLoginInformationService, IBackgroundJobClient jobClient, EmailAutomationManager manager)
         {
             _userManager = userManager;
             _emailSender = emailSender;
@@ -40,6 +45,9 @@ namespace ProbuildBackend.Controllers
             _serviceProvider = serviceProvider;
             _dataProtectionProvider = dataProtectionProvider;
             _emailTemplate = emailTemplate;
+            _logLoginInformationService = logLoginInformationService;
+            _jobClient = jobClient;
+            _manager = manager;
         }
 
         [HttpPost("register")]
@@ -124,9 +132,27 @@ namespace ProbuildBackend.Controllers
                 var callbackUrl = $"{frontendUrl}/confirm-email/?userId={user.Id}&code={Uri.EscapeDataString(code)}";
 
                 var EmailConfirmation = await _emailTemplate.GetTemplateAsync("ConfirmAccountEmail");
-                EmailConfirmation.Body = EmailConfirmation.Body.Replace("{{ConfirmLink}}", callbackUrl).Replace("{{UserName}}", model.FirstName + " " + model.LastName).Replace("{{Header}}", EmailConfirmation.HeaderHtml).Replace("{{UserName}}", model.FirstName + " " + model.LastName)
+                EmailConfirmation.Body = EmailConfirmation.Body.Replace("{{ConfirmLink}}", callbackUrl).Replace("{{UserName}}", model.FirstName + " " + model.LastName).Replace("{{Header}}", EmailConfirmation.HeaderHtml)
                 .Replace("{{Footer}}", EmailConfirmation.FooterHtml);
                 await _emailSender.SendEmailAsync(EmailConfirmation, model.Email);
+
+                if(user.SubscriptionPackage.Contains("Trial"))
+                {
+                    var callbackUrlWelcome = $"{frontendUrl}/dashboard";
+                    var WelcomeEmail = await _emailTemplate.GetTemplateAsync("WelcomeTrialEmail");
+                    WelcomeEmail.Body = WelcomeEmail.Body.Replace("{{cta_url}}", callbackUrlWelcome).Replace("{{first_name}}", model.FirstName + " " + model.LastName).Replace("{{Header}}", EmailConfirmation.HeaderHtml).Replace("{{Footer}}", EmailConfirmation.FooterHtml);
+                    await _emailSender.SendEmailAsync(WelcomeEmail, model.Email);
+                }
+
+                // Fetch the automation rule from DB
+                var rule = await _context.EmailAutomationRules
+                    .FirstOrDefaultAsync(r => r.RuleName == "Nudge First Upload" && r.IsActive);
+
+                BackgroundJob.Schedule<EmailAutomationManager>(
+           manager => manager.ExecuteAutomationAsync(user.Id),
+           TimeSpan.FromHours(rule.DelayHours)
+       );
+
 
                 return Ok(new
                 {
@@ -300,11 +326,12 @@ namespace ProbuildBackend.Controllers
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginDto model)
         {
+
+
+            var user = await _userManager.FindByEmailAsync(model.Email);
             try
             {
 
-
-                var user = await _userManager.FindByEmailAsync(model.Email);
                 if (user != null && await _userManager.CheckPasswordAsync(user, model.Password) && user.EmailConfirmed == true)// add email comfirmation check
                 {
                     var token = GenerateJwtToken(user);
@@ -319,7 +346,12 @@ namespace ProbuildBackend.Controllers
                     };
 
                     _context.RefreshTokens.Add(refreshTokenEntity);
+
+                    await _logLoginInformationService.LogLoginAsync(Guid.Parse(user.Id), HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers["User-Agent"].ToString(), true);
+
+
                     await _context.SaveChangesAsync();
+
 
                     return Ok(new
                     {
@@ -333,13 +365,15 @@ namespace ProbuildBackend.Controllers
                 }
                 if (user != null && !user.EmailConfirmed)
                 {
+                    await _logLoginInformationService.LogLoginAsync(Guid.Parse(user.Id), HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers["User-Agent"].ToString(), false, "Email address has not been verified. Please check your inbox and spam folder.");
                     return Unauthorized(new { error = "Email address has not been verified. Please check your inbox and spam folder." });
                 }
+                await _logLoginInformationService.LogLoginAsync(Guid.Parse(user.Id), HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers["User-Agent"].ToString(), false, "Invalid login credentials. Please try again.");
                 return Unauthorized(new { error = "Invalid login credentials. Please try again." });
             }
             catch (Exception ex)
             {
-
+                await _logLoginInformationService.LogLoginAsync(Guid.Parse(user.Id), HttpContext.Connection.RemoteIpAddress?.ToString(), Request.Headers["User-Agent"].ToString(), false, ex.Message + " StackTrace:" + ex.StackTrace);
                 throw;
             }
         }
