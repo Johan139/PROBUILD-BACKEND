@@ -62,7 +62,11 @@ builder.Services.AddControllers(options =>
 {
     options.SuppressModelStateInvalidFilter = true;
 });
-
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+    });
 // Configure FormOptions for multipart requests
 builder.Services.Configure<FormOptions>(options =>
 {

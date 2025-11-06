@@ -54,6 +54,8 @@ namespace ProbuildBackend.Controllers
                 var email = model.Email.Trim();
                 var normalizedEmail = email.ToUpperInvariant();
 
+    
+           
                 var user = new UserModel
                 {
                     Id = Guid.NewGuid().ToString(),
@@ -80,11 +82,13 @@ namespace ProbuildBackend.Controllers
                     JobPreferences = model.JobPreferences,
                     DeliveryArea = model.DeliveryArea,
                     DeliveryTime = model.DeliveryTime,
-                    Country = model.Country,
-                    State = model.State,
-                    City = model.City,
+                    //We need to move away from the below. It will cause confusion between the new address model and old.
+                    //Country = countryId.Id.ToString();
+                    //State = stateId.Id.ToString();
+                    //City = model.City;
                     SubscriptionPackage = model.SubscriptionPackage,
-                    DateCreated = DateTime.UtcNow
+                    DateCreated = DateTime.UtcNow,
+                    CountryNumberCode = model.CountryNumberCode,
                 };
 
                 var result = await _userManager.CreateAsync(user, model.Password);
@@ -104,11 +108,31 @@ namespace ProbuildBackend.Controllers
                     Region = model.RegionFromIP,
                     TimeZone = model.Timezone,
                     OperatingSystem = model.OperatingSystem
+                    
                 };
 
                  _context.UserMetaData.Add(userMetaData);
 
-
+                // Add address (can be done before save)
+                var address = new UserAddressModel
+                {
+                    StreetNumber = model.StreetNumber,
+                    StreetName = model.StreetName,
+                    City = model.City,
+                    State = model.State,
+                    PostalCode = model.PostalCode,
+                    Country = model.Country,
+                    Latitude = model.Latitude,
+                    Longitude = model.Longitude,
+                    FormattedAddress = model.FormattedAddress,
+                    GooglePlaceId = model.GooglePlaceId,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                    UserId = user.Id,
+                    CountryCode = model.CountryCode,
+                    AddressType = model.AddressType,
+                };
+                _context.UserAddress.Add(address);
                 // Only save agreement if user was created successfully
                 var userAgree = new UserTermsAgreementModel
                 {
@@ -888,6 +912,28 @@ namespace ProbuildBackend.Controllers
                 }
 
                 return Ok(state);
+            }
+            catch (Exception ex)
+            {
+
+                throw;
+            }
+        }
+
+        [HttpGet("countries-codes")]
+        public async Task<ActionResult<IEnumerable<CountryNumberCodesModel>>> GetCountryCodes()
+        {
+            try
+            {
+                var countries = await _context.CountryNumberCodes
+                    .ToListAsync();
+
+                if (countries == null || !countries.Any())
+                {
+                    return NotFound("No countries found.");
+                }
+
+                return Ok(countries);
             }
             catch (Exception ex)
             {
