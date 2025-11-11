@@ -1,3 +1,4 @@
+﻿using Google.Apis.Auth;
 ﻿using Google.Api.Ads.AdWords.v201809;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
@@ -326,8 +327,6 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-
-
                 var user = await _userManager.FindByEmailAsync(model.Email);
                 if (user != null && await _userManager.CheckPasswordAsync(user, model.Password) && user.EmailConfirmed == true)// add email comfirmation check
                 {
@@ -363,11 +362,74 @@ namespace ProbuildBackend.Controllers
             }
             catch (Exception ex)
             {
-
                 throw;
             }
         }
 
+        [HttpPost("google-login")]
+        public async Task<IActionResult> GoogleLogin([FromBody] GoogleLoginRequest model)
+        {
+            try
+            {
+                var payload = await GoogleJsonWebSignature.ValidateAsync(model.IdToken, new GoogleJsonWebSignature.ValidationSettings
+                {
+                    Audience = new[] { "830495328853-9jp3r5b2o53124kpu10ais3pq0lljcoj.apps.googleusercontent.com" }
+                });
+
+                // Check if user already exists
+                var existingUser = await _context.Users.FirstOrDefaultAsync(u => u.Email == payload.Email);
+
+                if (existingUser != null)
+                {
+                    // ✅ Existing user → login as normal
+                    var token = GenerateJwtToken(existingUser);
+                    var refreshToken = GenerateRefreshToken();
+
+                    var refreshEntity = new RefreshToken
+                    {
+                        UserId = existingUser.Id,
+                        Token = refreshToken,
+                        Expires = DateTime.UtcNow.AddDays(7),
+                        Created = DateTime.UtcNow
+                    };
+
+                    _context.RefreshTokens.Add(refreshEntity);
+                    await _context.SaveChangesAsync();
+
+                    return Ok(new
+                    {
+                        token,
+                        refreshToken,
+                        userId = existingUser.Id,
+                        firstName = existingUser.FirstName,
+                        lastName = existingUser.LastName,
+                        userType = existingUser.UserType,
+                        requiresRegistration = false
+                    });
+                }
+
+                // 🚨 New user, but cannot save yet (missing required fields)
+                return Ok(new
+                {
+                    requiresRegistration = true,
+                    email = payload.Email,
+                    firstName = payload.GivenName,
+                    lastName = payload.FamilyName,
+                    googleId = payload.Subject,
+                    picture = payload.Picture
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+        }
+
+
+        public class GoogleLoginRequest
+        {
+            public string IdToken { get; set; }
+        }
         public record RefreshTokenRequest(string RefreshToken);
 
         [HttpPost("refresh-token")]
