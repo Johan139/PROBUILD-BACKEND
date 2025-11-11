@@ -1,7 +1,8 @@
 ﻿using Microsoft.AspNetCore.Identity.UI.Services;
+using ProbuildBackend.Models;
 using SendGrid;
 using SendGrid.Helpers.Mail;
-
+using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 namespace ProbuildBackend.Services
 {
     public class EmailSender : IEmailSender
@@ -13,10 +14,10 @@ namespace ProbuildBackend.Services
             _configuration = configuration;
         }
 
-        public async Task SendEmailAsync(string email, string subject, string htmlMessage)
+        public async Task SendEmailAsync(EmailTemplate emailTemplate, string email)
         {
             var apiKey = Environment.GetEnvironmentVariable("SENDGRID_KEY") ?? _configuration["SendGrid:ApiKey"];
-            var sendgridEmail = Environment.GetEnvironmentVariable("SENDGRID_EMAIL") ?? _configuration["SendGrid:Email"];
+            var sendgridEmail = emailTemplate.FromEmail;
             var toEmail = email;
             if (string.IsNullOrEmpty(apiKey))
             {
@@ -25,7 +26,7 @@ namespace ProbuildBackend.Services
             var client = new SendGridClient(apiKey);
             var from = new EmailAddress(sendgridEmail, "ProBuild");
             var to = new EmailAddress(toEmail);
-            var msg = MailHelper.CreateSingleEmail(from, to, subject, "", htmlMessage);
+            var msg = MailHelper.CreateSingleEmail(from, to, emailTemplate.Subject, "", emailTemplate.Body);
             var response = await client.SendEmailAsync(msg);
 
             if (!response.IsSuccessStatusCode)

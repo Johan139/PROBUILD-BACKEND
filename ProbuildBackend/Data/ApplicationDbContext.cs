@@ -15,6 +15,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<ClientDetailsModel> ClientDetails { get; set; }
     public DbSet<ProjectModel> Projects { get; set; }
     public DbSet<JobModel> Jobs { get; set; }
+    public DbSet<EmailTemplate> EmailTemplates { get; set; }
     public DbSet<JobsTermsAgreement> JobsTermsAgreement { get; set; }
     public DbSet<BidModel> Bids { get; set; }
     public DbSet<NotificationModel> Notifications { get; set; }

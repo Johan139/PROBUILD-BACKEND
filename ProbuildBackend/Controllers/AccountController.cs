@@ -1,4 +1,5 @@
 ﻿using Google.Apis.Auth;
+﻿using Google.Api.Ads.AdWords.v201809;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection;
@@ -8,12 +9,14 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Newtonsoft.Json;
+using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 
 namespace ProbuildBackend.Controllers
 {
@@ -27,8 +30,9 @@ namespace ProbuildBackend.Controllers
         private readonly ApplicationDbContext _context;
         private readonly IServiceProvider _serviceProvider;
         private readonly IDataProtectionProvider _dataProtectionProvider;
+        public readonly IEmailTemplateService _emailTemplate;
         public AccountController(UserManager<UserModel> userManager, IDataProtectionProvider dataProtectionProvider, IEmailSender emailSender, IConfiguration configuration, ApplicationDbContext context,
-    IServiceProvider serviceProvider)
+    IServiceProvider serviceProvider, IEmailTemplateService emailTemplate)
         {
             _userManager = userManager;
             _emailSender = emailSender;
@@ -36,6 +40,7 @@ namespace ProbuildBackend.Controllers
             _context = context;
             _serviceProvider = serviceProvider;
             _dataProtectionProvider = dataProtectionProvider;
+            _emailTemplate = emailTemplate;
         }
 
         [HttpPost("register")]
@@ -143,8 +148,10 @@ namespace ProbuildBackend.Controllers
                 var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["FrontEnd:FRONTEND_URL"];
                 var callbackUrl = $"{frontendUrl}/confirm-email/?userId={user.Id}&code={Uri.EscapeDataString(code)}";
 
-                await _emailSender.SendEmailAsync(model.Email, "Confirm your email",
-                    $"Please confirm this account for {user.UserName} by <a href='{callbackUrl}'>clicking here</a>.");
+                var EmailConfirmation = await _emailTemplate.GetTemplateAsync("ConfirmAccountEmail");
+                EmailConfirmation.Body = EmailConfirmation.Body.Replace("{{ConfirmLink}}", callbackUrl).Replace("{{UserName}}", model.FirstName + " " + model.LastName).Replace("{{Header}}", EmailConfirmation.HeaderHtml).Replace("{{UserName}}", model.FirstName + " " + model.LastName)
+                .Replace("{{Footer}}", EmailConfirmation.FooterHtml);
+                await _emailSender.SendEmailAsync(EmailConfirmation, model.Email);
 
                 return Ok(new
                 {
@@ -171,8 +178,11 @@ namespace ProbuildBackend.Controllers
             var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["FrontEnd:FRONTEND_URL"];
             var callbackUrl = $"{frontendUrl}/confirm-email/?userId={user.Id}&code={Uri.EscapeDataString(code)}";
 
-            await _emailSender.SendEmailAsync(user.Email, "Confirm your email",
-                $"Please confirm this account for {user.UserName} by <a href='{callbackUrl}'>clicking here</a>.");
+            var EmailConfirmation = await _emailTemplate.GetTemplateAsync("ConfirmAccountEmail");
+            EmailConfirmation.Body = EmailConfirmation.Body.Replace("{{ConfirmLink}}", callbackUrl).Replace("{{Header}}", EmailConfirmation.HeaderHtml)
+                .Replace("{{Footer}}", EmailConfirmation.FooterHtml).Replace("{{UserName}}", user.FirstName + " " + user.LastName);
+
+            await _emailSender.SendEmailAsync(EmailConfirmation,user.Email);
 
             return Ok(new
             {
@@ -614,8 +624,17 @@ namespace ProbuildBackend.Controllers
             var frontendBaseUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["FrontEnd:FRONTEND_URL"]; ;
             var callbackUrl = $"{frontendBaseUrl}/reset-password?email={Uri.EscapeDataString(user.Email)}&token={Uri.EscapeDataString(token)}";
 
-            await _emailSender.SendEmailAsync(model.Email, "Reset Password",
-                $"Please reset your password by <a href='{callbackUrl}'>clicking here. Please note the link will expire in 15 minutes.</a>.");
+            var ResetPassword = await _emailTemplate.GetTemplateAsync("PasswordResetEmail");
+
+            ResetPassword.Body = ResetPassword.Body
+                .Replace("{{ResetLink}}", callbackUrl)
+                .Replace("{{UserName}}", $"{user.FirstName} {user.LastName}")
+                .Replace("{{Header}}", ResetPassword.HeaderHtml)
+                .Replace("{{Footer}}", ResetPassword.FooterHtml);
+
+
+
+            await _emailSender.SendEmailAsync(ResetPassword,user.Email);
 
             return Ok();
         }

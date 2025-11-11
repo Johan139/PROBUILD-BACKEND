@@ -19,6 +19,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using ProbuildBackend.Infrastructure;
+using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -174,6 +175,7 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddScoped<IDocumentProcessorService, DocumentProcessorService>();
 builder.Services.AddTransient<IEmailSender, EmailSender>();
+builder.Services.AddScoped<IEmailTemplateService, EmailTemplateService>();
 builder.Services.AddSingleton<AzureBlobService>();
 builder.Services.AddScoped<PaymentService>();
 builder.Services.AddScoped<SubscriptionService>();
