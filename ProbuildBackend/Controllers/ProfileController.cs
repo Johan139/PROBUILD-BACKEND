@@ -122,7 +122,7 @@ namespace ProbuildBackend.Controllers
             if (user == null)
                 return NotFound("No user found with the specified id.");
 
-            user.UserAddresses = _context.UserAddress.Where(p => p.UserId == id && p.Deleted == false).ToList();
+            user.UserAddresses = _context.UserAddress.Where(p => p.UserId == id && (p.Deleted == false || p.Deleted == null)).ToList();
             return Ok(user);
             }
             catch (Exception ex)
