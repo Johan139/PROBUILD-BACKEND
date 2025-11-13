@@ -34,13 +34,14 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowAngularApp", policy =>
     {
         policy.WithOrigins(
-            "http://localhost:4200", // For local development
-            "https://probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io", "https://app.probuildai.com/", "https://qa-probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io/" // For production
+            "http://localhost:4200",
+            "https://probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io",
+            "https://app.probuildai.com",
+            "https://qa-probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io"
         )
-        .WithHeaders("Content-Type", "Authorization", "Accept", "X-Requested-With")
+        .AllowAnyHeader()
         .WithMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
-        .AllowAnyMethod()
-        .AllowCredentials(); // Required for SignalR with credentials
+        .AllowCredentials();
     });
 });
 
