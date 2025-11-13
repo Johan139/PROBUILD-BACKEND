@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using iText.Kernel.Geom;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -11,6 +12,7 @@ namespace ProbuildBackend.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class NotificationsController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
@@ -88,7 +90,10 @@ namespace ProbuildBackend.Controllers
                     Timestamp = n.Timestamp,
                     JobId = n.JobId,
                     ProjectName = n.ProjectName,
-                    SenderFullName = n.SenderId == "system" ? "System" : $"{n.SenderFirstName} {n.SenderLastName}"
+                    SenderFullName = n.SenderId == "system" ? "System" : $"{n.SenderFirstName} {n.SenderLastName}",
+                    IsRead = n.IsRead,
+                    ReadAt = n.ReadAt,
+                    
                 })
                 .ToListAsync();
 
@@ -164,5 +169,61 @@ namespace ProbuildBackend.Controllers
                 return StatusCode(500, new { error = "Failed to save notification", details = ex.Message });
             }
         }
+        [HttpPost("mark-as-read/{id}")]
+        public async Task<ActionResult<IActionResult>> MarkReadNotification(int id)
+        {
+            try
+            {
+
+         
+            var userId = User.FindFirstValue("UserId");
+            var notifications =  _context.Notifications
+                .Where(n => n.Id == id)
+                .FirstOrDefault();
+
+            notifications.ReadAt = DateTime.UtcNow;
+            notifications.IsRead = true;
+
+            await _context.SaveChangesAsync();
+
+            return null;
+            }
+            catch (Exception ex)
+            {
+
+                throw;
+            }
+        }
+
+        [HttpPost("mark-all-as-read")]
+        public async Task<IActionResult> MarkAllReadNotification()
+        {
+            var userId = User.FindFirstValue("UserId");
+            var readDate = DateTime.UtcNow;
+
+            var notificationIds = await _context.NotificationViews
+                .Where(v => v.RecipientId == userId && v.IsRead != true)
+                .Select(v => v.Id)
+                .ToListAsync();
+
+            if (!notificationIds.Any())
+                return Ok(new { message = "Nothing to mark as read." });
+
+            var notifications = await _context.Notifications
+                .Where(n => notificationIds.Contains(n.Id))
+                .ToListAsync();
+
+            foreach (var n in notifications)
+            {
+                n.IsRead = true;
+                n.ReadAt = readDate;
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Marked as read." });
+        }
+
+
     }
 }
