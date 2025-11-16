@@ -65,5 +65,6 @@
         public double ClientRating { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? BiddingStartDate { get; set; }
+        public string? BudgetLevel { get; set; }
     }
 }

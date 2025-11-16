@@ -1,5 +1,4 @@
-﻿using Microsoft.AspNetCore.Identity.UI.Services;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using ProbuildBackend.Models;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 namespace ProbuildBackend.Controllers
@@ -38,7 +37,7 @@ namespace ProbuildBackend.Controllers
                 .Replace("{{total_charged}}", data.TotalCharged)
                 .Replace("{{payment_method}}", data.PaymentMethod);
 
-           // await _emailService.SendEmailAsync(data.ContactEmail, "Your ProBuild AI Subscription Confirmation", html);
+            // await _emailService.SendEmailAsync(data.ContactEmail, "Your ProBuild AI Subscription Confirmation", html);
 
             return Ok();
         }

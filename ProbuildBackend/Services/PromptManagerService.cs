@@ -1,4 +1,5 @@
 using Azure.Storage.Blobs;
+using ProbuildBackend.Interface;
 using System.Collections.Concurrent;
 
 public class PromptManagerService : IPromptManagerService

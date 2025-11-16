@@ -9,7 +9,6 @@ using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using ProbuildBackend.Middleware;
@@ -42,11 +41,6 @@ builder.Services.AddCors(options =>
         .AllowCredentials(); // Required for SignalR with credentials
     });
 });
-
-
-
-
-
 
 // Configure the token provider for password reset
 builder.Services.Configure<DataProtectionTokenProviderOptions>(options =>
@@ -201,16 +195,16 @@ builder.Services.AddHangfireServer(options =>
 {
     options.WorkerCount = 2; // or even 1 if Gemini calls are large
 });
-builder.Services.AddScoped<IEmailService, EmailService>(); // Add this line
-builder.Services.AddScoped<IEmailSender, EmailSender>(); // Add this line
-// Register all services
+builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<IEmailSender, EmailSender>();
 builder.Services.AddScoped<IConversationRepository, SqlConversationRepository>();
 builder.Services.AddScoped<IPromptManagerService, PromptManagerService>();
 // The DI container will automatically inject the other services into GeminiAiService's constructor
 builder.Services.AddScoped<IAiService, GeminiAiService>();
 builder.Services.AddScoped<IAiAnalysisService, AiAnalysisService>();
 builder.Services.AddScoped<ChatService>();
-builder.Services.AddScoped<IPdfImageConverter, PdfImageConverter>(); // Add this line
+builder.Services.AddTransient<IKeepAliveService, KeepAliveService>();
+builder.Services.AddScoped<IPdfImageConverter, PdfImageConverter>();
 builder.Services.AddScoped<IPdfTextExtractionService, PdfTextExtractionService>();
 builder.Services.Configure<OcrSettings>(configuration.GetSection("OcrSettings"));
 builder.Services.AddScoped(sp => sp.GetRequiredService<IOptions<OcrSettings>>().Value);
@@ -372,3 +366,4 @@ catch (Exception ex)
     app.Logger.LogError(ex, "Stack trace: {StackTrace}", ex.StackTrace);
     throw;
 }
+

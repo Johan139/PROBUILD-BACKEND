@@ -1,8 +1,6 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Threading.Tasks;
-using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 
 [ApiController]
@@ -24,10 +22,15 @@ public class BlueprintsController : ControllerBase
 
         if (blueprint == null) return NotFound();
 
+        if (blueprint.JobId == null)
+        {
+            return BadRequest(new { message = "Blueprint is not associated with a job." });
+        }
+
         var dto = new BlueprintAnalysisDto
         {
             Id = blueprint.Id,
-            JobId = blueprint.JobId.Value, 
+            JobId = blueprint.JobId.Value,
             Name = blueprint.OriginalFileName,
             PdfUrl = blueprint.PdfUrl,
             PageImageUrls = JsonSerializer.Deserialize<List<string>>(blueprint.PageImageUrlsJson) ?? new List<string>(),

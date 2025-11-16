@@ -1,5 +1,4 @@
-﻿using Microsoft.AspNetCore.Identity.UI.Services;
-using Microsoft.AspNetCore.SignalR;
+﻿using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
@@ -50,7 +49,8 @@ namespace ProbuildBackend.Services
             string connectionId,
             bool generateDetailsWithAi,
             string userContextText,
-            string userContextFileUrl
+            string userContextFileUrl,
+            string budgetLevel
         )
         {
             try
@@ -73,7 +73,9 @@ namespace ProbuildBackend.Services
                     job,
                     generateDetailsWithAi,
                     userContextText,
-                    userContextFileUrl
+                    userContextFileUrl,
+                    budgetLevel,
+                    connectionId
                 );
 
                 await ProcessBlueprintAnalysisForJobAsync(jobId, documentUrls, connectionId);
@@ -189,7 +191,8 @@ namespace ProbuildBackend.Services
             string connectionId,
             bool generateDetailsWithAi,
             string userContextText,
-            string userContextFileUrl
+            string userContextFileUrl,
+            string budgetLevel
         )
         {
             var job = await _context.Jobs.FindAsync(jobId);
@@ -218,7 +221,10 @@ namespace ProbuildBackend.Services
                 string finalReport = await _aiAnalysisService.PerformSelectedAnalysisAsync(
                     job.UserId,
                     request,
-                    generateDetailsWithAi
+                    generateDetailsWithAi,
+                    budgetLevel,
+                    null,
+                    connectionId
                 );
 
                 await ProcessBlueprintAnalysisForJobAsync(jobId, documentUrls, connectionId);
@@ -351,7 +357,8 @@ namespace ProbuildBackend.Services
             string connectionId,
             bool generateDetailsWithAi,
             string userContextText,
-            string userContextFileUrl
+            string userContextFileUrl,
+            string budgetLevel
         )
         {
             var job = await _context.Jobs.FindAsync(jobId);
@@ -369,7 +376,9 @@ namespace ProbuildBackend.Services
                     job,
                     generateDetailsWithAi,
                     userContextText,
-                    userContextFileUrl
+                    userContextFileUrl,
+                    budgetLevel,
+                    connectionId
                 );
 
                 var result = new DocumentProcessingResult

@@ -10,26 +10,26 @@ public class GeminiAiService : IAiService
     private readonly IPromptManagerService _promptManager;
     private readonly GenerativeModel _generativeModel;
     private readonly ILogger<GeminiAiService> _logger;
-     private readonly AzureBlobService _azureBlobService;
+    private readonly AzureBlobService _azureBlobService;
 
     private const int SUMMARIZATION_THRESHOLD_CHARS = 250000;
 
-  public GeminiAiService(IConfiguration configuration, IConversationRepository conversationRepo, IPromptManagerService promptManager, ILogger<GeminiAiService> logger, AzureBlobService azureBlobService)
-  {
-    _conversationRepo = conversationRepo;
-    _promptManager = promptManager;
-    _logger = logger;
-    _azureBlobService = azureBlobService;
+    public GeminiAiService(IConfiguration configuration, IConversationRepository conversationRepo, IPromptManagerService promptManager, ILogger<GeminiAiService> logger, AzureBlobService azureBlobService)
+    {
+        _conversationRepo = conversationRepo;
+        _promptManager = promptManager;
+        _logger = logger;
+        _azureBlobService = azureBlobService;
 
 #if (DEBUG)
-    var apiKey = configuration["GoogleGeminiAPI:APIKey"];
+        var apiKey = configuration["GoogleGeminiAPI:APIKey"];
 #else
     var apiKey = Environment.GetEnvironmentVariable("GeminiAPIKey");
 #endif
 
-    var googleAI = new GoogleAi(apiKey);
-    _generativeModel = googleAI.CreateGenerativeModel("gemini-2.5-pro");
-    _generativeModel.UseGoogleSearch = true;
+        var googleAI = new GoogleAi(apiKey);
+        _generativeModel = googleAI.CreateGenerativeModel("gemini-2.5-pro");
+        _generativeModel.UseGoogleSearch = true;
     }
 
     #region Conversational Method
@@ -99,19 +99,19 @@ public class GeminiAiService : IAiService
             // await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "model", Content = modelResponseText });
 
             return (modelResponseText, conversationId);
-          }
-          catch (Exception ex)
-          {
-              _logger.LogError(ex, "An error occurred while calling the Gemini API in ContinueConversationAsync for conversation {ConversationId}", conversationId);
-              throw; // Re-throw the exception to be handled by the caller
-          }
-          finally
-          {
-              foreach (var path in tempFilePaths)
-              {
-                  if (File.Exists(path)) File.Delete(path);
-              }
-          }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "An error occurred while calling the Gemini API in ContinueConversationAsync for conversation {ConversationId}", conversationId);
+            throw; // Re-throw the exception to be handled by the caller
+        }
+        finally
+        {
+            foreach (var path in tempFilePaths)
+            {
+                if (File.Exists(path)) File.Delete(path);
+            }
+        }
     }
 
     private async Task<Conversation> GetOrCreateConversation(string? id, string userId, string title)
@@ -384,7 +384,7 @@ JSON Output:";
                 _logger.LogInformation("StartMultimodalConversationAsync GC Memory Info: {Info}", GC.GetGCMemoryInfo().ToString());
                 _logger.LogInformation("StartMultimodalConversationAsync");
                 var response = await _generativeModel.GenerateContentAsync(request);
-                 modelResponseText = response.Text();
+                modelResponseText = response.Text();
                 _logger.LogInformation("Gemini returned response of length {Length}", modelResponseText.Length);
 
             }
@@ -534,12 +534,10 @@ JSON Output:";
             var length = Math.Min(maxCharsPerChunk, text.Length - i);
             yield return text.Substring(i, length);
 
-            // Small delay keeps UI feeling “live”; tweak or remove as desired
+            // Small delay keeps UI feeling ï¿½liveï¿½; tweak or remove as desired
             await Task.Delay(20);
         }
     }
-
-
 
     private static bool LogAndReturnFalse(Exception ex)
     {

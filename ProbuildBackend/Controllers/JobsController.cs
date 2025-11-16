@@ -9,10 +9,8 @@ using ProbuildBackend.Services;
 using System.IO.Compression;
 using System.Globalization;
 using Hangfire;
-using Microsoft.AspNetCore.Identity.UI.Services;
 using BomWithCosts = ProbuildBackend.Models.BomWithCosts;
 using ProbuildBackend.Interface;
-using System.Linq;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 namespace ProbuildBackend.Controllers
 {
@@ -577,7 +575,7 @@ namespace ProbuildBackend.Controllers
                                 {
                                     userContextFileUrl = (await _azureBlobservice.UploadFiles(new List<IFormFile> { jobRequest.UserContextFile }, null, null)).FirstOrDefault();
                                 }
-                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessDocumentsForJobAsync(job.Id, documentUrls, connectionId, jobRequest.GenerateDetailsWithAi, jobRequest.UserContextText, userContextFileUrl));
+                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessDocumentsForJobAsync(job.Id, documentUrls, connectionId, jobRequest.GenerateDetailsWithAi, jobRequest.UserContextText, userContextFileUrl, jobRequest.BudgetLevel));
                             }
                             else if (jobRequest.AnalysisType == "Selected")
                             {
@@ -586,7 +584,7 @@ namespace ProbuildBackend.Controllers
                                 {
                                     userContextFileUrl = (await _azureBlobservice.UploadFiles(new List<IFormFile> { jobRequest.UserContextFile }, null, null)).FirstOrDefault();
                                 }
-                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessSelectedAnalysisForJobAsync(job.Id, documentUrls, jobRequest.PromptKeys, connectionId, jobRequest.GenerateDetailsWithAi, jobRequest.UserContextText, userContextFileUrl));
+                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessSelectedAnalysisForJobAsync(job.Id, documentUrls, jobRequest.PromptKeys, connectionId, jobRequest.GenerateDetailsWithAi, jobRequest.UserContextText, userContextFileUrl, jobRequest.BudgetLevel));
                             }
                             else if (jobRequest.AnalysisType == "Renovation")
                             {
@@ -595,7 +593,7 @@ namespace ProbuildBackend.Controllers
                                 {
                                     userContextFileUrl = (await _azureBlobservice.UploadFiles(new List<IFormFile> { jobRequest.UserContextFile }, null, null)).FirstOrDefault();
                                 }
-                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessRenovationAnalysisForJobAsync(job.Id, documentUrls, connectionId, jobRequest.GenerateDetailsWithAi, jobRequest.UserContextText, userContextFileUrl));
+                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessRenovationAnalysisForJobAsync(job.Id, documentUrls, connectionId, jobRequest.GenerateDetailsWithAi, jobRequest.UserContextText, userContextFileUrl, jobRequest.BudgetLevel));
                             }
                         }
 
@@ -949,8 +947,8 @@ namespace ProbuildBackend.Controllers
             address.State = addressDto.State;
             address.PostalCode = addressDto.PostalCode;
             address.Country = addressDto.Country;
-            address.Latitude = (decimal)addressDto.Latitude;
-            address.Longitude = (decimal)addressDto.Longitude;
+            address.Latitude = addressDto.Latitude;
+            address.Longitude = addressDto.Longitude;
             address.FormattedAddress = addressDto.FormattedAddress;
             address.GooglePlaceId = addressDto.GooglePlaceId;
             address.UpdatedAt = DateTime.UtcNow;
@@ -1017,10 +1015,6 @@ namespace ProbuildBackend.Controllers
 
             return Ok(jobs);
         }
-
-
-
-
 
         [HttpPut("{jobId}/archive")]
         public async Task<IActionResult> ArchiveJob(int jobId)
@@ -1224,7 +1218,6 @@ namespace ProbuildBackend.Controllers
             return Ok();
         }
 
-
         [HttpGet("bidded/{userId}")]
         public async Task<ActionResult<IEnumerable<BidModel>>> GetBiddedJobs(string userId)
         {
@@ -1249,6 +1242,56 @@ namespace ProbuildBackend.Controllers
         public class UpdateStatusRequest
         {
             public string Status { get; set; }
+        }
+
+        [HttpPut("{jobId}/details")]
+        public async Task<IActionResult> UpdateJobDetails(int jobId, [FromBody] FinalizeJobRequestDto request)
+        {
+            var job = await _context.Jobs.FindAsync(jobId);
+            if (job == null) return NotFound();
+
+            // Update Project Name from user input
+            job.ProjectName = request.ProjectName;
+
+            // Create or update Address
+            var address = await _context.JobAddresses.FirstOrDefaultAsync(a => a.JobId == jobId);
+            if (address == null)
+            {
+                address = new AddressModel { JobId = jobId, CreatedAt = DateTime.UtcNow };
+                _context.JobAddresses.Add(address);
+            }
+
+            address.FormattedAddress = request.Address.FormattedAddress;
+            address.StreetNumber = request.Address.StreetNumber;
+            address.StreetName = request.Address.StreetName;
+            address.City = request.Address.City;
+            address.State = request.Address.State;
+            address.PostalCode = request.Address.PostalCode;
+            address.Country = request.Address.Country;
+            address.Latitude = request.Address.Latitude;
+            address.Longitude = request.Address.Longitude;
+            address.GooglePlaceId = request.Address.GooglePlaceId;
+            address.UpdatedAt = DateTime.UtcNow;
+
+            // Create Client Details
+            var clientDetails = new ClientDetailsModel
+            {
+                JobId = jobId,
+                FirstName = request.Client.FirstName,
+                LastName = request.Client.LastName,
+                Email = request.Client.Email,
+                Phone = request.Client.Phone,
+                CompanyName = request.Client.CompanyName,
+                Position = request.Client.Position,
+                CreatedAt = DateTime.UtcNow
+            };
+            _context.ClientDetails.Add(clientDetails);
+
+            // Finalise job status
+            job.Status = "NEW";
+
+            await _context.SaveChangesAsync();
+            return NoContent();
         }
     }
 }

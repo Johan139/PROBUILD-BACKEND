@@ -1,11 +1,8 @@
-using Hangfire.Common;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
-using Stripe;
 using System.Security.Claims;
 
 namespace Probuild.Controllers

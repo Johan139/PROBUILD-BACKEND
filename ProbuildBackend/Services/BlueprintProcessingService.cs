@@ -1,14 +1,7 @@
-using Microsoft.Extensions.Logging;
 using ProbuildBackend.Interface;
-using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Services;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text.Json;
-using System.Threading.Tasks;
 
 public class BlueprintProcessingService : IBlueprintProcessingService
 {
@@ -39,9 +32,9 @@ public class BlueprintProcessingService : IBlueprintProcessingService
         try
         {
             var analysisJson = await _aiAnalysisService.PerformBlueprintAnalysisAsync(userId, new List<string> { pdfUrl });
-            
+
             var (pdfStream, _, fileName) = await _blobService.GetBlobContentAsync(pdfUrl);
-            
+
             var tempFileNamePrefix = Path.GetRandomFileName();
             var localImagePaths = _pdfConversionService.ConvertPdfToImages(pdfStream, tempFileNamePrefix);
 
