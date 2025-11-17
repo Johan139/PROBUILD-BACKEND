@@ -1035,9 +1035,9 @@ namespace ProbuildBackend.Controllers
             var progress =
                 totalCount > 0 ? (int)Math.Round((double)completedCount / totalCount * 100) : 0;
 
-            if (progress < 100)
+            if (job.Status != "DRAFT" && job.Status != "FAILED" && progress < 100)
             {
-                return BadRequest("Job progress must be 100% to archive.");
+                return BadRequest("Project must be in draft or failed status, or have 100% progress to be archived.");
             }
 
             job.Status = "ARCHIVED";

@@ -15,8 +15,8 @@ public class PromptManagerService : IPromptManagerService
 #else
      var connectionString = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY");
 #endif
-
-        _blobContainerClient = new BlobContainerClient(connectionString, "probuild-prompts");
+        var containerName = configuration["PromptBlobContainerName"];
+        _blobContainerClient = new BlobContainerClient(connectionString, containerName);
         _logger = logger;
     }
 
