@@ -151,7 +151,7 @@ builder.Services.AddAuthentication(options =>
             // If the request is for our hub...
             if (!string.IsNullOrEmpty(accessToken) &&
                 (path.StartsWithSegments("/chathub") ||
-                 path.StartsWithSegments("/progressHub") ||
+                 path.StartsWithSegments("/hubs/progressHub") ||
                  path.StartsWithSegments("/hubs/notifications")))
             {
                 // Read the token out of the query string
@@ -210,7 +210,6 @@ builder.Services.Configure<OcrSettings>(configuration.GetSection("OcrSettings"))
 builder.Services.AddScoped(sp => sp.GetRequiredService<IOptions<OcrSettings>>().Value);
 builder.Services.AddScoped<UserModerationService>();
 builder.Services.AddScoped<IPdfConversionService, PdfConversionService>();
-builder.Services.AddScoped<IBlueprintProcessingService, BlueprintProcessingService>();
 
 builder.Services.AddHostedService<TokenCleanupService>();
 builder.Services.AddHangfireServer();
@@ -247,7 +246,8 @@ using (var scope = app.Services.CreateScope())
 app.MapGet("/health", () => Results.Ok("Healthy"));
 
 // Map SignalR hub
-app.MapHub<ProgressHub>("/progressHub");
+app.MapHub<ProgressHub>("/hubs/progressHub");
+app.Logger.LogInformation("ProgressHub endpoint mapped at /hubs/progressHub");
 app.MapHub<NotificationHub>("/hubs/notifications");
 app.MapHub<ChatHub>("/chathub");
 app.Logger.LogInformation("ChatHub endpoint mapped at /chathub");
