@@ -363,6 +363,26 @@ try
         }
     }
 
+        app.UseHangfireDashboard("/hangfire", new DashboardOptions
+    {
+        Authorization = new[] { new BasicAuthAuthorizationFilter(
+        new BasicAuthAuthorizationFilterOptions
+        {
+            RequireSsl = false, // Azure Container Apps uses TLS termination anyway
+            SslRedirect = false,
+            LoginCaseSensitive = false,
+            Users = new []
+            {
+                new BasicAuthAuthorizationUser
+                {
+                    Login = "admin",
+                    PasswordClear = "3oZ%7E8(T2d6"
+                }
+            }
+        })
+    }
+    });
+
     app.Logger.LogInformation("Application startup completed successfully. Starting to run...");
     app.Run();
 }
