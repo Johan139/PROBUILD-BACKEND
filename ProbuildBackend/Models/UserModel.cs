@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Identity;
 
-namespace ProbuildBackend.Models {
+namespace ProbuildBackend.Models
+{
     public class UserModel : IdentityUser
     {
         public string? FirstName { get; set; }

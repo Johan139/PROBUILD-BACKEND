@@ -9,13 +9,11 @@ using ProbuildBackend.Services;
 using System.IO.Compression;
 using System.Globalization;
 using Hangfire;
-using Microsoft.AspNetCore.Identity.UI.Services;
 using BomWithCosts = ProbuildBackend.Models.BomWithCosts;
 using ProbuildBackend.Interface;
-using System.Linq;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 namespace ProbuildBackend.Controllers
- {
+{
     [Route("api/[controller]")]
     [ApiController]
     public class JobsController : ControllerBase
@@ -118,7 +116,8 @@ namespace ProbuildBackend.Controllers
                     ClientCompanyName = user.CompanyName,
                     ClientRating = clientRating,
                     CreatedAt = item.Job.CreatedAt,
-                    BiddingStartDate = item.Job.BiddingStartDate
+                    BiddingStartDate = item.Job.BiddingStartDate,
+                    ThumbnailUrl = !string.IsNullOrEmpty(item.Job.ThumbnailUrl) ? _azureBlobservice.GenerateTemporaryPublicUrl(item.Job.ThumbnailUrl) : null
                 });
             }
 
@@ -206,7 +205,8 @@ namespace ProbuildBackend.Controllers
                     PotentialEndDate = potentialEndDate,
                     DurationInDays = durationInDays,
                     Blueprint = null,
-                    TemporaryFileUrls = null
+                    TemporaryFileUrls = null,
+                    ThumbnailUrl = !string.IsNullOrEmpty(job.ThumbnailUrl) ? _azureBlobservice.GenerateTemporaryPublicUrl(job.ThumbnailUrl) : null
                 };
 
                 return Ok(jobDto);
@@ -470,26 +470,26 @@ namespace ProbuildBackend.Controllers
                         var job = new JobModel
                         {
                             ProjectName = jobRequest.ProjectName,
-                            JobType = jobRequest.JobType,
+                            JobType = jobRequest.JobType ?? "Pending AI Analysis",
                             Qty = jobRequest.Qty,
                             DesiredStartDate = jobRequest.DesiredStartDate,
-                            WallStructure = jobRequest.WallStructure,
+                            WallStructure = jobRequest.WallStructure ?? "Pending AI Analysis",
                             WallStructureSubtask = jobRequest.WallStructureSubtask,
-                            WallInsulation = jobRequest.WallInsulation,
+                            WallInsulation = jobRequest.WallInsulation ?? "Pending AI Analysis",
                             WallInsulationSubtask = jobRequest.WallInsulationSubtask,
-                            RoofStructure = jobRequest.RoofStructure,
+                            RoofStructure = jobRequest.RoofStructure ?? "Pending AI Analysis",
                             RoofStructureSubtask = jobRequest.RoofStructureSubtask,
                             RoofTypeSubtask = jobRequest.RoofTypeSubtask,
-                            RoofInsulation = jobRequest.RoofInsulation,
-                            Foundation = jobRequest.Foundation,
+                            RoofInsulation = jobRequest.RoofInsulation ?? "Pending AI Analysis",
+                            Foundation = jobRequest.Foundation ?? "Pending AI Analysis",
                             FoundationSubtask = jobRequest.FoundationSubtask,
-                            Finishes = jobRequest.Finishes,
+                            Finishes = jobRequest.Finishes ?? "Pending AI Analysis",
                             FinishesSubtask = jobRequest.FinishesSubtask,
-                            ElectricalSupplyNeeds = jobRequest.ElectricalSupplyNeeds,
+                            ElectricalSupplyNeeds = jobRequest.ElectricalSupplyNeeds ?? "Pending AI Analysis",
                             ElectricalSupplyNeedsSubtask = jobRequest.ElectricalSupplyNeedsSubtask,
                             Stories = jobRequest.Stories,
                             BuildingSize = jobRequest.BuildingSize,
-                            OperatingArea = jobRequest.OperatingArea,
+                            OperatingArea = jobRequest.OperatingArea ?? "Pending AI Analysis",
                             UserId = jobRequest.UserId,
                             Status = jobRequest.Status,
                             BiddingType = "NOT_BIDDING",
@@ -587,7 +587,7 @@ namespace ProbuildBackend.Controllers
                                 {
                                     userContextFileUrl = (await _azureBlobservice.UploadFiles(new List<IFormFile> { jobRequest.UserContextFile }, null, null)).FirstOrDefault();
                                 }
-                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessDocumentsForJobAsync(job.Id, documentUrls, connectionId, jobRequest.GenerateDetailsWithAi, jobRequest.UserContextText, userContextFileUrl));
+                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessDocumentsForJobAsync(job.Id, documentUrls, connectionId, jobRequest.GenerateDetailsWithAi, jobRequest.UserContextText, userContextFileUrl, jobRequest.BudgetLevel));
                             }
                             else if (jobRequest.AnalysisType == "Selected")
                             {
@@ -596,7 +596,7 @@ namespace ProbuildBackend.Controllers
                                 {
                                     userContextFileUrl = (await _azureBlobservice.UploadFiles(new List<IFormFile> { jobRequest.UserContextFile }, null, null)).FirstOrDefault();
                                 }
-                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessSelectedAnalysisForJobAsync(job.Id, documentUrls, jobRequest.PromptKeys, connectionId, jobRequest.GenerateDetailsWithAi, jobRequest.UserContextText, userContextFileUrl));
+                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessSelectedAnalysisForJobAsync(job.Id, documentUrls, jobRequest.PromptKeys, connectionId, jobRequest.GenerateDetailsWithAi, jobRequest.UserContextText, userContextFileUrl, jobRequest.BudgetLevel));
                             }
                             else if (jobRequest.AnalysisType == "Renovation")
                             {
@@ -605,7 +605,7 @@ namespace ProbuildBackend.Controllers
                                 {
                                     userContextFileUrl = (await _azureBlobservice.UploadFiles(new List<IFormFile> { jobRequest.UserContextFile }, null, null)).FirstOrDefault();
                                 }
-                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessRenovationAnalysisForJobAsync(job.Id, documentUrls, connectionId, jobRequest.GenerateDetailsWithAi, jobRequest.UserContextText, userContextFileUrl));
+                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessRenovationAnalysisForJobAsync(job.Id, documentUrls, connectionId, jobRequest.GenerateDetailsWithAi, jobRequest.UserContextText, userContextFileUrl, jobRequest.BudgetLevel));
                             }
                         }
 
@@ -713,7 +713,7 @@ namespace ProbuildBackend.Controllers
                 );
             }
         }
- 
+
         [HttpPost("UploadQuote")]
         [RequestSizeLimit(200 * 1024 * 1024)]
         public async Task<IActionResult> UploadQuote([FromForm] UploadQuoteDto jobRequest)
@@ -764,7 +764,7 @@ namespace ProbuildBackend.Controllers
 
             return Ok(response);
         }
- 
+
         [HttpPost("subtask")]
         public async Task<IActionResult> SaveSubtasks([FromBody] SaveSubtasksRequest subtasks)
         {
@@ -959,8 +959,8 @@ namespace ProbuildBackend.Controllers
             address.State = addressDto.State;
             address.PostalCode = addressDto.PostalCode;
             address.Country = addressDto.Country;
-            address.Latitude = (decimal)addressDto.Latitude;
-            address.Longitude = (decimal)addressDto.Longitude;
+            address.Latitude = addressDto.Latitude;
+            address.Longitude = addressDto.Longitude;
             address.FormattedAddress = addressDto.FormattedAddress;
             address.GooglePlaceId = addressDto.GooglePlaceId;
             address.UpdatedAt = DateTime.UtcNow;
@@ -1028,10 +1028,6 @@ namespace ProbuildBackend.Controllers
             return Ok(jobs);
         }
 
-
-
-
-
         [HttpPut("{jobId}/archive")]
         public async Task<IActionResult> ArchiveJob(int jobId)
         {
@@ -1051,9 +1047,9 @@ namespace ProbuildBackend.Controllers
             var progress =
                 totalCount > 0 ? (int)Math.Round((double)completedCount / totalCount * 100) : 0;
 
-            if (progress < 100)
+            if (job.Status != "DRAFT" && job.Status != "FAILED" && progress < 100)
             {
-                return BadRequest("Job progress must be 100% to archive.");
+                return BadRequest("Project must be in draft or failed status, or have 100% progress to be archived.");
             }
 
             job.Status = "ARCHIVED";
@@ -1234,7 +1230,6 @@ namespace ProbuildBackend.Controllers
             return Ok();
         }
 
-
         [HttpGet("bidded/{userId}")]
         public async Task<ActionResult<IEnumerable<BidModel>>> GetBiddedJobs(string userId)
         {
@@ -1259,6 +1254,89 @@ namespace ProbuildBackend.Controllers
         public class UpdateStatusRequest
         {
             public string Status { get; set; }
+        }
+
+        [HttpPut("{jobId}/details")]
+        public async Task<IActionResult> UpdateJobDetails(int jobId, [FromBody] FinalizeJobRequestDto request)
+        {
+            var job = await _context.Jobs.FindAsync(jobId);
+            if (job == null) return NotFound();
+
+            // Update Project Name from user input
+            job.ProjectName = request.ProjectName;
+
+            // Create or update Address
+            var address = await _context.JobAddresses.FirstOrDefaultAsync(a => a.JobId == jobId);
+            if (address == null)
+            {
+                address = new AddressModel { JobId = jobId, CreatedAt = DateTime.UtcNow };
+                _context.JobAddresses.Add(address);
+            }
+
+            address.FormattedAddress = request.Address.FormattedAddress;
+            address.StreetNumber = request.Address.StreetNumber;
+            address.StreetName = request.Address.StreetName;
+            address.City = request.Address.City;
+            address.State = request.Address.State;
+            address.PostalCode = request.Address.PostalCode;
+            address.Country = request.Address.Country;
+            address.Latitude = request.Address.Latitude;
+            address.Longitude = request.Address.Longitude;
+            address.GooglePlaceId = request.Address.GooglePlaceId;
+            address.UpdatedAt = DateTime.UtcNow;
+
+            // Create Client Details
+            var clientDetails = new ClientDetailsModel
+            {
+                JobId = jobId,
+                FirstName = request.Client.FirstName,
+                LastName = request.Client.LastName,
+                Email = request.Client.Email,
+                Phone = request.Client.Phone,
+                CompanyName = request.Client.CompanyName,
+                Position = request.Client.Position,
+                CreatedAt = DateTime.UtcNow
+            };
+            _context.ClientDetails.Add(clientDetails);
+
+            // Finalise job status
+            job.Status = "NEW";
+
+            await _context.SaveChangesAsync();
+            return NoContent();
+        }
+
+        [HttpPost("{jobId}/thumbnail")]
+        public async Task<IActionResult> UploadThumbnail(int jobId, [FromForm] IFormFile file)
+        {
+            var job = await _context.Jobs.FindAsync(jobId);
+            if (job == null)
+            {
+                return NotFound("Job not found.");
+            }
+
+            if (file == null || file.Length == 0)
+            {
+                return BadRequest("Invalid file.");
+            }
+
+            try
+            {
+                var folder = $"jobs/{jobId}/thumbnails";
+                var thumbnailUrl = await _azureBlobservice.UploadImageAsync(file, folder);
+
+                if (thumbnailUrl != null)
+                {
+                    job.ThumbnailUrl = thumbnailUrl;
+                    await _context.SaveChangesAsync();
+                }
+
+                return Ok(new { thumbnailUrl });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An error occurred while uploading the thumbnail: {ex.Message}");
+            }
         }
     }
 }

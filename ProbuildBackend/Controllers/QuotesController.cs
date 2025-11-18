@@ -1,8 +1,8 @@
-﻿using Microsoft.AspNetCore.Identity.UI.Services;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
+using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Services;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 namespace ProbuildBackend.Controllers
@@ -17,13 +17,15 @@ namespace ProbuildBackend.Controllers
         private readonly SubscriptionService _subscriptionService;
         public readonly IEmailTemplateService _emailTemplate;
         private readonly IConfiguration _configuration;
-        public QuotesController(ApplicationDbContext context, IEmailSender emailSender, SubscriptionService subscriptionService, IEmailTemplateService emailTemplate, IConfiguration configuration)
+        private readonly AzureBlobService _azureBlobService;
+        public QuotesController(ApplicationDbContext context, IEmailSender emailSender, SubscriptionService subscriptionService, IEmailTemplateService emailTemplate, IConfiguration configuration, AzureBlobService azureBlobService)
         {
             _context = context;
             _emailSender = emailSender;
             _subscriptionService = subscriptionService;
             _emailTemplate = emailTemplate;
             _configuration = configuration;
+            _azureBlobService = azureBlobService;
         }
 
         [HttpGet("GetQuotes/{id}")]
@@ -135,7 +137,7 @@ namespace ProbuildBackend.Controllers
                         continue;
                     quoteList.AddRange(quote);
                 }
-                
+
                 return Ok(quoteList);
             }
             catch (Exception e)
@@ -320,7 +322,7 @@ namespace ProbuildBackend.Controllers
                 switch (quote.Status)
                 {
                     case "Approved":
-                         quoteUser = await _context.Users.FirstOrDefaultAsync(a => a.Id == quote.CreatedID);
+                        quoteUser = await _context.Users.FirstOrDefaultAsync(a => a.Id == quote.CreatedID);
                         if (quoteUser == null)
                             return NotFound("Quote creator not found.");
                         if (string.IsNullOrEmpty(quoteUser.Email))
@@ -338,10 +340,10 @@ namespace ProbuildBackend.Controllers
                             .Replace("{{Header}}", QuoteApproved.HeaderHtml)
                 .Replace("{{Footer}}", QuoteApproved.FooterHtml);
 
-                        await _emailSender.SendEmailAsync(QuoteApproved,quoteUser.Email);
+                        await _emailSender.SendEmailAsync(QuoteApproved, quoteUser.Email);
                         break;
                     case "Rejected":
-                         quoteUser = await _context.Users.FirstOrDefaultAsync(a => a.Id == quote.CreatedID);
+                        quoteUser = await _context.Users.FirstOrDefaultAsync(a => a.Id == quote.CreatedID);
                         if (quoteUser == null)
                             return NotFound("Quote creator not found.");
                         if (string.IsNullOrEmpty(quoteUser.Email))
@@ -358,7 +360,7 @@ namespace ProbuildBackend.Controllers
                             .Replace("{{QuoteLink}}", callbackURL).Replace("{{Header}}", QuoteDeclined.HeaderHtml)
                 .Replace("{{Footer}}", QuoteDeclined.FooterHtml);
 
-                        await _emailSender.SendEmailAsync(QuoteDeclined,quoteUser.Email);
+                        await _emailSender.SendEmailAsync(QuoteDeclined, quoteUser.Email);
                         break;
 
                     case "Submitted":
@@ -386,7 +388,7 @@ namespace ProbuildBackend.Controllers
                             .Replace("{{QuoteLink}}", callbackURL).Replace("{{Header}}", QuoteNew.HeaderHtml)
                 .Replace("{{Footer}}", QuoteNew.FooterHtml);
 
-                        await _emailSender.SendEmailAsync(QuoteNew,jobCreator.Email);
+                        await _emailSender.SendEmailAsync(QuoteNew, jobCreator.Email);
                         break;
                 }
 
@@ -418,13 +420,60 @@ namespace ProbuildBackend.Controllers
                 Task = job.ProjectName,
                 Duration = 0,
                 DocumentUrl = null,
-                QuoteId = quote.Id 
+                QuoteId = quote.Id
             };
 
             _context.Bids.Add(bid);
             await _context.SaveChangesAsync();
 
             return Ok();
+        }
+
+        [HttpPost("Upload")]
+        [RequestSizeLimit(200 * 1024 * 1024)]
+        public async Task<IActionResult> Upload([FromForm] UploadQuoteDto uploadQuoteDto)
+        {
+            if (uploadQuoteDto == null || uploadQuoteDto.Quote == null || !uploadQuoteDto.Quote.Any())
+            {
+                return BadRequest(new { error = "No quote file provided" });
+            }
+
+            var quoteFile = uploadQuoteDto.Quote.First();
+            var allowedExtensions = new[] { ".pdf" };
+            var extension = Path.GetExtension(quoteFile.FileName).ToLowerInvariant();
+
+            if (!allowedExtensions.Contains(extension))
+            {
+                return BadRequest(new { error = "Invalid file type. Only PDF files are allowed for quotes." });
+            }
+
+            var uploadedFileUrls = await _azureBlobService.UploadFiles(
+                uploadQuoteDto.Quote,
+                null,
+                null
+            );
+
+            var fileUrl = uploadedFileUrls.FirstOrDefault();
+            if (fileUrl != null)
+            {
+                var jobDocument = new JobDocumentModel
+                {
+                    JobId = null,
+                    FileName = Path.GetFileName(new Uri(fileUrl).LocalPath),
+                    BlobUrl = fileUrl,
+                    SessionId = uploadQuoteDto.sessionId,
+                    UploadedAt = DateTime.Now
+                };
+                _context.JobDocuments.Add(jobDocument);
+                await _context.SaveChangesAsync();
+            }
+
+            var response = new
+            {
+                FileUrl = fileUrl
+            };
+
+            return Ok(response);
         }
     }
 }

@@ -1,4 +1,5 @@
 using Azure.Storage.Blobs;
+using ProbuildBackend.Interface;
 using System.Collections.Concurrent;
 
 public class PromptManagerService : IPromptManagerService
@@ -14,8 +15,8 @@ public class PromptManagerService : IPromptManagerService
 #else
      var connectionString = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY");
 #endif
-
-        _blobContainerClient = new BlobContainerClient(connectionString, "probuild-prompts");
+        var containerName = configuration["PromptBlobContainerName"];
+        _blobContainerClient = new BlobContainerClient(connectionString, containerName);
         _logger = logger;
     }
 
@@ -31,6 +32,10 @@ public class PromptManagerService : IPromptManagerService
         else if (fileName.StartsWith("renovation-"))
         {
             fullBlobName = $"RenovationPrompts/{fileName}";
+        }
+        else if (fileName.Contains("-budget-"))
+        {
+            fullBlobName = $"BudgetPrompts/{fileName}";
         }
         else
         {

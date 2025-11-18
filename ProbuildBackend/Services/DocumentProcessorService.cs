@@ -1,5 +1,4 @@
-﻿using Microsoft.AspNetCore.Identity.UI.Services;
-using Microsoft.AspNetCore.SignalR;
+﻿using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
@@ -47,7 +46,8 @@ namespace ProbuildBackend.Services
             string connectionId,
             bool generateDetailsWithAi,
             string userContextText,
-            string userContextFileUrl
+            string userContextFileUrl,
+            string budgetLevel
         )
         {
             try
@@ -70,7 +70,9 @@ namespace ProbuildBackend.Services
                     job,
                     generateDetailsWithAi,
                     userContextText,
-                    userContextFileUrl
+                    userContextFileUrl,
+                    budgetLevel,
+                    connectionId
                 );
 
                 var processingResult = new DocumentProcessingResult
@@ -124,7 +126,7 @@ namespace ProbuildBackend.Services
                 .Replace("{{Footer}}", ProjectAnalysisEmail.FooterHtml);
                     try
                     {
-                        await _emailService.SendEmailAsync(ProjectAnalysisEmail,user.Email);
+                        await _emailService.SendEmailAsync(ProjectAnalysisEmail, user.Email);
                     }
                     catch (Exception ex)
                     {
@@ -184,7 +186,8 @@ namespace ProbuildBackend.Services
             string connectionId,
             bool generateDetailsWithAi,
             string userContextText,
-            string userContextFileUrl
+            string userContextFileUrl,
+            string budgetLevel
         )
         {
             var job = await _context.Jobs.FindAsync(jobId);
@@ -209,10 +212,14 @@ namespace ProbuildBackend.Services
                     userContextText,
                     userContextFileUrl
                 );
+
                 string finalReport = await _aiAnalysisService.PerformSelectedAnalysisAsync(
                     job.UserId,
                     request,
-                    generateDetailsWithAi
+                    generateDetailsWithAi,
+                    budgetLevel,
+                    null,
+                    connectionId
                 );
 
                 var result = new DocumentProcessingResult
@@ -271,7 +278,7 @@ namespace ProbuildBackend.Services
 
                     try
                     {
-                        await _emailService.SendEmailAsync(ProjectAnalysisEmail,user.Email);
+                        await _emailService.SendEmailAsync(ProjectAnalysisEmail, user.Email);
                     }
                     catch (Exception ex)
                     {
@@ -343,7 +350,8 @@ namespace ProbuildBackend.Services
             string connectionId,
             bool generateDetailsWithAi,
             string userContextText,
-            string userContextFileUrl
+            string userContextFileUrl,
+            string budgetLevel
         )
         {
             var job = await _context.Jobs.FindAsync(jobId);
@@ -361,7 +369,9 @@ namespace ProbuildBackend.Services
                     job,
                     generateDetailsWithAi,
                     userContextText,
-                    userContextFileUrl
+                    userContextFileUrl,
+                    budgetLevel,
+                    connectionId
                 );
 
                 var result = new DocumentProcessingResult
@@ -420,7 +430,7 @@ namespace ProbuildBackend.Services
 
                     try
                     {
-                        await _emailService.SendEmailAsync(ProjectAnalysisEmail,user.Email);
+                        await _emailService.SendEmailAsync(ProjectAnalysisEmail, user.Email);
                     }
                     catch (Exception ex)
                     {

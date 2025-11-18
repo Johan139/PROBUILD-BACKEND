@@ -1,5 +1,4 @@
-﻿// ProbuildBackend/Interface/IAiService.cs
-using ProbuildBackend.Models;
+﻿using ProbuildBackend.Models;
 
 namespace ProbuildBackend.Interface
 {

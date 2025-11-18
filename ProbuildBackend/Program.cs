@@ -1,4 +1,5 @@
-﻿﻿using ProbuildBackend.Services;
+﻿﻿using ProbuildBackend.Interface;
+using ProbuildBackend.Services;
 using Elastic.Apm.NetCoreAll;
 using Hangfire;
 using Microsoft.EntityFrameworkCore;
@@ -8,10 +9,8 @@ using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Options;
@@ -44,11 +43,6 @@ builder.Services.AddCors(options =>
         .AllowCredentials();
     });
 });
-
-
-
-
-
 
 // Configure the token provider for password reset
 builder.Services.Configure<DataProtectionTokenProviderOptions>(options =>
@@ -163,7 +157,7 @@ builder.Services.AddAuthentication(options =>
             // If the request is for our hub...
             if (!string.IsNullOrEmpty(accessToken) &&
                 (path.StartsWithSegments("/chathub") ||
-                 path.StartsWithSegments("/progressHub") ||
+                 path.StartsWithSegments("/hubs/progressHub") ||
                  path.StartsWithSegments("/hubs/notifications")))
             {
                 // Read the token out of the query string
@@ -207,20 +201,21 @@ builder.Services.AddHangfireServer(options =>
 {
     options.WorkerCount = 2; // or even 1 if Gemini calls are large
 });
-builder.Services.AddScoped<IEmailService, EmailService>(); // Add this line
-builder.Services.AddScoped<IEmailSender, EmailSender>(); // Add this line
-// Register all services
+builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<IEmailSender, EmailSender>();
 builder.Services.AddScoped<IConversationRepository, SqlConversationRepository>();
 builder.Services.AddScoped<IPromptManagerService, PromptManagerService>();
 // The DI container will automatically inject the other services into GeminiAiService's constructor
 builder.Services.AddScoped<IAiService, GeminiAiService>();
 builder.Services.AddScoped<IAiAnalysisService, AiAnalysisService>();
 builder.Services.AddScoped<ChatService>();
-builder.Services.AddScoped<IPdfImageConverter, PdfImageConverter>(); // Add this line
+builder.Services.AddTransient<IKeepAliveService, KeepAliveService>();
+builder.Services.AddScoped<IPdfImageConverter, PdfImageConverter>();
 builder.Services.AddScoped<IPdfTextExtractionService, PdfTextExtractionService>();
 builder.Services.Configure<OcrSettings>(configuration.GetSection("OcrSettings"));
 builder.Services.AddScoped(sp => sp.GetRequiredService<IOptions<OcrSettings>>().Value);
 builder.Services.AddScoped<UserModerationService>();
+builder.Services.AddScoped<IPdfConversionService, PdfConversionService>();
 
 builder.Services.AddHostedService<TokenCleanupService>();
 builder.Services.AddHangfireServer();
@@ -257,7 +252,8 @@ using (var scope = app.Services.CreateScope())
 app.MapGet("/health", () => Results.Ok("Healthy"));
 
 // Map SignalR hub
-app.MapHub<ProgressHub>("/progressHub");
+app.MapHub<ProgressHub>("/hubs/progressHub");
+app.Logger.LogInformation("ProgressHub endpoint mapped at /hubs/progressHub");
 app.MapHub<NotificationHub>("/hubs/notifications");
 app.MapHub<ChatHub>("/chathub");
 app.Logger.LogInformation("ChatHub endpoint mapped at /chathub");
@@ -376,3 +372,4 @@ catch (Exception ex)
     app.Logger.LogError(ex, "Stack trace: {StackTrace}", ex.StackTrace);
     throw;
 }
+

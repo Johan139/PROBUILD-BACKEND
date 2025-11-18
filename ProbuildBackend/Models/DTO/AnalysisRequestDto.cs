@@ -25,6 +25,8 @@ namespace ProbuildBackend.Models.DTO
     public bool GenerateDetailsWithAi { get; set; }
 
     public string? ConversationId { get; set; }
+
+    public string BudgetLevel { get; set; }
   }
 
 }

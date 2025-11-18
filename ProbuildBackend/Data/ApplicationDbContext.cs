@@ -37,6 +37,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<DocumentProcessingResult> DocumentProcessingResults { get; set; }
     public DbSet<AddressModel> JobAddresses { get; set; }
     public DbSet<JobDocumentModel> JobDocuments { get; set; }
+    public DbSet<BlueprintAnalysis> BlueprintAnalyses { get; set; }
     public DbSet<LogosModel> Logos { get; set; }
     public DbSet<Quote> Quotes { get; set; }
     public DbSet<QuoteRow> QuoteRows { get; set; }
@@ -47,7 +48,8 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<TeamMemberPermission> TeamMemberPermissions { get; set; }
     public DbSet<Conversation> Conversations { get; set; }
     public DbSet<ConversationPrompt> ConversationPrompts { get; set; }
-
+    public DbSet<WalkthroughSession> WalkthroughSessions { get; set; }
+    public DbSet<WalkthroughStep> WalkthroughSteps { get; set; }
     public DbSet<Connection> Connections { get; set; }
     public DbSet<Rating> Ratings { get; set; }
     public DbSet<Contract> Contracts { get; set; }
@@ -57,15 +59,13 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<Portfolio> Portfolios { get; set; }
     public DbSet<BidAnalysis> BidAnalyses { get; set; }
     public DbSet<Invitation> Invitations { get; set; }
-
     public DbSet<AddressTypeModel> AddressType { get; set; }
     public DbSet<CountriesModel> Countries { get; set; }
     public DbSet<StatesModel> States { get; set; }
-
     public DbSet<CountryNumberCodesModel> CountryNumberCodes { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
-      {
+    {
         modelBuilder.Entity<NotificationView>().HasNoKey().ToView("vw_Notifications");
 
         modelBuilder.Entity<ProjectModel>()

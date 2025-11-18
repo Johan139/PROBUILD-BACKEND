@@ -133,7 +133,7 @@ namespace ProbuildBackend.Services
             if (!promptKeys.Any())
             {
                 // Text-only: stream directly from your existing streaming source
-               var (initialResponse, _) = await _aiService.StartMultimodalConversationAsync(conversationId, blueprintUrls, systemPersonaPrompt, initialMessage);
+                var (initialResponse, _) = await _aiService.StartMultimodalConversationAsync(conversationId, blueprintUrls, systemPersonaPrompt, initialMessage);
 
                 var words = (initialResponse ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 var sb = new System.Text.StringBuilder();
@@ -248,7 +248,7 @@ namespace ProbuildBackend.Services
                 if (dto.PromptKeys.Contains("SYSTEM_RENOVATION_ANALYSIS"))
                 {
                     var jobDetails = new JobModel { UserId = userId };
-                    aiResponse = await _aiAnalysisService.PerformRenovationAnalysisAsync(userId, fileUrls, jobDetails, false, dto.Message, "");
+                    aiResponse = await _aiAnalysisService.PerformRenovationAnalysisAsync(userId, fileUrls, jobDetails, false, dto.Message, "", "medium");
                 }
                 else
                 {
@@ -263,9 +263,9 @@ namespace ProbuildBackend.Services
                     aiResponse = await _aiAnalysisService.PerformSelectedAnalysisAsync(userId, analysisRequest, false, conversationId);
                 }
             }
-        
-             else
-             {
+
+            else
+            {
                 var (continueResponse, _) = await _aiService.ContinueConversationAsync(conversationId, userId, dto.Message, fileUrls);
 
                 var words = (continueResponse ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries);

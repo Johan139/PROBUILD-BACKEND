@@ -40,7 +40,7 @@ namespace ProbuildBackend.Controllers
 
             try
             {
-                var result = await _aiAnalysisService.PerformSelectedAnalysisAsync(userId, requestDto, requestDto.GenerateDetailsWithAi);
+                var result = await _aiAnalysisService.PerformSelectedAnalysisAsync(userId, requestDto, requestDto.GenerateDetailsWithAi, requestDto.BudgetLevel);
                 return Ok(new { report = result });
             }
             catch (ArgumentException ex)
@@ -89,7 +89,7 @@ namespace ProbuildBackend.Controllers
                 UserId = userId
             };
 
-            var response = await _aiAnalysisService.PerformRenovationAnalysisAsync(userId, request.DocumentUrls, jobDetails, request.GenerateDetailsWithAi, request.UserContext, request.UserContextFileUrl);
+            var response = await _aiAnalysisService.PerformRenovationAnalysisAsync(userId, request.DocumentUrls, jobDetails, request.GenerateDetailsWithAi, request.UserContext, request.UserContextFileUrl, request.BudgetLevel);
             return Ok(new { report = response });
         }
 

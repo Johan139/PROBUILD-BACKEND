@@ -545,8 +545,8 @@
   },
   {
     "tradeName": "PERSONA",
-    "promptFileName": "sub-contractor-selected-prompt-master-prompt.txt",
-    "displayName": "Persona - Sub-Contractor Master",
+    "promptFileName": "selected-prompt-system-persona.txt",
+    "displayName": "Persona - Sub-Contractor",
     "description": "This master prompt is designed to guide the AI in generating responses tailored to the specific needs and characteristics of subcontractors, ensuring that the analysis and bid packages are comprehensive and aligned with industry standards.",
     "allowedUserTypes": ["SUBCONTRACTOR", "GENERAL_CONTRACTOR"],
     "associatedTrades": []
@@ -577,7 +577,7 @@
   },
   {
     "tradeName": "SYSTEM",
-    "promptFileName": "prompt-22-rebuttal.txt",
+    "promptFileName": "bid-justification-rebuttal-prompt.txt",
     "displayName": "System - Prompt Rebuttal",
     "description": "Creates a professional, data-driven response to client inquiries or concerns about project costs, justifying the bid with evidence from the analysis.",
     "allowedUserTypes": ["GENERAL_CONTRACTOR", "SUBCONTRACTOR", "CLIENT"],
