@@ -378,7 +378,7 @@ namespace ProbuildBackend.Controllers
 
                         var QuoteNew = await _emailTemplate.GetTemplateAsync("NewQuoteSubmittedEmail");
 
-                        QuoteNew.Subject = QuoteNew.Subject.Replace("{{quote.Number}}", quote.Number);
+                        QuoteNew.Subject = QuoteNew.Subject.Replace("{{job.ProjectName}}", job.ProjectName);
 
                         QuoteNew.Body = QuoteNew.Body.Replace("{{UserName}}", jobCreator.FirstName + " " + jobCreator.LastName)
                             .Replace("{{quote.Number}}", quote.Number)

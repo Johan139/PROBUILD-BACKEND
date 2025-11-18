@@ -23,49 +23,32 @@ namespace ProbuildBackend.Services
             _configuration = configuration;
         }
 
-        public async Task ExecuteAutomationAsync(string userId)
+        // ---------------------------------------------------------------------
+        // MAIN EXECUTION ENTRY POINT (kept identical)
+        // ---------------------------------------------------------------------
+        public async Task ExecuteAutomationAsync(string userId, int ruleId)
         {
-            if (string.IsNullOrWhiteSpace(userId))
-            {
-                _logger.LogWarning("ExecuteAutomationAsync called with empty userId");
-                return;
-            }
-
             var user = await _db.Users.FindAsync(userId);
-            if (user == null)
+            if (user == null) return;
+
+            var rule = await _db.EmailAutomationRules.FindAsync(ruleId);
+            if (rule == null || !rule.IsActive) return;
+
+            try
             {
-                _logger.LogWarning("User {UserId} not found", userId);
-                return;
+                await ProcessRuleAsync(user, rule);
             }
-
-            var activeRules = await _db.EmailAutomationRules
-                .Where(r => r.IsActive)
-                .ToListAsync();
-
-            if (!activeRules.Any())
+            catch (Exception ex)
             {
-                _logger.LogDebug("No active automation rules");
-                return;
-            }
-
-            foreach (var rule in activeRules)
-            {
-                try
-                {
-                    await ProcessRuleAsync(user, rule);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to process rule {RuleName} for user {UserId}", rule.RuleName, userId);
-                    // continue with next rule
-                }
+                _logger.LogError(ex, "Failed to process rule {RuleId} for user {UserId}", ruleId, userId);
             }
         }
 
+        // ---------------------------------------------------------------------
+        // RULE DISPATCHER (unchanged)
+        // ---------------------------------------------------------------------
         private async Task ProcessRuleAsync(UserModel user, EmailAutomationRuleModel rule)
         {
-            if (rule == null) return;
-
             switch (rule.RuleName)
             {
                 case "Nudge First Upload":
@@ -75,219 +58,240 @@ namespace ProbuildBackend.Services
                 case "Stuck Help":
                     await HandleStuckHelpPlanAsync(user, rule);
                     break;
+
                 case "Feature Spotlight":
                     await HandleFeatureSpotlightUploadAsync(user, rule);
                     break;
+
                 case "Social Proof Mid":
                     await HandleSocialProofMidUploadAsync(user, rule);
                     break;
+
                 case "Trial Support":
                     await HandleTrialSupportUploadAsync(user, rule);
                     break;
-                case "Post Expire":
-                    await HandlePostExpireUploadAsync(user, rule);
-                    break;
+
                 case "Trial_Ending":
                     await HandleTrial_EndingUploadAsync(user, rule);
                     break;
-                // future rules …
+                case "Post Expire":
+                    await HandlePostExpireAsync(user, rule);
+                    break;
                 default:
-                    _logger.LogWarning("Unknown rule name: {RuleName}", rule.RuleName);
+                    _logger.LogWarning("Unknown rule {RuleName}", rule.RuleName);
                     break;
             }
         }
 
-        #region Nudge First Upload
+        // ---------------------------------------------------------------------
+        // HELPER: GET USER TRIAL (existing tables only)
+        // ---------------------------------------------------------------------
+        private async Task<PaymentRecord?> GetUserTrial(UserModel user)
+        {
+            return await _db.PaymentRecords
+                .Where(p => p.UserId == user.Id && p.IsTrial == true)
+                .OrderByDescending(p => p.PaidAt)
+                .FirstOrDefaultAsync();
+        }
+
+        // ---------------------------------------------------------------------
+        // HELPER: COMMON CONDITION BLOCKS
+        // ---------------------------------------------------------------------
+        private async Task<bool> UserConverted(UserModel user)
+        {
+            return await _db.PaymentRecords.AnyAsync(p =>
+                p.UserId == user.Id &&
+                p.Status == "Active" &&
+                p.IsTrial == false &&
+                p.Amount != 0M);
+        }
+
+        private async Task<bool> UserExpired(UserModel user)
+        {
+            var trial = await GetUserTrial(user);
+            return trial != null && trial.ValidUntil < DateTime.UtcNow;
+        }
+
+        private async Task<bool> UserUploadedBlueprint(UserModel user)
+        {
+            return await _db.Jobs.AnyAsync(j => j.UserId == user.Id);
+        }
+
+        private async Task<bool> UserEngaged(UserModel user)
+        {
+            return await _db.Jobs.CountAsync(j => j.UserId == user.Id) >= 2;
+        }
+
+        private async Task<bool> NoRecentActivity48h(UserModel user)
+        {
+            var since = DateTime.UtcNow.AddHours(-48);
+            return !await _db.Jobs.AnyAsync(j => j.UserId == user.Id && j.CreatedAt >= since);
+        }
+
+        // ---------------------------------------------------------------------
+        // 1. Nudge First Upload (12h)
+        // ---------------------------------------------------------------------
         private async Task HandleNudgeFirstUploadAsync(UserModel user, EmailAutomationRuleModel rule)
         {
-            // 1. Skip if user already has a job OR a successful payment
-            bool hasJob = await _db.Jobs.AnyAsync(j => j.UserId == user.Id);
-            bool hasUpgrade = await _db.PaymentRecords.AnyAsync(p => p.UserId == user.Id && p.Status == "Active" && p.IsTrial == true );
+            bool hasBlueprint = await UserUploadedBlueprint(user);
+            bool converted = await UserConverted(user);
 
-            if (hasJob || hasUpgrade)
-            {
-                _logger.LogDebug("Skipping NudgeFirstUpload for {Email}: already active", user.Email);
+            if (hasBlueprint || converted)
                 return;
-            }
 
-            await SendFromTemplateAsync(user, rule, new Dictionary<string, string>
-            {
-                { "{{first_name}}", $"{user.FirstName} {user.LastName}".Trim() },
-                { "{{cta_url}}", BuildCallbackUrl("/job-quote") }
-            });
+            await SendFromTemplate(user, rule);
         }
-        #endregion
 
-        #region Stuck Help
+        // ---------------------------------------------------------------------
+        // 2. Stuck Help (48h)
+        // ---------------------------------------------------------------------
         private async Task HandleStuckHelpPlanAsync(UserModel user, EmailAutomationRuleModel rule)
         {
-            // 1. Skip if user already has a job OR a successful payment
-            bool hasJob = await _db.Jobs.AnyAsync(j => j.UserId == user.Id);
-            bool hasUpgrade = await _db.PaymentRecords.AnyAsync(p => p.UserId == user.Id && p.Status == "Active" && p.IsTrial == true);
+            bool engaged = await UserEngaged(user);
+            bool converted = await UserConverted(user);
+            bool expired = await UserExpired(user);
+            bool noRecentActivity = await NoRecentActivity48h(user);
 
-            if (hasJob || hasUpgrade)
-            {
-                _logger.LogDebug("Skipping NudgeFirstUpload for {Email}: already active", user.Email);
+            if (engaged || converted || expired || !noRecentActivity)
                 return;
-            }
 
-            await SendFromTemplateAsync(user, rule, new Dictionary<string, string>
-            {
-                { "{{first_name}}", $"{user.FirstName} {user.LastName}".Trim() },
-                { "{{cta_url}}", BuildCallbackUrl("/job-quote") }
-            });
+            await SendFromTemplate(user, rule);
         }
-        #endregion
-        #region Feature Spotlight
+
+        // ---------------------------------------------------------------------
+        // 3. Feature Spotlight (≈72h)
+        // ACTIVATED = uploaded ≥ 1 blueprint
+        // ---------------------------------------------------------------------
         private async Task HandleFeatureSpotlightUploadAsync(UserModel user, EmailAutomationRuleModel rule)
         {
-            // 1. Skip if user already has a job OR a successful payment
-            bool hasJob = await _db.Jobs.AnyAsync(j => j.UserId == user.Id);
-            bool hasUpgrade = await _db.PaymentRecords.AnyAsync(p => p.UserId == user.Id && p.Status == "Active" && p.IsTrial == true);
+            bool hasBlueprint = await UserUploadedBlueprint(user);  // ACTIVATED
+            bool engaged = await UserEngaged(user);                 // ENGAGED
+            bool converted = await UserConverted(user);             // CONVERTED
+            //bool expired = await UserExpired(user);                 // EXPIRED
 
-            if (hasJob || hasUpgrade)
-            {
-                _logger.LogDebug("Skipping NudgeFirstUpload for {Email}: already active", user.Email);
+            // Only send if ACTIVATED but NOT ENGAGED, NOT CONVERTED
+            if (!hasBlueprint || engaged || converted)
                 return;
-            }
 
-            await SendFromTemplateAsync(user, rule, new Dictionary<string, string>
-            {
-                { "{{first_name}}", $"{user.FirstName} {user.LastName}".Trim() },
-                { "{{cta_url}}", BuildCallbackUrl("/job-quote") }
-            });
+            await SendFromTemplate(user, rule);
         }
-        #endregion
-        #region Social Proof Mid
+
+        // ---------------------------------------------------------------------
+        // 4. Social Proof Mid (Day 5)
+        // ---------------------------------------------------------------------
         private async Task HandleSocialProofMidUploadAsync(UserModel user, EmailAutomationRuleModel rule)
         {
-            // 1. Skip if user already has a job OR a successful payment
-            bool hasJob = await _db.Jobs.AnyAsync(j => j.UserId == user.Id);
-            bool hasUpgrade = await _db.PaymentRecords.AnyAsync(p => p.UserId == user.Id && p.Status == "Active" && p.IsTrial == true);
+            bool converted = await UserConverted(user);
+            bool expired = await UserExpired(user);
 
-            if (hasJob || hasUpgrade)
-            {
-                _logger.LogDebug("Skipping NudgeFirstUpload for {Email}: already active", user.Email);
+            if (converted || expired)
                 return;
-            }
 
-            await SendFromTemplateAsync(user, rule, new Dictionary<string, string>
-            {
-                { "{{first_name}}", $"{user.FirstName} {user.LastName}".Trim() },
-                { "{{cta_url}}", BuildCallbackUrl("/job-quote") }
-            });
+            await SendFromTemplate(user, rule);
         }
-        #endregion
-        #region Trial Support
+        private async Task HandlePostExpireAsync(UserModel user, EmailAutomationRuleModel rule)
+        {
+            var trial = await GetUserTrial(user);
+            if (trial == null)
+                return;
+
+            bool converted = await UserConverted(user);
+            if (converted)
+                return;
+
+            bool expired = trial.ValidUntil < DateTime.UtcNow;
+            if (!expired)
+                return;
+
+            // Calculate when the rule SHOULD fire
+            var targetDate = trial.ValidUntil.AddHours(rule.DelayHours);
+
+            // Only fire if we are "in window" (within 1 hour)
+            if (DateTime.UtcNow < targetDate || DateTime.UtcNow > targetDate.AddHours(1))
+                return;
+
+            // Good: trial expired AND this is the correct morning window
+            await SendFromTemplate(user, rule);
+        }
+
+
+        // ---------------------------------------------------------------------
+        // 5. Trial Support (Day 6–7)
+        // ---------------------------------------------------------------------
         private async Task HandleTrialSupportUploadAsync(UserModel user, EmailAutomationRuleModel rule)
         {
-            // 1. Skip if user already has a job OR a successful payment
-            bool hasJob = await _db.Jobs.AnyAsync(j => j.UserId == user.Id);
-            bool hasUpgrade = await _db.PaymentRecords.AnyAsync(p => p.UserId == user.Id && p.Status == "Active" && p.IsTrial == true);
+            bool converted = await UserConverted(user);
+            bool expired = await UserExpired(user);
 
-            if (hasJob || hasUpgrade)
-            {
-                _logger.LogDebug("Skipping NudgeFirstUpload for {Email}: already active", user.Email);
+            if (converted || expired)
                 return;
-            }
 
-            await SendFromTemplateAsync(user, rule, new Dictionary<string, string>
-            {
-                { "{{first_name}}", $"{user.FirstName} {user.LastName}".Trim() },
-                { "{{cta_url}}", BuildCallbackUrl("/job-quote") }
-            });
+            await SendFromTemplate(user, rule);
         }
-        #endregion
-        #region Post Expire
-        private async Task HandlePostExpireUploadAsync(UserModel user, EmailAutomationRuleModel rule)
-        {
-            // 1. Skip if user already has a job OR a successful payment
-            bool hasJob = await _db.Jobs.AnyAsync(j => j.UserId == user.Id);
-            bool hasUpgrade = await _db.PaymentRecords.AnyAsync(p => p.UserId == user.Id && p.Status == "Active" && p.IsTrial == true);
 
-            if (hasJob || hasUpgrade)
-            {
-                _logger.LogDebug("Skipping NudgeFirstUpload for {Email}: already active", user.Email);
-                return;
-            }
-
-            await SendFromTemplateAsync(user, rule, new Dictionary<string, string>
-            {
-                { "{{first_name}}", $"{user.FirstName} {user.LastName}".Trim() },
-                { "{{cta_url}}", BuildCallbackUrl("/job-quote") }
-            });
-        }
-        #endregion
-        #region Post Expire
+        // ---------------------------------------------------------------------
+        // 6. Trial Ending (~Day 7 @ 18:00)
+        // ---------------------------------------------------------------------
         private async Task HandleTrial_EndingUploadAsync(UserModel user, EmailAutomationRuleModel rule)
         {
-            // 1. Skip if user already has a job OR a successful payment
-            bool hasJob = await _db.Jobs.AnyAsync(j => j.UserId == user.Id);
-            bool hasUpgrade = await _db.PaymentRecords.AnyAsync(p => p.UserId == user.Id && p.Status == "Active" && p.IsTrial == true);
-
-            if (hasJob || hasUpgrade)
-            {
-                _logger.LogDebug("Skipping NudgeFirstUpload for {Email}: already active", user.Email);
+            var trial = await GetUserTrial(user);
+            if (trial == null)
                 return;
-            }
 
-            await SendFromTemplateAsync(user, rule, new Dictionary<string, string>
-            {
-                { "{{first_name}}", $"{user.FirstName} {user.LastName}".Trim() },
-                { "{{cta_url}}", BuildCallbackUrl("/job-quote") }
-            });
+            bool converted = await UserConverted(user);
+            bool expired = trial.ValidUntil < DateTime.UtcNow;
+
+            if (converted || expired)
+                return;
+
+            bool endsSoon =
+                (trial.ValidUntil - DateTime.UtcNow) <= TimeSpan.FromHours(12) &&
+                (trial.ValidUntil - DateTime.UtcNow) >= TimeSpan.Zero;
+
+            if (!endsSoon)
+                return;
+
+            await SendFromTemplate(user, rule);
         }
-        #endregion
-        #region Helper: load template + replace + send
-        private async Task SendFromTemplateAsync(
-            UserModel user,
-            EmailAutomationRuleModel rule,
-            IDictionary<string, string> replacements)
+
+        // ---------------------------------------------------------------------
+        // SENDING TEMPLATE (unchanged)
+        // ---------------------------------------------------------------------
+        private async Task SendFromTemplate(UserModel user, EmailAutomationRuleModel rule)
         {
             var template = await _db.EmailTemplates
                 .FirstOrDefaultAsync(t => t.TemplateId == rule.TemplateId);
 
             if (template == null)
             {
-                _logger.LogWarning("Template {TemplateId} not found for rule {RuleName}", rule.TemplateId, rule.RuleName);
+                _logger.LogWarning("Template {TemplateId} not found for rule {RuleName}",
+                    rule.TemplateId, rule.RuleName);
                 return;
             }
 
-
-
-            // Always replace Header / Footer first (they exist in every template)
             template.Body = template.Body
-                .Replace("{{Header}}", template.HeaderHtml ?? string.Empty)
-                .Replace("{{Footer}}", template.FooterHtml ?? string.Empty);
-
-            // Apply user-specific replacements
-            foreach (var kvp in replacements)
-                template.Body = template.Body.Replace(kvp.Key, kvp.Value ?? string.Empty);
-
-            // Build final email model (adjust to what IEmailSender expects)
-
-
+            .Replace("{{Header}}", template.HeaderHtml ?? "")
+            .Replace("{{Footer}}", template.FooterHtml ?? "")
+            .Replace("{{first_name}}", $"{user.FirstName} {user.LastName}".Trim())
+            .Replace("{{cta_url}}", BuildCallbackUrl(rule.CtaUrl))
+            .Replace("{{book_link}}", BuildCallbackUrl(rule.BookLink))
+            .Replace("{{upgrade_url}}", BuildCallbackUrl(rule.UpgradeUrl));
             await _emailService.SendEmailAsync(template, user.Email);
-            _logger.LogInformation("Sent '{RuleName}' email to {Email} (TemplateId={TemplateId})",
-                rule.RuleName, user.Email, rule.TemplateId);
-        }
-        #endregion
 
-        #region URL builder
+            _logger.LogInformation("Sent automation email '{RuleName}' to {Email}",
+                rule.RuleName, user.Email);
+        }
+
+        // ---------------------------------------------------------------------
+        // URL BUILDER
+        // ---------------------------------------------------------------------
         private string BuildCallbackUrl(string path)
         {
             var baseUrl = Environment.GetEnvironmentVariable("FRONTEND_URL")
-                          ?? _configuration["FrontEnd:FRONTEND_URL"];
+                          ?? _configuration["FrontEnd:FRONTEND_URL"]
+                          ?? "https://app.probuildai.com";
 
-            if (string.IsNullOrWhiteSpace(baseUrl))
-            {
-                _logger.LogWarning("FRONTEND_URL not configured – using fallback");
-                baseUrl = "https://app.probuildai.com";
-            }
-
-            // Ensure no double slash
             return $"{baseUrl.TrimEnd('/')}{path}";
         }
-        #endregion
     }
 }

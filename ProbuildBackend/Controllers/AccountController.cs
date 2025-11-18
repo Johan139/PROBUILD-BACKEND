@@ -145,14 +145,18 @@ namespace ProbuildBackend.Controllers
                 }
 
                 // Fetch the automation rule from DB
-                var rule = await _context.EmailAutomationRules
-                    .FirstOrDefaultAsync(r => r.RuleName == "Nudge First Upload" && r.IsActive);
+                // Schedule all active rules using their DelayHours
+                var rules = await _context.EmailAutomationRules
+                    .Where(r => r.IsActive)
+                    .ToListAsync();
 
-                BackgroundJob.Schedule<EmailAutomationManager>(
-           manager => manager.ExecuteAutomationAsync(user.Id),
-           TimeSpan.FromHours(rule.DelayHours)
-       );
-
+                foreach (var r in rules)
+                {
+                    BackgroundJob.Schedule<EmailAutomationManager>(
+                        manager => manager.ExecuteAutomationAsync(user.Id, r.Id),
+                        TimeSpan.FromHours(r.DelayHours)
+                    );
+                }
 
                 return Ok(new
                 {
@@ -478,14 +482,19 @@ namespace ProbuildBackend.Controllers
                 if (existingTrial)
                     return BadRequest("Trial already used.");
 
+                var now = DateTime.UtcNow;
+
+                // End of the day, 7 days from now — EXACT midnight boundary
+                var validUntil = now.Date.AddDays(7).AddDays(1).AddTicks(-1);
+
                 var trial = new PaymentRecord
                 {
                     UserId = dto.UserId,
                     Package = dto.PackageName,
                     StripeSessionId = "TRIAL-NO-SESSION",
                     Status = "Active",
-                    PaidAt = DateTime.UtcNow,
-                    ValidUntil = DateTime.UtcNow.AddDays(7),
+                    PaidAt = now,
+                    ValidUntil = validUntil,
                     Amount = 0,
                     IsTrial = true,
                     SubscriptionID = GenerateTrialSubscriptionId()

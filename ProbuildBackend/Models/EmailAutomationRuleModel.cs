@@ -39,6 +39,11 @@ namespace ProbuildBackend.Models
 
         public DateTime? ModifiedDate { get; set; }
 
+        public string? CtaUrl { get; set; }
+        public string? SecondaryUrl { get; set; }
+        public string? UpgradeUrl { get; set; }
+        public string? BookLink { get; set; }
+
         // 🔗 Navigation property
         public virtual EmailTemplate? EmailTemplate { get; set; }
     }
