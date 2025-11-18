@@ -46,5 +46,6 @@ namespace ProbuildBackend.Models
     public Portfolio? Portfolio { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? BiddingStartDate { get; set; }
-}
+    public string? ThumbnailUrl { get; set; }
+  }
 }

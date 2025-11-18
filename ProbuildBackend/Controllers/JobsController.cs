@@ -112,7 +112,8 @@ namespace ProbuildBackend.Controllers
                     ClientCompanyName = user.CompanyName,
                     ClientRating = clientRating,
                     CreatedAt = item.Job.CreatedAt,
-                    BiddingStartDate = item.Job.BiddingStartDate
+                    BiddingStartDate = item.Job.BiddingStartDate,
+                    ThumbnailUrl = !string.IsNullOrEmpty(item.Job.ThumbnailUrl) ? _azureBlobservice.GenerateTemporaryPublicUrl(item.Job.ThumbnailUrl) : null
                 });
             }
 
@@ -194,7 +195,8 @@ namespace ProbuildBackend.Controllers
                     PotentialEndDate = potentialEndDate,
                     DurationInDays = durationInDays,
                     Blueprint = null,
-                    TemporaryFileUrls = null
+                    TemporaryFileUrls = null,
+                    ThumbnailUrl = !string.IsNullOrEmpty(job.ThumbnailUrl) ? _azureBlobservice.GenerateTemporaryPublicUrl(job.ThumbnailUrl) : null
                 };
 
                 return Ok(jobDto);
@@ -458,26 +460,26 @@ namespace ProbuildBackend.Controllers
                         var job = new JobModel
                         {
                             ProjectName = jobRequest.ProjectName,
-                            JobType = jobRequest.JobType,
+                            JobType = jobRequest.JobType ?? "Pending AI Analysis",
                             Qty = jobRequest.Qty,
                             DesiredStartDate = jobRequest.DesiredStartDate,
-                            WallStructure = jobRequest.WallStructure,
+                            WallStructure = jobRequest.WallStructure ?? "Pending AI Analysis",
                             WallStructureSubtask = jobRequest.WallStructureSubtask,
-                            WallInsulation = jobRequest.WallInsulation,
+                            WallInsulation = jobRequest.WallInsulation ?? "Pending AI Analysis",
                             WallInsulationSubtask = jobRequest.WallInsulationSubtask,
-                            RoofStructure = jobRequest.RoofStructure,
+                            RoofStructure = jobRequest.RoofStructure ?? "Pending AI Analysis",
                             RoofStructureSubtask = jobRequest.RoofStructureSubtask,
                             RoofTypeSubtask = jobRequest.RoofTypeSubtask,
-                            RoofInsulation = jobRequest.RoofInsulation,
-                            Foundation = jobRequest.Foundation,
+                            RoofInsulation = jobRequest.RoofInsulation ?? "Pending AI Analysis",
+                            Foundation = jobRequest.Foundation ?? "Pending AI Analysis",
                             FoundationSubtask = jobRequest.FoundationSubtask,
-                            Finishes = jobRequest.Finishes,
+                            Finishes = jobRequest.Finishes ?? "Pending AI Analysis",
                             FinishesSubtask = jobRequest.FinishesSubtask,
-                            ElectricalSupplyNeeds = jobRequest.ElectricalSupplyNeeds,
+                            ElectricalSupplyNeeds = jobRequest.ElectricalSupplyNeeds ?? "Pending AI Analysis",
                             ElectricalSupplyNeedsSubtask = jobRequest.ElectricalSupplyNeedsSubtask,
                             Stories = jobRequest.Stories,
                             BuildingSize = jobRequest.BuildingSize,
-                            OperatingArea = jobRequest.OperatingArea,
+                            OperatingArea = jobRequest.OperatingArea ?? "Pending AI Analysis",
                             UserId = jobRequest.UserId,
                             Status = jobRequest.Status,
                             BiddingType = "NOT_BIDDING",
@@ -1292,6 +1294,39 @@ namespace ProbuildBackend.Controllers
 
             await _context.SaveChangesAsync();
             return NoContent();
+        }
+
+        [HttpPost("{jobId}/thumbnail")]
+        public async Task<IActionResult> UploadThumbnail(int jobId, [FromForm] IFormFile file)
+        {
+            var job = await _context.Jobs.FindAsync(jobId);
+            if (job == null)
+            {
+                return NotFound("Job not found.");
+            }
+
+            if (file == null || file.Length == 0)
+            {
+                return BadRequest("Invalid file.");
+            }
+
+            try
+            {
+                var folder = $"jobs/{jobId}/thumbnails";
+                var thumbnailUrl = await _azureBlobservice.UploadImageAsync(file, folder);
+
+                if (thumbnailUrl != null)
+                {
+                    job.ThumbnailUrl = thumbnailUrl;
+                    await _context.SaveChangesAsync();
+                }
+
+                return Ok(new { thumbnailUrl });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An error occurred while uploading the thumbnail: {ex.Message}");
+            }
         }
     }
 }
