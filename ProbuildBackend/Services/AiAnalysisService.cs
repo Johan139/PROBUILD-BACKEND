@@ -78,7 +78,7 @@ namespace ProbuildBackend.Services
 
                 string personaPrompt = await _promptManager.GetPromptAsync(null, personaPromptKey);
                 var userContext = await GetUserContextAsString(requestDto.UserContext, null);
-                var budgetPrompt = await _promptManager.GetPromptAsync("BudgetPrompts/", $"{budgetLevel}-level-budget-prompt.txt");
+                var budgetPrompt = await _promptManager.GetPromptAsync(null, $"{budgetLevel}-budget-prompt.txt");
 
                 var (initialResponse, _) = await _aiService.StartMultimodalConversationAsync(userId, requestDto.DocumentUrls, personaPrompt, budgetPrompt + "\n" + userContext, conversationId);
 
@@ -204,7 +204,7 @@ namespace ProbuildBackend.Services
 
                 _logger.LogInformation("Getting user context as string.");
                 var userContext = await GetUserContextAsString(userContextText, userContextFileUrl);
-                var budgetPrompt = await _promptManager.GetPromptAsync("BudgetPrompts/", $"{budgetLevel}-level-budget-prompt.txt");
+                var budgetPrompt = await _promptManager.GetPromptAsync(null, $"{budgetLevel}-budget-prompt.txt");
 
                 var initialUserPrompt = $"{budgetPrompt}\n\n{initialAnalysisPrompt}\n\n{userContext}\n\nHere are the project details:\n" +
                                         $"Project Name: {jobDetails.ProjectName}\n" +
@@ -248,6 +248,17 @@ namespace ProbuildBackend.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "EXCEPTION in PerformComprehensiveAnalysisAsync for User {UserId}, Job {JobId}", userId, jobDetails.Id);
+                if (!string.IsNullOrEmpty(connectionId))
+                {
+                    await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new ProbuildBackend.Middleware.AnalysisProgressUpdate
+                    {
+                        JobId = jobDetails.Id,
+                        StatusMessage = "Analysis failed - we're sorry for the inconvenience",
+                        IsComplete = false,
+                        HasFailed = true,
+                        ErrorMessage = ex.Message
+                    });
+                }
                 throw;
             }
             finally
@@ -270,7 +281,7 @@ namespace ProbuildBackend.Services
 
                 _logger.LogInformation("Getting user context as string.");
                 var userContext = await GetUserContextAsString(userContextText, userContextFileUrl);
-                var budgetPrompt = await _promptManager.GetPromptAsync("BudgetPrompts/", $"{budgetLevel}-level-budget-prompt.txt");
+                var budgetPrompt = await _promptManager.GetPromptAsync(null, $"{budgetLevel}-budget-prompt.txt");
 
                 var initialUserPrompt = $"{budgetPrompt}\n\n{initialAnalysisPrompt}\n\n{userContext}";
 
@@ -298,6 +309,17 @@ namespace ProbuildBackend.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "EXCEPTION in PerformRenovationAnalysisAsync for User {UserId}, Job {JobId}", userId, jobDetails.Id);
+                if (!string.IsNullOrEmpty(connectionId))
+                {
+                    await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new ProbuildBackend.Middleware.AnalysisProgressUpdate
+                    {
+                        JobId = jobDetails.Id,
+                        StatusMessage = "Analysis failed.",
+                        IsComplete = false,
+                        HasFailed = true,
+                        ErrorMessage = ex.Message
+                    });
+                }
                 throw;
             }
             finally
@@ -727,28 +749,6 @@ namespace ProbuildBackend.Services
             throw new InvalidOperationException("Could not parse blueprint JSON from AI response.");
         }
 
-        public async Task<string> PerformBlueprintAnalysisAsync(string userId, IEnumerable<string> documentUrls)
-        {
-            const string blueprintPromptKey = "Blueprint_Measurement_Prompt.txt";
-            _logger.LogInformation("START: PerformBlueprintAnalysisAsync for User {UserId}", userId);
-            _keepAliveService.StartPinging();
-            try
-            {
-                var blueprintPrompt = await _promptManager.GetPromptAsync(null, blueprintPromptKey);
-                var (response, conversationId) = await _aiService.StartMultimodalConversationAsync(userId, documentUrls, "", blueprintPrompt);
-                _logger.LogInformation("JSON analysis completed for conversation {ConversationId}.", conversationId);
-                return ExtractBlueprintJson(response);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "EXCEPTION in PerformBlueprintAnalysisAsync for User {UserId}", userId);
-                throw;
-            }
-            finally
-            {
-                _keepAliveService.StopPinging();
-            }
-        }
     }
 }
 

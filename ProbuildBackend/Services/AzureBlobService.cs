@@ -36,6 +36,7 @@ namespace ProbuildBackend.Services
         {
             await _containerClient.CreateIfNotExistsAsync(PublicAccessType.Blob);
         }
+
         public async Task DeleteTemporaryFiles(List<string> blobUrls)
         {
             foreach (var blobUrl in blobUrls)
@@ -63,24 +64,22 @@ namespace ProbuildBackend.Services
         {
             try
             {
+                _logger.LogInformation("Starting file upload process for {FileCount} files.", files.Count);
+                var uploadedUrls = new List<string>();
+                bool useSignalR = hubContext != null && !string.IsNullOrEmpty(connectionId);
 
-      
-            _logger.LogInformation("Starting file upload process for {FileCount} files.", files.Count);
-            var uploadedUrls = new List<string>();
-            bool useSignalR = hubContext != null && !string.IsNullOrEmpty(connectionId);
+                if (useSignalR)
+                {
+                    _logger.LogInformation("SignalR is enabled for this upload, using connectionId: {ConnectionId}", connectionId);
+                }
 
-            if (useSignalR)
-            {
-                _logger.LogInformation("SignalR is enabled for this upload, using connectionId: {ConnectionId}", connectionId);
-            }
+                foreach (var file in files)
+                {
+                    string fileName = $"{Guid.NewGuid()}_{file.FileName}";
+                    _logger.LogInformation("Generated unique file name: {FileName}", fileName);
+                    BlobClient blobClient = _containerClient.GetBlobClient(fileName);
 
-            foreach (var file in files)
-            {
-                string fileName = $"{Guid.NewGuid()}_{file.FileName}";
-                _logger.LogInformation("Generated unique file name: {FileName}", fileName);
-                BlobClient blobClient = _containerClient.GetBlobClient(fileName);
-
-                var blobHttpHeaders = new BlobHttpHeaders { ContentType = "application/gzip" };
+                    var blobHttpHeaders = new BlobHttpHeaders { ContentType = "application/gzip" };
                     string asciiFileName = new string(file.FileName
                     .Where(c => c <= 127) // Keep only ASCII characters
                     .ToArray());
@@ -92,51 +91,51 @@ namespace ProbuildBackend.Services
 };
 
                     using var inputStream = file.OpenReadStream();
-                using var compressedStream = new MemoryStream();
-                using (var gzipStream = new GZipStream(compressedStream, CompressionLevel.Optimal, leaveOpen: true))
-                {
-                    await inputStream.CopyToAsync(gzipStream);
-                    gzipStream.Flush();
-                    compressedStream.Position = 0;
-                    _logger.LogInformation("Successfully compressed file: {OriginalFileName}", file.FileName);
-
-                    var uploadOptions = new BlobUploadOptions
+                    using var compressedStream = new MemoryStream();
+                    using (var gzipStream = new GZipStream(compressedStream, CompressionLevel.Optimal, leaveOpen: true))
                     {
-                        HttpHeaders = blobHttpHeaders,
-                        Metadata = metadata,
-                        TransferOptions = new StorageTransferOptions
+                        await inputStream.CopyToAsync(gzipStream);
+                        gzipStream.Flush();
+                        compressedStream.Position = 0;
+                        _logger.LogInformation("Successfully compressed file: {OriginalFileName}", file.FileName);
+
+                        var uploadOptions = new BlobUploadOptions
                         {
-                            MaximumTransferSize = 4 * 1024 * 1024 // 4MB chunks
+                            HttpHeaders = blobHttpHeaders,
+                            Metadata = metadata,
+                            TransferOptions = new StorageTransferOptions
+                            {
+                                MaximumTransferSize = 4 * 1024 * 1024 // 4MB chunks
+                            }
+                        };
+
+                        if (useSignalR)
+                        {
+                            long totalBytes = compressedStream.Length;
+                            var progressHandler = new Progress<long>(async progress =>
+                            {
+                                int progressPercent = totalBytes > 0 ? (int)Math.Min(100, (progress * 100) / totalBytes) : 0;
+                                await hubContext!.Clients.Client(connectionId!).SendAsync("ReceiveProgress", progressPercent);
+                            });
+                            uploadOptions.ProgressHandler = progressHandler;
                         }
-                    };
 
-                    if (useSignalR)
-                    {
-                        long totalBytes = compressedStream.Length;
-                        var progressHandler = new Progress<long>(async progress =>
-                        {
-                            int progressPercent = totalBytes > 0 ? (int)Math.Min(100, (progress * 100) / totalBytes) : 0;
-                            await hubContext!.Clients.Client(connectionId!).SendAsync("ReceiveProgress", progressPercent);
-                        });
-                        uploadOptions.ProgressHandler = progressHandler;
+                        await blobClient.UploadAsync(compressedStream, uploadOptions);
+                        _logger.LogInformation("Successfully uploaded file to Azure Blob Storage: {FileName}", fileName);
+
+                        string blobUrl = $"https://qastorageprobuildaiblob.blob.core.windows.net/probuildaiprojects/{fileName}";
+                        uploadedUrls.Add(blobUrl);
                     }
-
-                    await blobClient.UploadAsync(compressedStream, uploadOptions);
-                    _logger.LogInformation("Successfully uploaded file to Azure Blob Storage: {FileName}", fileName);
-
-                    string blobUrl = $"https://qastorageprobuildaiblob.blob.core.windows.net/probuildaiprojects/{fileName}";
-                    uploadedUrls.Add(blobUrl);
                 }
-            }
 
-            if (useSignalR)
-            {
-                await hubContext!.Clients.Client(connectionId!).SendAsync("UploadComplete", files.Count);
-                _logger.LogInformation("Sent 'UploadComplete' SignalR message to client: {ConnectionId}", connectionId);
-            }
+                if (useSignalR)
+                {
+                    await hubContext!.Clients.Client(connectionId!).SendAsync("UploadComplete", files.Count);
+                    _logger.LogInformation("Sent 'UploadComplete' SignalR message to client: {ConnectionId}", connectionId);
+                }
 
-            _logger.LogInformation("File upload process complete. Returning {FileCount} URLs.", uploadedUrls.Count);
-            return uploadedUrls;
+                _logger.LogInformation("File upload process complete. Returning {FileCount} URLs.", uploadedUrls.Count);
+                return uploadedUrls;
             }
             catch (Exception ex)
             {
@@ -154,7 +153,7 @@ namespace ProbuildBackend.Services
             BlobClient blobClient = _containerClient.GetBlobClient(blobName);
 
             var blobHttpHeaders = new BlobHttpHeaders { ContentType = contentType };
-            
+
             var metadata = new Dictionary<string, string>
             {
                 { "originalFileName", fileName }
@@ -369,6 +368,31 @@ namespace ProbuildBackend.Services
                 await download.Content.CopyToAsync(memoryStream);
                 return (memoryStream.ToArray(), properties.Value.ContentType);
             }
+        }
+
+        public async Task<string> UploadImageAsync(IFormFile file, string folder)
+        {
+            string fileName = $"{Guid.NewGuid()}_{file.FileName}";
+            string blobName = $"{folder}/{fileName}";
+            BlobClient blobClient = _containerClient.GetBlobClient(blobName);
+
+            var blobHttpHeaders = new BlobHttpHeaders { ContentType = file.ContentType };
+
+            var metadata = new Dictionary<string, string>
+            {
+                { "originalFileName", file.FileName }
+            };
+
+            var uploadOptions = new BlobUploadOptions
+            {
+                HttpHeaders = blobHttpHeaders,
+                Metadata = metadata
+            };
+
+            using var stream = file.OpenReadStream();
+            await blobClient.UploadAsync(stream, uploadOptions);
+
+            return blobClient.Uri.ToString();
         }
     }
 }

@@ -33,6 +33,10 @@ public class PromptManagerService : IPromptManagerService
         {
             fullBlobName = $"RenovationPrompts/{fileName}";
         }
+        else if (fileName.Contains("-budget-"))
+        {
+            fullBlobName = $"BudgetPrompts/{fileName}";
+        }
         else
         {
             // System-level prompts are in the root
