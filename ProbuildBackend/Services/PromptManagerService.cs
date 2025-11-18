@@ -12,10 +12,12 @@ public class PromptManagerService : IPromptManagerService
     {
 #if DEBUG
         var connectionString = configuration.GetConnectionString("AzureBlobConnection");
+        var containerName = configuration["PromptBlobContainerName"];
 #else
      var connectionString = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY");
+       var containerName = Environment.GetEnvironmentVariable("PromptBlobContainerName");
 #endif
-        var containerName = configuration["PromptBlobContainerName"];
+
         _blobContainerClient = new BlobContainerClient(connectionString, containerName);
         _logger = logger;
     }
