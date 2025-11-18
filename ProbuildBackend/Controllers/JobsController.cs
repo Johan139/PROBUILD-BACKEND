@@ -62,6 +62,10 @@ namespace ProbuildBackend.Controllers
         [HttpGet("public")]
         public async Task<ActionResult<IEnumerable<JobDto>>> GetPublicJobs()
         {
+            try
+            {
+
+
             var jobs = await _context.Jobs
                 .Where(j => j.BiddingType == "PUBLIC" && j.Status == "BIDDING")
                 .Join(_context.JobAddresses,
@@ -118,6 +122,12 @@ namespace ProbuildBackend.Controllers
             }
 
             return Ok(jobDtos);
+            }
+            catch (Exception ex)
+            {
+
+                throw;
+            }
         }
 
 

@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.DataProtection;
+using Google.Apis.Auth;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -50,6 +51,8 @@ namespace ProbuildBackend.Controllers
                 var email = model.Email.Trim();
                 var normalizedEmail = email.ToUpperInvariant();
 
+
+
                 var user = new UserModel
                 {
                     Id = Guid.NewGuid().ToString(),
@@ -76,11 +79,13 @@ namespace ProbuildBackend.Controllers
                     JobPreferences = model.JobPreferences,
                     DeliveryArea = model.DeliveryArea,
                     DeliveryTime = model.DeliveryTime,
-                    Country = model.Country,
-                    State = model.State,
-                    City = model.City,
+                    //We need to move away from the below. It will cause confusion between the new address model and old.
+                    //Country = countryId.Id.ToString();
+                    //State = stateId.Id.ToString();
+                    //City = model.City;
                     SubscriptionPackage = model.SubscriptionPackage,
-                    DateCreated = DateTime.UtcNow
+                    DateCreated = DateTime.UtcNow,
+                    CountryNumberCode = model.CountryNumberCode,
                 };
 
                 var result = await _userManager.CreateAsync(user, model.Password);
@@ -100,11 +105,31 @@ namespace ProbuildBackend.Controllers
                     Region = model.RegionFromIP,
                     TimeZone = model.Timezone,
                     OperatingSystem = model.OperatingSystem
+
                 };
 
                 _context.UserMetaData.Add(userMetaData);
 
-
+                // Add address (can be done before save)
+                var address = new UserAddressModel
+                {
+                    StreetNumber = model.StreetNumber,
+                    StreetName = model.StreetName,
+                    City = model.City,
+                    State = model.State,
+                    PostalCode = model.PostalCode,
+                    Country = model.Country,
+                    Latitude = model.Latitude,
+                    Longitude = model.Longitude,
+                    FormattedAddress = model.FormattedAddress,
+                    GooglePlaceId = model.GooglePlaceId,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                    UserId = user.Id,
+                    CountryCode = model.CountryCode,
+                    AddressType = model.AddressType,
+                };
+                _context.UserAddress.Add(address);
                 // Only save agreement if user was created successfully
                 var userAgree = new UserTermsAgreementModel
                 {
@@ -298,8 +323,6 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-
-
                 var user = await _userManager.FindByEmailAsync(model.Email);
                 if (user != null && await _userManager.CheckPasswordAsync(user, model.Password) && user.EmailConfirmed == true)// add email comfirmation check
                 {
@@ -335,11 +358,74 @@ namespace ProbuildBackend.Controllers
             }
             catch (Exception ex)
             {
-
                 throw;
             }
         }
 
+        [HttpPost("google-login")]
+        public async Task<IActionResult> GoogleLogin([FromBody] GoogleLoginRequest model)
+        {
+            try
+            {
+                var payload = await GoogleJsonWebSignature.ValidateAsync(model.IdToken, new GoogleJsonWebSignature.ValidationSettings
+                {
+                    Audience = new[] { "830495328853-9jp3r5b2o53124kpu10ais3pq0lljcoj.apps.googleusercontent.com" }
+                });
+
+                // Check if user already exists
+                var existingUser = await _context.Users.FirstOrDefaultAsync(u => u.Email == payload.Email);
+
+                if (existingUser != null)
+                {
+                    // ✅ Existing user → login as normal
+                    var token = GenerateJwtToken(existingUser);
+                    var refreshToken = GenerateRefreshToken();
+
+                    var refreshEntity = new RefreshToken
+                    {
+                        UserId = existingUser.Id,
+                        Token = refreshToken,
+                        Expires = DateTime.UtcNow.AddDays(7),
+                        Created = DateTime.UtcNow
+                    };
+
+                    _context.RefreshTokens.Add(refreshEntity);
+                    await _context.SaveChangesAsync();
+
+                    return Ok(new
+                    {
+                        token,
+                        refreshToken,
+                        userId = existingUser.Id,
+                        firstName = existingUser.FirstName,
+                        lastName = existingUser.LastName,
+                        userType = existingUser.UserType,
+                        requiresRegistration = false
+                    });
+                }
+
+                // 🚨 New user, but cannot save yet (missing required fields)
+                return Ok(new
+                {
+                    requiresRegistration = true,
+                    email = payload.Email,
+                    firstName = payload.GivenName,
+                    lastName = payload.FamilyName,
+                    googleId = payload.Subject,
+                    picture = payload.Picture
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+        }
+
+
+        public class GoogleLoginRequest
+        {
+            public string IdToken { get; set; }
+        }
         public record RefreshTokenRequest(string RefreshToken);
 
         [HttpPost("refresh-token")]
@@ -884,6 +970,28 @@ namespace ProbuildBackend.Controllers
                 }
 
                 return Ok(state);
+            }
+            catch (Exception ex)
+            {
+
+                throw;
+            }
+        }
+
+        [HttpGet("countries-codes")]
+        public async Task<ActionResult<IEnumerable<CountryNumberCodesModel>>> GetCountryCodes()
+        {
+            try
+            {
+                var countries = await _context.CountryNumberCodes
+                    .ToListAsync();
+
+                if (countries == null || !countries.Any())
+                {
+                    return NotFound("No countries found.");
+                }
+
+                return Ok(countries);
             }
             catch (Exception ex)
             {

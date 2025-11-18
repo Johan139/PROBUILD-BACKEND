@@ -33,12 +33,14 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowAngularApp", policy =>
     {
         policy.WithOrigins(
-            "http://localhost:4200", // For local development
-            "https://probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io", "https://app.probuildai.com/", "https://qa-probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io/" // For production
+            "http://localhost:4200",
+            "https://probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io",
+            "https://app.probuildai.com",
+            "https://qa-probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io"
         )
         .AllowAnyHeader()
-        .AllowAnyMethod()
-        .AllowCredentials(); // Required for SignalR with credentials
+        .WithMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+        .AllowCredentials();
     });
 });
 
@@ -56,7 +58,11 @@ builder.Services.AddControllers(options =>
 {
     options.SuppressModelStateInvalidFilter = true;
 });
-
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+    });
 // Configure FormOptions for multipart requests
 builder.Services.Configure<FormOptions>(options =>
 {
