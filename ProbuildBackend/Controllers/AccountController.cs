@@ -358,7 +358,6 @@ namespace ProbuildBackend.Controllers
             var user = await _userManager.FindByEmailAsync(model.Email);
             try
             {
-                var user = await _userManager.FindByEmailAsync(model.Email);
                 if (user != null && await _userManager.CheckPasswordAsync(user, model.Password) && user.EmailConfirmed == true)// add email comfirmation check
                 {
                     var token = GenerateJwtToken(user);
