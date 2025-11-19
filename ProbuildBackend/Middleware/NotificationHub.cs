@@ -18,7 +18,7 @@ namespace ProbuildBackend.Middleware
             return base.OnConnectedAsync();
         }
 
-        public override Task OnDisconnectedAsync(System.Exception exception)
+        public override Task OnDisconnectedAsync(Exception exception)
         {
             var userId = Context.User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!string.IsNullOrEmpty(userId))

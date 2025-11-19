@@ -284,7 +284,7 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpGet("{userId}")]
-        public async Task<ActionResult<IEnumerable<Models.ProjectModel>>> GetProjectsByUserId(string userId)
+        public async Task<ActionResult<IEnumerable<ProjectModel>>> GetProjectsByUserId(string userId)
         {
             var projects = await _context.Projects.Where(project => project.UserId == userId).ToListAsync();
 
