@@ -274,7 +274,7 @@ namespace ProbuildBackend.Services
             .Replace("{{Footer}}", template.FooterHtml ?? "")
             .Replace("{{first_name}}", $"{user.FirstName} {user.LastName}".Trim())
             .Replace("{{cta_url}}", BuildCallbackUrl(rule.CtaUrl))
-            .Replace("{{book_link}}", BuildCallbackUrl(rule.BookLink))
+            .Replace("{{book_link}}", rule.BookLink)
             .Replace("{{upgrade_url}}", BuildCallbackUrl(rule.UpgradeUrl));
             await _emailService.SendEmailAsync(template, user.Email);
 
