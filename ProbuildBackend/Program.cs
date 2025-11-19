@@ -19,6 +19,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using ProbuildBackend.Infrastructure;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
+using Hangfire.Dashboard.BasicAuthorization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -362,6 +363,26 @@ try
             app.Logger.LogInformation($"🧱 DB Row KeyId: {keyRow.FriendlyName}");
         }
     }
+
+    app.UseHangfireDashboard("/hangfire", new DashboardOptions
+    {
+        Authorization = new[] { new BasicAuthAuthorizationFilter(
+        new BasicAuthAuthorizationFilterOptions
+        {
+            RequireSsl = false, // Azure Container Apps uses TLS termination anyway
+            SslRedirect = false,
+            LoginCaseSensitive = false,
+            Users = new []
+            {
+                new BasicAuthAuthorizationUser
+                {
+                    Login = "admin",
+                    PasswordClear = "3oZ%7E8(T2d6"
+                }
+            }
+        })
+    }
+    });
 
     app.Logger.LogInformation("Application startup completed successfully. Starting to run...");
     app.Run();
