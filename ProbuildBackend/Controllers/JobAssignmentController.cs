@@ -111,12 +111,36 @@ namespace ProbuildBackend.Controllers
                 return Ok(new List<JobAssignmentDto>());
             }
 
+            var jobIds = jobsToProcess.Select(j => j.Id).ToList();
+
+            // Batch fetch all assignments for these jobs
+            var allAssignments = await _context.JobAssignments
+                .Where(ja => jobIds.Contains(ja.JobId))
+                .ToListAsync();
+
+            if (!allAssignments.Any())
+            {
+            }
+
+            // Get all unique User IDs from assignments to batch fetch user details
+            var userIds = allAssignments.Select(a => a.UserId).Distinct().ToList();
+
+            // Batch fetch Users and TeamMembers
+            var usersDict = await _context.Users
+                .Where(u => userIds.Contains(u.Id))
+                .ToDictionaryAsync(u => u.Id);
+
+            // Find IDs not in Users table to check TeamMembers
+            var potentialTeamMemberIds = userIds.Except(usersDict.Keys).ToList();
+
+            var teamMembersDict = await _context.TeamMembers
+                .Where(tm => potentialTeamMemberIds.Contains(tm.Id))
+                .ToDictionaryAsync(tm => tm.Id);
+
             var assignedJobList = new List<JobAssignmentDto>();
+
             foreach (var job in jobsToProcess)
             {
-                var jobAssignmentRow = await _context.JobAssignments.Where(u => u.JobId == job.Id).ToListAsync();
-                if (jobAssignmentRow == null) continue;
-
                 var assignedJob = new JobAssignmentDto
                 {
                     Id = job.Id,
@@ -128,10 +152,11 @@ namespace ProbuildBackend.Controllers
                     JobUser = new List<JobUser>()
                 };
 
-                foreach (var assignment in jobAssignmentRow)
+                var jobAssignments = allAssignments.Where(a => a.JobId == job.Id);
+
+                foreach (var assignment in jobAssignments)
                 {
-                    var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == assignment.UserId);
-                    if (user != null)
+                    if (usersDict.TryGetValue(assignment.UserId, out var user))
                     {
                         assignedJob.JobUser.Add(new JobUser
                         {
@@ -143,25 +168,22 @@ namespace ProbuildBackend.Controllers
                             UserType = user.UserType
                         });
                     }
-                    else
+                    else if (teamMembersDict.TryGetValue(assignment.UserId, out var teamMember))
                     {
-                        var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(tm => tm.Id == assignment.UserId);
-                        if (teamMember != null)
+                        assignedJob.JobUser.Add(new JobUser
                         {
-                            assignedJob.JobUser.Add(new JobUser
-                            {
-                                Id = teamMember.Id,
-                                FirstName = teamMember.FirstName,
-                                LastName = teamMember.LastName,
-                                PhoneNumber = teamMember.PhoneNumber,
-                                JobRole = assignment.JobRole,
-                                UserType = teamMember.Role
-                            });
-                        }
+                            Id = teamMember.Id,
+                            FirstName = teamMember.FirstName,
+                            LastName = teamMember.LastName,
+                            PhoneNumber = teamMember.PhoneNumber,
+                            JobRole = assignment.JobRole,
+                            UserType = teamMember.Role
+                        });
                     }
                 }
                 assignedJobList.Add(assignedJob);
             }
+
             return Ok(assignedJobList);
         }
 

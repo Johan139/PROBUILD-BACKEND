@@ -1026,6 +1026,104 @@ namespace ProbuildBackend.Controllers
             return Ok(jobs);
         }
 
+        [HttpGet("user-dashboard/{userId}")]
+        public async Task<ActionResult<IEnumerable<DashboardProjectDto>>> GetUserDashboard(string userId)
+        {
+            try
+            {
+                // 1. Get IDs of jobs the user is assigned to
+                var assignedJobIds = await _context.JobAssignments
+                    .Where(ja => ja.UserId == userId)
+                    .Select(ja => ja.JobId)
+                    .Distinct()
+                    .ToListAsync();
+
+                // 2. Fetch all relevant jobs (Owned OR Assigned) and NOT Archived
+                var jobs = await _context.Jobs
+                    .Where(j => (j.UserId == userId || assignedJobIds.Contains(j.Id)) && j.Status != "ARCHIVED")
+                    .Include(j => j.JobAddress)
+                    .ToListAsync();
+
+                if (jobs == null || !jobs.Any())
+                {
+                    return Ok(new List<DashboardProjectDto>());
+                }
+
+                var jobIds = jobs.Select(j => j.Id).ToList();
+
+                // 3. Fetch Subtasks for all these jobs to calculate progress
+                var allSubtasks = await _context.JobSubtasks
+                    .Where(st => jobIds.Contains(st.JobId) && !st.Deleted)
+                    .Select(st => new { st.JobId, st.Status, st.Days })
+                    .ToListAsync();
+
+                // 4. Fetch JobAssignments count for all these jobs (Team Size)
+                var teamCounts = await _context.JobAssignments
+                    .Where(ja => jobIds.Contains(ja.JobId))
+                    .GroupBy(ja => ja.JobId)
+                    .Select(g => new { JobId = g.Key, Count = g.Count() })
+                    .ToDictionaryAsync(x => x.JobId, x => x.Count);
+
+                // 5. Fetch Owner Details 
+                var ownerIds = jobs.Select(j => j.UserId).Distinct().ToList();
+                var owners = await _context.Users
+                   .Where(u => ownerIds.Contains(u.Id))
+                   .Select(u => new { u.Id, FullName = $"{u.FirstName} {u.LastName}", u.CompanyName })
+                   .ToDictionaryAsync(u => u.Id);
+
+
+                var dashboardProjects = new List<DashboardProjectDto>();
+
+                foreach (var job in jobs)
+                {
+                    // Calculate Progress
+                    var jobSubtasks = allSubtasks.Where(st => st.JobId == job.Id).ToList();
+                    var totalDays = jobSubtasks.Sum(st => st.Days);
+                    var completedDays = jobSubtasks
+                        .Where(st => st.Status?.ToLower() == "completed")
+                        .Sum(st => st.Days);
+
+                    var progress = totalDays > 0 ? (int)Math.Round((double)completedDays / totalDays * 100) : 0;
+
+                    // Get Team Size
+                    var teamSize = teamCounts.ContainsKey(job.Id) ? teamCounts[job.Id] : 0;
+
+                    // Get Client Name
+                    var clientName = "";
+                    if (owners.ContainsKey(job.UserId))
+                    {
+                        var owner = owners[job.UserId];
+                        clientName = !string.IsNullOrEmpty(owner.CompanyName) ? owner.CompanyName : owner.FullName;
+                    }
+
+                    // Generate Thumbnail URL
+                    var thumbnailUrl = !string.IsNullOrEmpty(job.ThumbnailUrl)
+                        ? _azureBlobservice.GenerateTemporaryPublicUrl(job.ThumbnailUrl)
+                        : null;
+
+                    dashboardProjects.Add(new DashboardProjectDto
+                    {
+                        JobId = job.Id,
+                        ProjectName = job.ProjectName,
+                        Address = job.Address ?? (job.JobAddress?.FormattedAddress),
+                        Status = job.Status,
+                        ThumbnailUrl = thumbnailUrl,
+                        Progress = progress,
+                        Team = teamSize,
+                        ClientName = clientName,
+                        CreatedAt = job.CreatedAt
+                    });
+                }
+
+                return Ok(dashboardProjects);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in GetUserDashboard: {ex.Message}");
+                return StatusCode(500, "Internal server error fetching dashboard projects.");
+            }
+        }
+
         [HttpPut("{jobId}/archive")]
         public async Task<IActionResult> ArchiveJob(int jobId)
         {
