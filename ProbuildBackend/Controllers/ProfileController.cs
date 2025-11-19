@@ -2,6 +2,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Azure;
+using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
@@ -19,14 +21,20 @@ namespace ProbuildBackend.Controllers
         private readonly UserManager<UserModel> _userManager;
         private readonly AzureBlobService _azureBlobservice;
         private readonly IHttpContextAccessor _httpContextAccessor;
+        private readonly IEmailTemplateService _emailTemplate;
+        private readonly IEmailService _emailService;
+        public IConfiguration _configuration;
 
-        public ProfileController(ApplicationDbContext context, UserManager<UserModel> userManager, IHubContext<ProgressHub> hubContext, IHttpContextAccessor httpContextAccessor = null, AzureBlobService azureBlobservice = null)
+        public ProfileController(ApplicationDbContext context, UserManager<UserModel> userManager, IHubContext<ProgressHub> hubContext, IHttpContextAccessor httpContextAccessor = null, AzureBlobService azureBlobservice = null, IEmailService emailService = null,IEmailTemplateService emailTemplate = null, IConfiguration configuration = null)
         {
             _context = context;
             _userManager = userManager;
             _httpContextAccessor = httpContextAccessor;
             _azureBlobservice = azureBlobservice;
             _hubContext = hubContext;
+            _emailService = emailService;
+            _emailTemplate = emailTemplate;
+            _configuration = configuration;
         }
 
         [HttpGet("GetTest")]
@@ -144,6 +152,8 @@ namespace ProbuildBackend.Controllers
                 if (user == null)
                     return NotFound("User not found.");
 
+                var oldSubscription = user.SubscriptionPackage;
+
                 // Update user fields
                 user.UserName = model.Email;
                 user.Email = model.Email;
@@ -173,31 +183,32 @@ namespace ProbuildBackend.Controllers
                 //user.City = model.City;
                 user.SubscriptionPackage = model.SubscriptionPackage;
 
-                //var ExistingAddress = _context.UserAddress.Where(ad => ad.GooglePlaceId == model.GooglePlaceId && ad.UserId == model.Id).ToList();
+                if(oldSubscription != model.SubscriptionPackage)
+                {
+                    var upgradeEmail = await _emailTemplate.GetTemplateAsync("ProWelcomeSetup");
+                    var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["FrontEnd:FRONTEND_URL"];
+                    var callbackUrl = $"{frontendUrl}/dashboard";
+                    upgradeEmail.Body = upgradeEmail.Body.Replace("{{first_name}}", user.FirstName + " " + user.LastName).Replace("{{Header}}", upgradeEmail.HeaderHtml).Replace("{{Footer}}", upgradeEmail.FooterHtml).Replace("{{setup_url}}", "");
+                }
 
-                //We dont need to do this here anymore. There is a complete different segment created for this. 
-                //if (ExistingAddress.Count == 0)
-                //{
-                //    // Add address (can be done before save)
-                //    var address = new UserAddressModel
-                //    {
-                //        StreetNumber = model.StreetNumber,
-                //        StreetName = model.StreetName,
-                //        City = model.City,
-                //        State = model.State,
-                //        PostalCode = model.PostalCode,
-                //        Country = model.Country,
-                //        Latitude = model.Latitude,
-                //        Longitude = model.Longitude,
-                //        FormattedAddress = model.FormattedAddress,
-                //        GooglePlaceId = model.GooglePlaceId,
-                //        CreatedAt = DateTime.UtcNow,
-                //        UpdatedAt = DateTime.UtcNow,
-                //        UserId = user.Id,
-                //        CountryCode = model.CountryCode,
-                //    };
-                //    _context.UserAddress.Add(address);
-                //}
+                // Add address (can be done before save)
+                var address = new UserAddressModel
+                {
+                    StreetNumber = model.StreetNumber,
+                    StreetName = model.StreetName,
+                    City = model.City,
+                    State = model.State,
+                    PostalCode = model.PostalCode,
+                    Country = model.Country,
+                    Latitude = model.Latitude,
+                    Longitude = model.Longitude,
+                    FormattedAddress = model.FormattedAddress,
+                    GooglePlaceId = model.GooglePlaceId,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                    UserId = user.Id
+                };
+                _context.UserAddress.Add(address);
 
                 // Update documents
                 if (!string.IsNullOrEmpty(model.SessionId))

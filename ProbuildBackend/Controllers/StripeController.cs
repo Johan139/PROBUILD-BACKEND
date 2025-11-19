@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
+using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Services;
@@ -16,12 +17,13 @@ namespace ProbuildBackend.Controllers
         private readonly IConfiguration _configuration;
         private readonly ApplicationDbContext _context;
         private readonly PaymentService _paymentService;
-
-        public StripeController(IConfiguration configuration, ApplicationDbContext context, PaymentService paymentService)
+        private readonly IEmailSender _emailSender;
+        public StripeController(IConfiguration configuration, ApplicationDbContext context, PaymentService paymentService, IEmailSender emailSender)
         {
             _context = context;
             _configuration = configuration;
             _paymentService = paymentService;
+            _emailSender = emailSender;
         }
         [HttpPost("create-checkout-session")]
         public ActionResult CreateCheckoutSession([FromBody] SubscriptionPaymentRequestDTO request)
@@ -223,6 +225,36 @@ namespace ProbuildBackend.Controllers
                             // No record exists -> First-time subscription, so insert into PaymentRecords
                             SavedPayment = await SavePaymentRecord(subscriptionUserId, subscriptionPackageName, invoiceNumber, subscriptionAmount, subscriptionValidDate, subscriptionId, PaidAt, assignedUser);
                             PaymentRecordId = SavedPayment.Id;
+
+                            try
+                            {
+                                // Fetch user
+                                var user = await _context.Users.FindAsync(subscriptionUserId);
+
+                                if (user != null)
+                                {
+                                    var template = await _context.EmailTemplates
+                                        .FirstOrDefaultAsync(t => t.TemplateName == "ProWelcomeSetup");
+
+                                    if (template != null)
+                                    {
+                                        template.Body = template.Body
+                                            .Replace("{{Header}}", template.HeaderHtml ?? "")
+                                            .Replace("{{Footer}}", template.FooterHtml ?? "")
+                                            .Replace("{{first_name}}", $"{user.FirstName} {user.LastName}".Trim())
+                                            .Replace("{{setup_url}}", "https://app.probuildai.com/pro-setup"); // CLICK TARGET
+
+                                        // Send
+                                        
+                                        await _emailSender.SendEmailAsync(template, user.Email);
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine("Failed to send ProWelcomeSetup email: " + ex.Message);
+                            }
+
                         }
                         else
                         {
@@ -259,11 +291,11 @@ namespace ProbuildBackend.Controllers
                 return BadRequest("subscriptionId and packageName are required.");
 
             var teamMemberUserId = (
-from tm in _context.TeamMembers
-join u in _context.Users on tm.Email equals u.Email
-where tm.Id == payload.AssignedUser
-select u.Id
-).SingleOrDefault();
+            from tm in _context.TeamMembers
+            join u in _context.Users on tm.Email equals u.Email
+            where tm.Id == payload.AssignedUser
+            select u.Id
+            ).SingleOrDefault();
 
             StripeConfiguration.ApiKey =
                 Environment.GetEnvironmentVariable("StripeAPIKey")

@@ -1,8 +1,11 @@
-using ProbuildBackend.Models;
+using Elastic.Apm.Api;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
-using ProbuildBackend.Middleware;
 using NetTopologySuite.Geometries;
+using ProbuildBackend.Interface;
+using ProbuildBackend.Middleware;
+using ProbuildBackend.Models;
 using System.Text.Json;
 
 namespace ProbuildBackend.Services
@@ -11,13 +14,17 @@ namespace ProbuildBackend.Services
     {
         private readonly ApplicationDbContext _context;
         private readonly EmailService _emailService;
+        private readonly IEmailTemplateService _emailTemplate;
         private readonly IHubContext<NotificationHub> _hubContext;
+        private readonly IEmailSender _emailSender;
 
-        public JobNotificationService(ApplicationDbContext context, EmailService emailService, IHubContext<NotificationHub> hubContext)
+        public JobNotificationService(ApplicationDbContext context, EmailService emailService, IHubContext<NotificationHub> hubContext, IEmailTemplateService emailTemplate,IEmailSender emailSender)
         {
             _context = context;
             _emailService = emailService;
             _hubContext = hubContext;
+            _emailTemplate = emailTemplate;
+            _emailSender = emailSender;
         }
 
         public async Task NotifyUsersAboutNewJob(JobModel job)
@@ -89,20 +96,22 @@ namespace ProbuildBackend.Services
                 .ToList();
 
             // Process existing users
-            string templatePath = Path.Combine(Directory.GetCurrentDirectory(), "..", "PROBUILD-BACKEND", "ProbuildBackend", "EmailTemplates", "NewJobNotification.html");
-            string emailTemplate = await File.ReadAllTextAsync(templatePath);
+            //string templatePath = Path.Combine(Directory.GetCurrentDirectory(), "..", "PROBUILD-BACKEND", "ProbuildBackend", "EmailTemplates", "NewJobNotification.html");
+            //string emailTemplate = await File.ReadAllTextAsync(templatePath);
+
+            var JobNotificationEmail = await _emailTemplate.GetTemplateAsync("NewJobNotificationEmail");
 
             foreach (var user in filteredUsers)
             {
-                string emailBody = emailTemplate
-                    .Replace("{{UserName}}", user.FirstName)
+                JobNotificationEmail.Body = JobNotificationEmail.Body
+                    .Replace("{{UserName}}", user.FirstName + " " + user.LastName)
                     .Replace("{{JobTitle}}", job.ProjectName)
                     .Replace("{{JobLocation}}", job.Address)
                     .Replace("{{JobDescription}}", "A new job is available that matches your skills.") // TODO:Could in future introduce detailed description in JobModel
                     .Replace("{{JobDetailsLink}}", $"https://app.probuildai.com/jobs/{job.Id}")
                     .Replace("{{UnsubscribeLink}}", $"https://app.probuildai.com/subscription/unsubscribe?email={user.Email}");
 
-                await _emailService.SendEmailAsync(user.Email, "New Job Available", emailBody);
+                await _emailSender.SendEmailAsync(JobNotificationEmail,user.Email);
 
                 var notification = new NotificationModel
                 {
@@ -123,7 +132,7 @@ namespace ProbuildBackend.Services
             {
                 if (!string.IsNullOrEmpty(externalUser.email) && !existingUserEmails.Contains(externalUser.email))
                 {
-                    string emailBody = emailTemplate
+                    JobNotificationEmail.Body = JobNotificationEmail.Body
                         .Replace("{{UserName}}", externalUser.name)
                         .Replace("{{JobTitle}}", job.ProjectName)
                         .Replace("{{JobLocation}}", job.Address)
@@ -131,8 +140,8 @@ namespace ProbuildBackend.Services
                         .Replace("{{JobDetailsLink}}", $"https://app.probuildai.com/register?email={externalUser.email}") // TODO: Link to registration with pre-filled email. Do something similar to the TeamMember flow where we read from the URL query string
                         .Replace("{{UnsubscribeLink}}", $"https://app.probuildai.com/subscription/unsubscribe?email={externalUser.email}");
 
-                    await _emailService.SendEmailAsync(externalUser.email, "New Job Available", emailBody);
-                    
+                    await _emailSender.SendEmailAsync(JobNotificationEmail, externalUser.email);
+
                     externalUser.last_job_notification = DateTime.UtcNow;
                     externalUser.total_notifications_sent = (externalUser.total_notifications_sent ?? 0) + 1;
                     _context.JobNotificationRecipients.Update(externalUser);

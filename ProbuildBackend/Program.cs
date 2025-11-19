@@ -173,7 +173,9 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddScoped<IDocumentProcessorService, DocumentProcessorService>();
 builder.Services.AddTransient<IEmailSender, EmailSender>();
 builder.Services.AddScoped<IEmailTemplateService, EmailTemplateService>();
+builder.Services.AddScoped<ILogLoginInformationService, LogLoginInformationService>();
 builder.Services.AddSingleton<AzureBlobService>();
+builder.Services.AddScoped<EmailAutomationManager>();
 builder.Services.AddScoped<PaymentService>();
 builder.Services.AddScoped<SubscriptionService>();
 builder.Services.AddSingleton<Microsoft.AspNetCore.SignalR.IUserIdProvider, UserIdFromClaimProvider>();
@@ -193,14 +195,27 @@ if (!string.IsNullOrWhiteSpace(signalrConn))
 }
 builder.Services.AddLogging(configure => configure.AddConsole());
 builder.Services.AddHttpContextAccessor(); // Required for AzureBlobService
+                                           // Dynamically choose Hangfire schema based on environment
+#if DEBUG
+var hangfireSchema = "HangFireLocal";
+#else
+    var hangfireSchema = "HangFire";
+#endif
+
 builder.Services.AddHangfire(config => config
     .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
     .UseSimpleAssemblyNameTypeSerializer()
     .UseRecommendedSerializerSettings()
-    .UseSqlServerStorage(connectionString)); // Replace with UseSqlServerStorage in production
+    .UseSqlServerStorage(connectionString, new Hangfire.SqlServer.SqlServerStorageOptions
+    {
+        SchemaName = hangfireSchema,
+        PrepareSchemaIfNecessary = true
+    })
+);
 builder.Services.AddHangfireServer(options =>
 {
-    options.WorkerCount = 2; // or even 1 if Gemini calls are large
+    options.WorkerCount = 2;
+    options.ServerName = "Probuild-Hangfire-Server";
 });
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IEmailSender, EmailSender>();
@@ -219,7 +234,7 @@ builder.Services.AddScoped<UserModerationService>();
 builder.Services.AddScoped<IPdfConversionService, PdfConversionService>();
 
 builder.Services.AddHostedService<TokenCleanupService>();
-builder.Services.AddHangfireServer();
+//builder.Services.AddHangfireServer();
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
@@ -363,6 +378,7 @@ try
             app.Logger.LogInformation($"🧱 DB Row KeyId: {keyRow.FriendlyName}");
         }
     }
+    app.UseHangfireDashboard("/hangfire");
 
     app.UseHangfireDashboard("/hangfire", new DashboardOptions
     {
@@ -385,6 +401,9 @@ try
     });
 
     app.Logger.LogInformation("Application startup completed successfully. Starting to run...");
+    var testType = typeof(ProbuildBackend.Services.EmailAutomationManager);
+    app.Logger.LogInformation("💡 EmailAutomationManager loaded from assembly: {AssemblyPath}", testType.Assembly.Location);
+    app.Logger.LogInformation("💡 Assembly FullName: {AssemblyName}", testType.Assembly.FullName);
     app.Run();
 }
 catch (Exception ex)

@@ -56,7 +56,7 @@ namespace Probuild.Controllers
             var requester = _context.Users.Where(u => u.Id == requesterId).FirstOrDefault();
 
             var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["FrontEnd:FRONTEND_URL"];
-            var callbackURL = $"{frontendUrl}/login";
+            var callbackURL = $"{frontendUrl}/connections";
 
             _context.Connections.Add(connection);
             await _context.SaveChangesAsync();
@@ -65,7 +65,8 @@ namespace Probuild.Controllers
 
             ConnectionEmail.Subject = ConnectionEmail.Subject.Replace("{{InviterName}}", requester.FirstName + " " + requester.LastName);
 
-            ConnectionEmail.Body = ConnectionEmail.Body.Replace("{{UserName}}", receiver.FirstName + " " + receiver.LastName).Replace("{{ConnectionLink}}", "")
+            ConnectionEmail.Body = ConnectionEmail.Body.Replace("{{UserName}}", receiver.FirstName + " " + receiver.LastName).Replace("{{ConnectionLink}}", callbackURL)
+                .Replace("{{InviterName}}", requester.FirstName + " " + requester.LastName)
                 .Replace("{{Header}}", ConnectionEmail.HeaderHtml)
                 .Replace("{{Footer}}", ConnectionEmail.FooterHtml);
 
