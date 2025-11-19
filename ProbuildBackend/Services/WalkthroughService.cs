@@ -70,7 +70,12 @@ namespace ProbuildBackend.Services
                     "prompt-28-project-closeout.txt", "executive-summary-prompt.txt"
                 };
         case "Selected":
-          return selectedPrompts ?? new List<string>();
+          var prompts = selectedPrompts ?? new List<string>();
+          if (!prompts.Contains("executive-summary-prompt.txt"))
+          {
+            prompts.Add("executive-summary-prompt.txt");
+          }
+          return prompts;
         case "Renovation":
           return new List<string> {
                    "renovation-01-demolition.txt", "renovation-02-structural-alterations.txt", "renovation-03-rough-in-mep.txt",
