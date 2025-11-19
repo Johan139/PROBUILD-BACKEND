@@ -108,7 +108,7 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("{jobId}/analyze-bids")]
-        public async Task<IActionResult> AnalyzeBids(int jobId, [FromBody] AnalyzeBidsDto analyzeBidsDto, [FromServices] Services.AiAnalysisService aiAnalysisService)
+        public async Task<IActionResult> AnalyzeBids(int jobId, [FromBody] AnalyzeBidsDto analyzeBidsDto, [FromServices] AiAnalysisService aiAnalysisService)
         {
             var bids = await _context.Bids
                 .Include(b => b.User)

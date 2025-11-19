@@ -83,7 +83,7 @@ namespace ProbuildBackend.Controllers
                 return Unauthorized();
             }
 
-            var jobDetails = new ProbuildBackend.Models.JobModel
+            var jobDetails = new Models.JobModel
             {
                 Id = request.JobId,
                 UserId = userId

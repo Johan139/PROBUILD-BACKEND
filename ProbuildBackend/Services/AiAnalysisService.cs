@@ -103,7 +103,7 @@ namespace ProbuildBackend.Services
                 {
                     if (!string.IsNullOrEmpty(connectionId))
                     {
-                        await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new ProbuildBackend.Middleware.AnalysisProgressUpdate
+                        await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new Middleware.AnalysisProgressUpdate
                         {
                             JobId = job.Id,
                             StatusMessage = $"Analyzing: {promptKey.Replace(".txt", "").Replace("-", " ")}",
@@ -151,7 +151,7 @@ namespace ProbuildBackend.Services
 
                 if (!string.IsNullOrEmpty(connectionId))
                 {
-                    await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new ProbuildBackend.Middleware.AnalysisProgressUpdate
+                    await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new Middleware.AnalysisProgressUpdate
                     {
                         JobId = job.Id,
                         StatusMessage = "Analysis complete.",
@@ -173,7 +173,7 @@ namespace ProbuildBackend.Services
                     var jobForError = await _context.Jobs.FindAsync(requestDto.JobId);
                     if (jobForError != null)
                     {
-                        await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new ProbuildBackend.Middleware.AnalysisProgressUpdate
+                        await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new Middleware.AnalysisProgressUpdate
                         {
                             JobId = jobForError.Id,
                             StatusMessage = "Analysis failed.",
@@ -250,7 +250,7 @@ namespace ProbuildBackend.Services
                 _logger.LogError(ex, "EXCEPTION in PerformComprehensiveAnalysisAsync for User {UserId}, Job {JobId}", userId, jobDetails.Id);
                 if (!string.IsNullOrEmpty(connectionId))
                 {
-                    await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new ProbuildBackend.Middleware.AnalysisProgressUpdate
+                    await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new Middleware.AnalysisProgressUpdate
                     {
                         JobId = jobDetails.Id,
                         StatusMessage = "Analysis failed - we're sorry for the inconvenience",
@@ -311,7 +311,7 @@ namespace ProbuildBackend.Services
                 _logger.LogError(ex, "EXCEPTION in PerformRenovationAnalysisAsync for User {UserId}, Job {JobId}", userId, jobDetails.Id);
                 if (!string.IsNullOrEmpty(connectionId))
                 {
-                    await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new ProbuildBackend.Middleware.AnalysisProgressUpdate
+                    await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new Middleware.AnalysisProgressUpdate
                     {
                         JobId = jobDetails.Id,
                         StatusMessage = "Analysis failed.",
@@ -335,7 +335,7 @@ namespace ProbuildBackend.Services
             {
                 ComparisonType.Vendor => "vendor-comparison-prompt.pdf",
                 ComparisonType.Subcontractor => "subcontractor-comparison-prompt.pdf",
-                _ => throw new System.ArgumentException("Invalid comparison type")
+                _ => throw new ArgumentException("Invalid comparison type")
             };
 
             var prompt = await _promptManager.GetPromptAsync("ComparisonPrompts/", promptFileName);
@@ -390,7 +390,7 @@ namespace ProbuildBackend.Services
                 "prompt-19-cleaning", "prompt-20-risk-analyst", "prompt-21-timeline",
                 "prompt-22-general-conditions", "prompt-23-procurement", "prompt-24-daily-construction-plan",
                 "prompt-25-cost-breakdowns", "prompt-26-value-engineering", "prompt-27-environmental-lifecycle",
-                "prompt-28-project-closeout"
+                "prompt-28-project-closeout", "executive-summary-prompt"
             };
 
             try
@@ -403,7 +403,7 @@ namespace ProbuildBackend.Services
 
                     if (!string.IsNullOrEmpty(connectionId))
                     {
-                        await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new ProbuildBackend.Middleware.AnalysisProgressUpdate
+                        await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new Middleware.AnalysisProgressUpdate
                         {
                             JobId = jobId,
                             StatusMessage = $"Analyzing: {promptName.Replace(".txt", "").Replace("-", " ")}",
@@ -427,7 +427,7 @@ namespace ProbuildBackend.Services
 
                 if (!string.IsNullOrEmpty(connectionId))
                 {
-                    await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new ProbuildBackend.Middleware.AnalysisProgressUpdate
+                    await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new Middleware.AnalysisProgressUpdate
                     {
                         JobId = jobId,
                         StatusMessage = "Analysis complete.",
@@ -446,7 +446,7 @@ namespace ProbuildBackend.Services
                 _logger.LogError(ex, "An error occurred during sequential prompt execution for conversation {ConversationId}", conversationId);
                 if (!string.IsNullOrEmpty(connectionId))
                 {
-                    await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new ProbuildBackend.Middleware.AnalysisProgressUpdate
+                    await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new Middleware.AnalysisProgressUpdate
                     {
                         JobId = jobId,
                         StatusMessage = "Analysis failed during sequential execution.",
@@ -561,7 +561,7 @@ namespace ProbuildBackend.Services
 
                     if (!string.IsNullOrEmpty(connectionId))
                     {
-                        await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new ProbuildBackend.Middleware.AnalysisProgressUpdate
+                        await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new Middleware.AnalysisProgressUpdate
                         {
                             JobId = jobId,
                             StatusMessage = $"Analyzing: {promptName.Replace(".txt", "").Replace("-", " ")}",
@@ -585,7 +585,7 @@ namespace ProbuildBackend.Services
 
                 if (!string.IsNullOrEmpty(connectionId))
                 {
-                    await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new ProbuildBackend.Middleware.AnalysisProgressUpdate
+                    await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new Middleware.AnalysisProgressUpdate
                     {
                         JobId = jobId,
                         StatusMessage = "Analysis complete.",
@@ -604,7 +604,7 @@ namespace ProbuildBackend.Services
                 _logger.LogError(ex, "An error occurred during sequential renovation prompt execution for conversation {ConversationId}", conversationId);
                 if (!string.IsNullOrEmpty(connectionId))
                 {
-                    await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new ProbuildBackend.Middleware.AnalysisProgressUpdate
+                    await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new Middleware.AnalysisProgressUpdate
                     {
                         JobId = jobId,
                         StatusMessage = "Analysis failed during sequential execution.",

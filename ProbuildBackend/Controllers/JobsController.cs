@@ -54,7 +54,7 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Models.JobModel>>> GetJobs()
+        public async Task<ActionResult<IEnumerable<JobModel>>> GetJobs()
         {
             return await _context.Jobs.ToListAsync();
         }
@@ -64,64 +64,62 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-
-
-            var jobs = await _context.Jobs
-                .Where(j => j.BiddingType == "PUBLIC" && j.Status == "BIDDING")
-                .Join(_context.JobAddresses,
-                    j => j.Id,
-                    a => a.JobId,
-                    (j, a) => new { Job = j, Address = a })
-                .ToListAsync();
-
-            var jobDtos = new List<JobDto>();
-
-            foreach (var item in jobs)
-            {
-                var subtasks = await _context.JobSubtasks
-                    .Where(s => s.JobId == item.Job.Id && !s.Deleted)
+                var jobs = await _context.Jobs
+                    .Where(j => j.BiddingType == "PUBLIC" && j.Status == "BIDDING")
+                    .Join(_context.JobAddresses,
+                        j => j.Id,
+                        a => a.JobId,
+                        (j, a) => new { Job = j, Address = a })
                     .ToListAsync();
 
-                var potentialStartDate = subtasks.Any() ? subtasks.Min(s => s.StartDate) : DateTime.MinValue;
-                var potentialEndDate = subtasks.Any() ? subtasks.Max(s => s.EndDate) : DateTime.MinValue;
-                var durationInDays = subtasks.Any() ? (potentialEndDate - potentialStartDate).Days : 0;
-                var numberOfBids = await _context.Bids.CountAsync(b => b.JobId == item.Job.Id);
-                var user = await _context.Users.FindAsync(item.Job.UserId);
-                var ratings = await _context.Ratings.Where(r => r.RatedUserId == item.Job.UserId).ToListAsync();
-                double clientRating = ratings.Any() ? ratings.Average(r => r.RatingValue) : 0;
+                var jobDtos = new List<JobDto>();
 
-                jobDtos.Add(new JobDto
+                foreach (var item in jobs)
                 {
-                    JobId = item.Job.Id,
-                    ProjectName = item.Job.ProjectName,
-                    JobType = item.Job.JobType,
-                    Status = item.Job.Status,
-                    Address = item.Address.FormattedAddress,
-                    StreetNumber = item.Address.StreetNumber,
-                    StreetName = item.Address.StreetName,
-                    City = item.Address.City,
-                    State = item.Address.State,
-                    PostalCode = item.Address.PostalCode,
-                    Country = item.Address.Country,
-                    Latitude = item.Address.Latitude.ToString(),
-                    Longitude = item.Address.Longitude.ToString(),
-                    GooglePlaceId = item.Address.GooglePlaceId,
-                    Trades = item.Job.RequiredSubcontractorTypes,
-                    PotentialStartDate = potentialStartDate,
-                    PotentialEndDate = potentialEndDate,
-                    DurationInDays = durationInDays,
-                    Subtasks = subtasks,
-                    NumberOfBids = numberOfBids,
-                    ClientName = $"{user.FirstName} {user.LastName}",
-                    ClientCompanyName = user.CompanyName,
-                    ClientRating = clientRating,
-                    CreatedAt = item.Job.CreatedAt,
-                    BiddingStartDate = item.Job.BiddingStartDate,
-                    ThumbnailUrl = !string.IsNullOrEmpty(item.Job.ThumbnailUrl) ? _azureBlobservice.GenerateTemporaryPublicUrl(item.Job.ThumbnailUrl) : null
-                });
-            }
+                    var subtasks = await _context.JobSubtasks
+                        .Where(s => s.JobId == item.Job.Id && !s.Deleted)
+                        .ToListAsync();
 
-            return Ok(jobDtos);
+                    var potentialStartDate = subtasks.Any() ? subtasks.Min(s => s.StartDate) : DateTime.MinValue;
+                    var potentialEndDate = subtasks.Any() ? subtasks.Max(s => s.EndDate) : DateTime.MinValue;
+                    var durationInDays = subtasks.Any() ? (potentialEndDate - potentialStartDate).Days : 0;
+                    var numberOfBids = await _context.Bids.CountAsync(b => b.JobId == item.Job.Id);
+                    var user = await _context.Users.FindAsync(item.Job.UserId);
+                    var ratings = await _context.Ratings.Where(r => r.RatedUserId == item.Job.UserId).ToListAsync();
+                    double clientRating = ratings.Any() ? ratings.Average(r => r.RatingValue) : 0;
+
+                    jobDtos.Add(new JobDto
+                    {
+                        JobId = item.Job.Id,
+                        ProjectName = item.Job.ProjectName,
+                        JobType = item.Job.JobType,
+                        Status = item.Job.Status,
+                        Address = item.Address.FormattedAddress,
+                        StreetNumber = item.Address.StreetNumber,
+                        StreetName = item.Address.StreetName,
+                        City = item.Address.City,
+                        State = item.Address.State,
+                        PostalCode = item.Address.PostalCode,
+                        Country = item.Address.Country,
+                        Latitude = item.Address.Latitude.ToString(),
+                        Longitude = item.Address.Longitude.ToString(),
+                        GooglePlaceId = item.Address.GooglePlaceId,
+                        Trades = item.Job.RequiredSubcontractorTypes,
+                        PotentialStartDate = potentialStartDate,
+                        PotentialEndDate = potentialEndDate,
+                        DurationInDays = durationInDays,
+                        Subtasks = subtasks,
+                        NumberOfBids = numberOfBids,
+                        ClientName = $"{user.FirstName} {user.LastName}",
+                        ClientCompanyName = user.CompanyName,
+                        ClientRating = clientRating,
+                        CreatedAt = item.Job.CreatedAt,
+                        BiddingStartDate = item.Job.BiddingStartDate,
+                        ThumbnailUrl = !string.IsNullOrEmpty(item.Job.ThumbnailUrl) ? _azureBlobservice.GenerateTemporaryPublicUrl(item.Job.ThumbnailUrl) : null
+                    });
+                }
+
+                return Ok(jobDtos);
             }
             catch (Exception ex)
             {
@@ -996,7 +994,7 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpGet("userId/{userId}")]
-        public async Task<ActionResult<IEnumerable<Models.JobModel>>> GetJobsByUserId(string userId)
+        public async Task<ActionResult<IEnumerable<JobModel>>> GetJobsByUserId(string userId)
         {
             try
             {

@@ -67,16 +67,21 @@ namespace ProbuildBackend.Services
                     "prompt-19-cleaning.txt", "prompt-20-risk-analyst.txt", "prompt-21-timeline.txt",
                     "prompt-22-general-conditions.txt", "prompt-23-procurement.txt", "prompt-24-daily-construction-plan.txt",
                     "prompt-25-cost-breakdowns.txt", "prompt-26-value-engineering.txt", "prompt-27-environmental-lifecycle.txt",
-                    "prompt-28-project-closeout.txt"
+                    "prompt-28-project-closeout.txt", "executive-summary-prompt.txt"
                 };
         case "Selected":
-          return selectedPrompts ?? new List<string>();
+          var prompts = selectedPrompts ?? new List<string>();
+          if (!prompts.Contains("executive-summary-prompt.txt"))
+          {
+            prompts.Add("executive-summary-prompt.txt");
+          }
+          return prompts;
         case "Renovation":
           return new List<string> {
                    "renovation-01-demolition.txt", "renovation-02-structural-alterations.txt", "renovation-03-rough-in-mep.txt",
                    "renovation-04-insulation-drywall.txt", "renovation-05-interior-finishes.txt", "renovation-06-fixtures-fittings-equipment.txt",
                    "renovation-07-cost-breakdown-summary.txt", "renovation-08-project-timeline.txt", "renovation-09-environmental-impact.txt",
-                   "renovation-10-final-review-rebuttal.txt"
+                   "renovation-10-final-review-rebuttal.txt", "executive-summary-prompt.txt"
                 };
         default:
           throw new ArgumentException("Invalid analysis type provided.", nameof(analysisType));
