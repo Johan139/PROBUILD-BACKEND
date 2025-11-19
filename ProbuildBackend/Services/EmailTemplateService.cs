@@ -1,8 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Memory;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
-using System;
 
 namespace ProbuildBackend.Services
 {
@@ -18,9 +16,9 @@ namespace ProbuildBackend.Services
 
         public async Task<EmailTemplate> GetTemplateAsync(string templateName)
         {
-                return await _context.EmailTemplates
-                    .FirstOrDefaultAsync(t => t.TemplateName == templateName && t.IsActive);
-         
+            return await _context.EmailTemplates
+                .FirstOrDefaultAsync(t => t.TemplateName == templateName && t.IsActive);
+
         }
     }
 }

@@ -17,7 +17,7 @@ namespace ProbuildBackend.Models
         public JobModel? Job { get; set; }
 
         [ForeignKey("UserId")]
-        public string UserId { get; set; } // The user receiving the notification
+        public string? UserId { get; set; } // The user receiving the notification
         public UserModel? User { get; set; }
 
         [Required]
@@ -26,5 +26,8 @@ namespace ProbuildBackend.Models
         public UserModel? Sender { get; set; }
 
         public List<string> Recipients { get; set; }
+
+        public bool? IsRead { get; set; }
+        public DateTime? ReadAt { get;set; }
     }
 }

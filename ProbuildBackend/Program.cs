@@ -1,4 +1,5 @@
-﻿﻿using ProbuildBackend.Services;
+﻿﻿using ProbuildBackend.Interface;
+using ProbuildBackend.Services;
 using Elastic.Apm.NetCoreAll;
 using Hangfire;
 using Microsoft.EntityFrameworkCore;
@@ -8,10 +9,8 @@ using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Options;
@@ -20,6 +19,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using ProbuildBackend.Infrastructure;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
+using Hangfire.Dashboard.BasicAuthorization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -34,19 +34,16 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowAngularApp", policy =>
     {
         policy.WithOrigins(
-            "http://localhost:4200", // For local development
-            "https://probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io", "https://app.probuildai.com/", "https://qa-probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io/" // For production
+            "http://localhost:4200",
+            "https://probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io",
+            "https://app.probuildai.com",
+            "https://qa-probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io"
         )
         .AllowAnyHeader()
-        .AllowAnyMethod()
-        .AllowCredentials(); // Required for SignalR with credentials
+        .WithMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+        .AllowCredentials();
     });
 });
-
-
-
-
-
 
 // Configure the token provider for password reset
 builder.Services.Configure<DataProtectionTokenProviderOptions>(options =>
@@ -62,7 +59,11 @@ builder.Services.AddControllers(options =>
 {
     options.SuppressModelStateInvalidFilter = true;
 });
-
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+    });
 // Configure FormOptions for multipart requests
 builder.Services.Configure<FormOptions>(options =>
 {
@@ -157,7 +158,7 @@ builder.Services.AddAuthentication(options =>
             // If the request is for our hub...
             if (!string.IsNullOrEmpty(accessToken) &&
                 (path.StartsWithSegments("/chathub") ||
-                 path.StartsWithSegments("/progressHub") ||
+                 path.StartsWithSegments("/hubs/progressHub") ||
                  path.StartsWithSegments("/hubs/notifications")))
             {
                 // Read the token out of the query string
@@ -216,19 +217,21 @@ builder.Services.AddHangfireServer(options =>
     options.WorkerCount = 2;
     options.ServerName = "Probuild-Hangfire-Server";
 });
-builder.Services.AddScoped<IEmailService, EmailService>(); // Add this line
-// Register all services
+builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<IEmailSender, EmailSender>();
 builder.Services.AddScoped<IConversationRepository, SqlConversationRepository>();
 builder.Services.AddScoped<IPromptManagerService, PromptManagerService>();
 // The DI container will automatically inject the other services into GeminiAiService's constructor
 builder.Services.AddScoped<IAiService, GeminiAiService>();
 builder.Services.AddScoped<IAiAnalysisService, AiAnalysisService>();
 builder.Services.AddScoped<ChatService>();
-builder.Services.AddScoped<IPdfImageConverter, PdfImageConverter>(); // Add this line
+builder.Services.AddTransient<IKeepAliveService, KeepAliveService>();
+builder.Services.AddScoped<IPdfImageConverter, PdfImageConverter>();
 builder.Services.AddScoped<IPdfTextExtractionService, PdfTextExtractionService>();
 builder.Services.Configure<OcrSettings>(configuration.GetSection("OcrSettings"));
 builder.Services.AddScoped(sp => sp.GetRequiredService<IOptions<OcrSettings>>().Value);
 builder.Services.AddScoped<UserModerationService>();
+builder.Services.AddScoped<IPdfConversionService, PdfConversionService>();
 
 builder.Services.AddHostedService<TokenCleanupService>();
 //builder.Services.AddHangfireServer();
@@ -265,7 +268,8 @@ using (var scope = app.Services.CreateScope())
 app.MapGet("/health", () => Results.Ok("Healthy"));
 
 // Map SignalR hub
-app.MapHub<ProgressHub>("/progressHub");
+app.MapHub<ProgressHub>("/hubs/progressHub");
+app.Logger.LogInformation("ProgressHub endpoint mapped at /hubs/progressHub");
 app.MapHub<NotificationHub>("/hubs/notifications");
 app.MapHub<ChatHub>("/chathub");
 app.Logger.LogInformation("ChatHub endpoint mapped at /chathub");
@@ -376,6 +380,26 @@ try
     }
     app.UseHangfireDashboard("/hangfire");
 
+    app.UseHangfireDashboard("/hangfire", new DashboardOptions
+    {
+        Authorization = new[] { new BasicAuthAuthorizationFilter(
+        new BasicAuthAuthorizationFilterOptions
+        {
+            RequireSsl = false, // Azure Container Apps uses TLS termination anyway
+            SslRedirect = false,
+            LoginCaseSensitive = false,
+            Users = new []
+            {
+                new BasicAuthAuthorizationUser
+                {
+                    Login = "admin",
+                    PasswordClear = "3oZ%7E8(T2d6"
+                }
+            }
+        })
+    }
+    });
+
     app.Logger.LogInformation("Application startup completed successfully. Starting to run...");
     var testType = typeof(ProbuildBackend.Services.EmailAutomationManager);
     app.Logger.LogInformation("💡 EmailAutomationManager loaded from assembly: {AssemblyPath}", testType.Assembly.Location);
@@ -388,3 +412,4 @@ catch (Exception ex)
     app.Logger.LogError(ex, "Stack trace: {StackTrace}", ex.StackTrace);
     throw;
 }
+

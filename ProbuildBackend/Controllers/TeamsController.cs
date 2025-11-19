@@ -1,8 +1,6 @@
-using Hangfire.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -11,7 +9,6 @@ using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
-using Stripe;
 using System.Security.Claims;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 namespace ProbuildBackend.Controllers
@@ -123,7 +120,7 @@ namespace ProbuildBackend.Controllers
                 .Replace("{{Footer}}", TeamInvitationEmail.FooterHtml);
             try
             {
-                await _emailSender.SendEmailAsync(TeamInvitationEmail,dto.Email);
+                await _emailSender.SendEmailAsync(TeamInvitationEmail, dto.Email);
                 Console.WriteLine($"Invitation email sent to {dto.Email}");
             }
             catch (Exception ex)
@@ -229,7 +226,7 @@ namespace ProbuildBackend.Controllers
             TeamDeactivateEmail.Body = TeamDeactivateEmail.Body.Replace("{{UserName}}", teamMember.FirstName + " " + teamMember.LastName).Replace("{{Header}}", TeamDeactivateEmail.HeaderHtml)
                 .Replace("{{Footer}}", TeamDeactivateEmail.FooterHtml);
 
-            await _emailSender.SendEmailAsync(TeamDeactivateEmail,teamMember.Email);
+            await _emailSender.SendEmailAsync(TeamDeactivateEmail, teamMember.Email);
 
             return NoContent();
         }
@@ -263,7 +260,7 @@ namespace ProbuildBackend.Controllers
                                                                              .Replace("{{LoginLink}}", callbackUrl).Replace("{{Header}}", TeamReactivateEmail.HeaderHtml)
                 .Replace("{{Footer}}", TeamReactivateEmail.FooterHtml);
             // 5. Send a notification email
-            await _emailSender.SendEmailAsync(TeamReactivateEmail,teamMember.Email);
+            await _emailSender.SendEmailAsync(TeamReactivateEmail, teamMember.Email);
 
             return Ok();
         }
@@ -292,7 +289,7 @@ namespace ProbuildBackend.Controllers
             TeamDeleteEmail.Body = TeamDeleteEmail.Body.Replace("{{UserName}}", teamMember.FirstName + " " + teamMember.LastName).Replace("{{Header}}", TeamDeleteEmail.HeaderHtml)
                 .Replace("{{Footer}}", TeamDeleteEmail.FooterHtml);
 
-            await _emailSender.SendEmailAsync(TeamDeleteEmail,teamMember.Email);
+            await _emailSender.SendEmailAsync(TeamDeleteEmail, teamMember.Email);
 
             return NoContent();
         }

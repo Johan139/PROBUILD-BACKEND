@@ -8,5 +8,7 @@
         public int JobId { get; set; }
         public string ProjectName { get; set; }
         public string SenderFullName { get; set; }
+        public bool? IsRead { get; set; }
+        public DateTime? ReadAt { get; set; }
     }
 }

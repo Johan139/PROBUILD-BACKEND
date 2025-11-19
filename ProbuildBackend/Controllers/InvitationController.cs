@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Interface;
@@ -99,7 +98,7 @@ namespace Probuild.Controllers
                     .Replace("{{Header}}", InvitationEmail.HeaderHtml)
                 .Replace("{{Footer}}", InvitationEmail.FooterHtml);
 
-                await _emailSender.SendEmailAsync(InvitationEmail,invitationDto.Email);
+                await _emailSender.SendEmailAsync(InvitationEmail, invitationDto.Email);
 
                 return Ok(new { message = "Invitation sent successfully." });
             }

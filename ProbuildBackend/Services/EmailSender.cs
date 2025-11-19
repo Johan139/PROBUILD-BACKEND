@@ -1,5 +1,4 @@
-﻿using Microsoft.AspNetCore.Identity.UI.Services;
-using ProbuildBackend.Models;
+﻿using ProbuildBackend.Models;
 using SendGrid;
 using SendGrid.Helpers.Mail;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;

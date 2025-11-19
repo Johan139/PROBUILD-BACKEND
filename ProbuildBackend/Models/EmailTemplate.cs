@@ -1,5 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace ProbuildBackend.Models
 {
@@ -23,7 +22,7 @@ namespace ProbuildBackend.Models
         public string? LogoUrl { get; set; }
         public string? InlineCss { get; set; }
         public string? LanguageCode { get; set; }
-    
+
         public bool IsActive { get; set; }
         public int VersionNumber { get; set; }
 

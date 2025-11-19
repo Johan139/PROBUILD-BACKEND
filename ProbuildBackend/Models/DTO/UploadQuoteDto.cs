@@ -1,6 +1,3 @@
-using Microsoft.AspNetCore.Http;
-using System.Collections.Generic;
-
 namespace ProbuildBackend.Models.DTO
 {
     public class UploadQuoteDto
