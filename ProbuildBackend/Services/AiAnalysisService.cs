@@ -67,9 +67,9 @@ namespace ProbuildBackend.Services
                     {
                         conversationId = requestDto.ConversationId;
                     }
-                    else
+                    else if (!string.IsNullOrEmpty(job.ConversationId))
                     {
-                        conversationId = await _conversationRepo.CreateConversationAsync(userId, title, requestDto.PromptKeys);
+                        conversationId = job.ConversationId;
                     }
                 }
 
@@ -80,7 +80,15 @@ namespace ProbuildBackend.Services
                 var userContext = await GetUserContextAsString(requestDto.UserContext, null);
                 var budgetPrompt = await _promptManager.GetPromptAsync(null, $"{budgetLevel}-budget-prompt.txt");
 
-                var (initialResponse, _) = await _aiService.StartMultimodalConversationAsync(userId, requestDto.DocumentUrls, personaPrompt, budgetPrompt + "\n" + userContext, conversationId);
+                var (initialResponse, newConversationId) = await _aiService.StartMultimodalConversationAsync(userId, requestDto.DocumentUrls, personaPrompt, budgetPrompt + "\n" + userContext, conversationId);
+
+                // Link Conversation to Job if not already linked
+                if (job.ConversationId != newConversationId)
+                {
+                    job.ConversationId = newConversationId;
+                    await _context.SaveChangesAsync();
+                }
+                conversationId = newConversationId;
 
                 if (initialResponse.Contains("BLUEPRINT FAILURE", StringComparison.OrdinalIgnoreCase))
                 {
@@ -225,8 +233,19 @@ namespace ProbuildBackend.Services
                 _logger.LogInformation("Initial user prompt created. Length: {Length}", initialUserPrompt.Length);
 
                 _logger.LogInformation("Calling StartMultimodalConversationAsync.");
-                var (initialResponse, conversationId) = await _aiService.StartMultimodalConversationAsync(userId, documentUris, systemPersonaPrompt, initialUserPrompt);
+                var (initialResponse, conversationId) = await _aiService.StartMultimodalConversationAsync(userId, documentUris, systemPersonaPrompt, initialUserPrompt, jobDetails.ConversationId);
                 _logger.LogInformation("Started multimodal conversation {ConversationId} for user {UserId}. Initial response length: {Length}", conversationId, userId, initialResponse?.Length ?? 0);
+
+                // Link Conversation to Job if not already linked
+                if (jobDetails.ConversationId != conversationId)
+                {
+                    var trackedJob = await _context.Jobs.FindAsync(jobDetails.Id);
+                    if (trackedJob != null)
+                    {
+                        trackedJob.ConversationId = conversationId;
+                        await _context.SaveChangesAsync();
+                    }
+                }
 
                 if (initialResponse.Contains("BLUEPRINT FAILURE", StringComparison.OrdinalIgnoreCase))
                 {
@@ -286,8 +305,19 @@ namespace ProbuildBackend.Services
                 var initialUserPrompt = $"{budgetPrompt}\n\n{initialAnalysisPrompt}\n\n{userContext}";
 
                 _logger.LogInformation("Calling StartMultimodalConversationAsync for renovation analysis.");
-                var (initialResponse, conversationId) = await _aiService.StartMultimodalConversationAsync(userId, documentUris, personaPrompt, initialUserPrompt);
+                var (initialResponse, conversationId) = await _aiService.StartMultimodalConversationAsync(userId, documentUris, personaPrompt, initialUserPrompt, jobDetails.ConversationId);
                 _logger.LogInformation("Started multimodal conversation {ConversationId} for user {UserId}. Initial response length: {Length}", conversationId, userId, initialResponse?.Length ?? 0);
+
+                // Link Conversation to Job if not already linked
+                if (jobDetails.ConversationId != conversationId)
+                {
+                    var trackedJob = await _context.Jobs.FindAsync(jobDetails.Id);
+                    if (trackedJob != null)
+                    {
+                        trackedJob.ConversationId = conversationId;
+                        await _context.SaveChangesAsync();
+                    }
+                }
 
                 if (initialResponse.Contains("BLUEPRINT FAILURE", StringComparison.OrdinalIgnoreCase))
                 {
