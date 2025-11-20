@@ -92,6 +92,14 @@ namespace ProbuildBackend.Controllers
           initialAnalysisPrompt
       );
 
+      // Link the conversation to the temporary job
+      var trackedJob = await _context.Jobs.FindAsync(jobId);
+      if (trackedJob != null)
+      {
+        trackedJob.ConversationId = conversationId;
+        await _context.SaveChangesAsync();
+      }
+
       // Step 3: Immediately parse and save the technical details
       await _aiAnalysisService.ParseAndSaveAiJobDetails(jobId, initialAiResponse);
 

@@ -47,5 +47,8 @@ namespace ProbuildBackend.Models
     public DateTime CreatedAt { get; set; }
     public DateTime? BiddingStartDate { get; set; }
     public string? ThumbnailUrl { get; set; }
+    public string? ConversationId { get; set; }
+    [ForeignKey("ConversationId")]
+    public Conversation? Conversation { get; set; }
   }
 }
