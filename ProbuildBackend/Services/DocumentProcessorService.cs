@@ -94,9 +94,9 @@ namespace ProbuildBackend.Services
                     var ProjectAnalysisEmail = await _emailTemplate.GetTemplateAsync("ProjectAnalysisReadyEmail");
 
                     var jobAddress = _context.JobAddresses.Where(j => j.JobId == job.Id).FirstOrDefault();
-
+                   var jobDocument = _context.JobDocuments.Where(d => d.JobId == job.Id).FirstOrDefault();
                     var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
-
+                
                     var query = HttpUtility.ParseQueryString(string.Empty);
                     query["jobId"] = job.Id.ToString();
                     query["operatingArea"] = job.OperatingArea;
@@ -245,7 +245,7 @@ namespace ProbuildBackend.Services
                     var ProjectAnalysisEmail = await _emailTemplate.GetTemplateAsync("ProjectAnalysisReadyEmail");
 
                     var jobAddress = _context.JobAddresses.Where(j => j.JobId == job.Id).FirstOrDefault();
-
+                    var jobDocument = _context.JobDocuments.Where(d => d.JobId == job.Id).FirstOrDefault();
                     var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
 
                     var query = HttpUtility.ParseQueryString(string.Empty);
@@ -397,7 +397,7 @@ namespace ProbuildBackend.Services
                     var ProjectAnalysisEmail = await _emailTemplate.GetTemplateAsync("ProjectAnalysisReadyEmail");
 
                     var jobAddress = _context.JobAddresses.Where(j => j.JobId == job.Id).FirstOrDefault();
-
+                    var jobDocument = _context.JobDocuments.Where(d => d.JobId == job.Id).FirstOrDefault();
                     var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
 
                     var query = HttpUtility.ParseQueryString(string.Empty);
