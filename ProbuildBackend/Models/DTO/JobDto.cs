@@ -31,8 +31,9 @@
         public string? OperatingArea { get; set; }
         public string? UserId { get; set; }
         public List<IFormFile>? Blueprint { get; set; }
-        public string? SessionId { get; set; } // Add sessionId to link documents
-        public List<string>? TemporaryFileUrls { get; set; } // Add to pass the list of uploaded file URLs
+        public string? SessionId { get; set; }
+        public List<string>? TemporaryFileUrls { get; set; }
+        public string? ConnectionId { get; set; }
         public string StreetNumber { get; set; }
         public string StreetName { get; set; }
         public string City { get; set; }

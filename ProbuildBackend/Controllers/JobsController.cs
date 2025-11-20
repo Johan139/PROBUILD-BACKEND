@@ -576,7 +576,7 @@ namespace ProbuildBackend.Controllers
 
                         if (documentUrls.Any())
                         {
-                            string connectionId = _httpContextAccessor.HttpContext?.Connection.Id ?? string.Empty;
+                            string connectionId = jobRequest.ConnectionId ?? _httpContextAccessor.HttpContext?.Connection.Id ?? string.Empty;
 
                             if (jobRequest.AnalysisType == "Comprehensive")
                             {
