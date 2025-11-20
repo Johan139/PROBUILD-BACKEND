@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.SignalR;
+﻿using FSharp.Data.Runtime.BaseTypes;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
@@ -94,7 +95,7 @@ namespace ProbuildBackend.Services
                     var ProjectAnalysisEmail = await _emailTemplate.GetTemplateAsync("ProjectAnalysisReadyEmail");
 
                     var jobAddress = _context.JobAddresses.Where(j => j.JobId == job.Id).FirstOrDefault();
-                   var jobDocument = _context.JobDocuments.Where(d => d.JobId == job.Id).FirstOrDefault();
+                   var jobDocument = _context.JobDocuments.Where(d => d.JobId == job.Id).ToList();
                     var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
                 
                     var query = HttpUtility.ParseQueryString(string.Empty);
@@ -112,9 +113,11 @@ namespace ProbuildBackend.Services
                     query["finishes"] = job.Finishes;
                     query["foundation"] = job.Foundation;
                     query["date"] = job.DesiredStartDate.ToString("MM/dd/yyyy");
-                    query["documents"] = string.Join(",", job.Documents.Select(d => d.Id));
-                    query["latitude"] = jobAddress.Latitude.ToString();
-                    query["longitude"] = jobAddress.Longitude.ToString();
+                    query["documents"] = jobDocument.Any()
+                   ? string.Join(",", jobDocument.Select(d => d.Id))
+                   : "";
+                    query["latitude"] = jobAddress?.Latitude?.ToString() ?? "";
+                    query["longitude"] = jobAddress?.Longitude?.ToString() ?? "";
 
                     var analysisLink = $"{frontendUrl}/view-quote?{query}";
 
@@ -245,7 +248,7 @@ namespace ProbuildBackend.Services
                     var ProjectAnalysisEmail = await _emailTemplate.GetTemplateAsync("ProjectAnalysisReadyEmail");
 
                     var jobAddress = _context.JobAddresses.Where(j => j.JobId == job.Id).FirstOrDefault();
-                    var jobDocument = _context.JobDocuments.Where(d => d.JobId == job.Id).FirstOrDefault();
+                    var jobDocument = _context.JobDocuments.Where(d => d.JobId == job.Id).ToList();
                     var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
 
                     var query = HttpUtility.ParseQueryString(string.Empty);
@@ -263,9 +266,11 @@ namespace ProbuildBackend.Services
                     query["finishes"] = job.Finishes;
                     query["foundation"] = job.Foundation;
                     query["date"] = job.DesiredStartDate.ToString("MM/dd/yyyy");
-                    query["documents"] = string.Join(",", job.Documents.Select(d => d.Id));
-                    query["latitude"] = jobAddress.Latitude.ToString();
-                    query["longitude"] = jobAddress.Longitude.ToString();
+                    query["documents"] = jobDocument.Any()
+                    ? string.Join(",", jobDocument.Select(d => d.Id))
+                    : "";
+                    query["latitude"] = jobAddress?.Latitude?.ToString() ?? "";
+                    query["longitude"] = jobAddress?.Longitude?.ToString() ?? "";
 
                     var analysisLink = $"{frontendUrl}/view-quote?{query}";
 
@@ -397,7 +402,7 @@ namespace ProbuildBackend.Services
                     var ProjectAnalysisEmail = await _emailTemplate.GetTemplateAsync("ProjectAnalysisReadyEmail");
 
                     var jobAddress = _context.JobAddresses.Where(j => j.JobId == job.Id).FirstOrDefault();
-                    var jobDocument = _context.JobDocuments.Where(d => d.JobId == job.Id).FirstOrDefault();
+                    var jobDocuments =  _context.JobDocuments.Where(d => d.JobId == job.Id).ToList();
                     var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
 
                     var query = HttpUtility.ParseQueryString(string.Empty);
@@ -415,9 +420,11 @@ namespace ProbuildBackend.Services
                     query["finishes"] = job.Finishes;
                     query["foundation"] = job.Foundation;
                     query["date"] = job.DesiredStartDate.ToString("MM/dd/yyyy");
-                    query["documents"] = string.Join(",", job.Documents.Select(d => d.Id));
-                    query["latitude"] = jobAddress.Latitude.ToString();
-                    query["longitude"] = jobAddress.Longitude.ToString();
+                    query["documents"] = jobDocuments.Any()
+                   ? string.Join(",", jobDocuments.Select(d => d.Id))
+                   : "";
+                    query["latitude"] = jobAddress?.Latitude?.ToString() ?? "";
+                    query["longitude"] = jobAddress?.Longitude?.ToString() ?? "";
 
                     var analysisLink = $"{frontendUrl}/view-quote?{query}";
 
