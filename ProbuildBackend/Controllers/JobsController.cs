@@ -12,6 +12,7 @@ using Hangfire;
 using BomWithCosts = ProbuildBackend.Models.BomWithCosts;
 using ProbuildBackend.Interface;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
+using System.Security.Claims;
 namespace ProbuildBackend.Controllers
 {
     [Route("api/[controller]")]
@@ -1152,6 +1153,41 @@ namespace ProbuildBackend.Controllers
             job.ArchivedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
+            // Send Notification
+            var assignments = await _context.JobAssignments
+                .Where(a => a.JobId == jobId)
+                .ToListAsync();
+
+            var recipientIds = assignments.Select(a => a.UserId).ToList();
+            if (!recipientIds.Contains(job.UserId))
+            {
+                recipientIds.Add(job.UserId);
+            }
+
+            // Also notify the current user (archiver) if not already in list
+            var currentUserId = _httpContextAccessor.HttpContext?.User.FindFirstValue("UserId");
+            if (!string.IsNullOrEmpty(currentUserId) && !recipientIds.Contains(currentUserId))
+            {
+                recipientIds.Add(currentUserId);
+            }
+
+            var notification = new NotificationModel
+            {
+                Message = $"Project '{job.ProjectName}' has been archived.",
+                JobId = job.Id,
+                SenderId = currentUserId ?? job.UserId,
+                Timestamp = DateTime.UtcNow,
+                Recipients = recipientIds
+            };
+
+            _context.Notifications.Add(notification);
+            await _context.SaveChangesAsync();
+
+            await _webSocketManager.BroadcastMessageAsync(
+                notification.Message,
+                notification.Recipients
+            );
+
             return NoContent();
         }
 
@@ -1261,6 +1297,29 @@ namespace ProbuildBackend.Controllers
                 return NotFound();
             }
 
+            // Gather recipients for notification before deletion
+            var assignments = await _context.JobAssignments
+                .Where(a => a.JobId == id)
+                .ToListAsync();
+
+            var recipientIds = assignments.Select(a => a.UserId).ToList();
+            if (!recipientIds.Contains(job.UserId))
+            {
+                recipientIds.Add(job.UserId);
+            }
+
+            var currentUserId = _httpContextAccessor.HttpContext?.User.FindFirstValue("UserId");
+            if (!string.IsNullOrEmpty(currentUserId) && !recipientIds.Contains(currentUserId))
+            {
+                recipientIds.Add(currentUserId);
+            }
+
+            // Send SignalR notification only (cannot save to DB as job is being deleted)
+            await _webSocketManager.BroadcastMessageAsync(
+                $"Project '{job.ProjectName}' has been permanently deleted.",
+                recipientIds
+            );
+
             // Manually delete related entities to ensure clean cleanup
             var processingResults = await _context.DocumentProcessingResults.Where(x => x.JobId == id).ToListAsync();
             _context.DocumentProcessingResults.RemoveRange(processingResults);
@@ -1268,8 +1327,7 @@ namespace ProbuildBackend.Controllers
             var jobAddresses = await _context.JobAddresses.Where(x => x.JobId == id).ToListAsync();
             _context.JobAddresses.RemoveRange(jobAddresses);
 
-            var jobAssignments = await _context.JobAssignments.Where(x => x.JobId == id).ToListAsync();
-            _context.JobAssignments.RemoveRange(jobAssignments);
+            _context.JobAssignments.RemoveRange(assignments); // Use the list we already fetched
 
             var jobDocuments = await _context.JobDocuments.Where(x => x.JobId == id).ToListAsync();
             _context.JobDocuments.RemoveRange(jobDocuments);
@@ -1282,7 +1340,7 @@ namespace ProbuildBackend.Controllers
 
             var notifications = await _context.Notifications.Where(x => x.JobId == id).ToListAsync();
             _context.Notifications.RemoveRange(notifications);
-            
+
             // Finally delete the job
             _context.Jobs.Remove(job);
             await _context.SaveChangesAsync();
