@@ -50,5 +50,6 @@ namespace ProbuildBackend.Models
     public string? ConversationId { get; set; }
     [ForeignKey("ConversationId")]
     public Conversation? Conversation { get; set; }
+    public DateTime? ArchivedAt { get; set; }
   }
 }

@@ -1149,6 +1149,32 @@ namespace ProbuildBackend.Controllers
             }
 
             job.Status = "ARCHIVED";
+            job.ArchivedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+
+        [HttpPut("{jobId}/unarchive")]
+        public async Task<IActionResult> UnarchiveJob(int jobId)
+        {
+            var job = await _context.Jobs.FindAsync(jobId);
+
+            if (job == null)
+            {
+                return NotFound();
+            }
+
+            if (job.Status != "ARCHIVED")
+            {
+                return BadRequest("Job is not archived.");
+            }
+
+            // Restore to DRAFT by default, or maybe check progress?
+            // For now, setting to DRAFT allows the user to re-evaluate.
+            job.Status = "DRAFT";
+            job.ArchivedAt = null;
+
             await _context.SaveChangesAsync();
 
             return NoContent();
@@ -1167,6 +1193,7 @@ namespace ProbuildBackend.Controllers
                             ProjectName = j.ProjectName,
                             JobType = j.JobType,
                             Status = j.Status,
+                            ArchivedAt = j.ArchivedAt,
                             // Note: CompletionDate is not in the JobModel, so it's omitted.
                         }
                 )
@@ -1234,6 +1261,29 @@ namespace ProbuildBackend.Controllers
                 return NotFound();
             }
 
+            // Manually delete related entities to ensure clean cleanup
+            var processingResults = await _context.DocumentProcessingResults.Where(x => x.JobId == id).ToListAsync();
+            _context.DocumentProcessingResults.RemoveRange(processingResults);
+
+            var jobAddresses = await _context.JobAddresses.Where(x => x.JobId == id).ToListAsync();
+            _context.JobAddresses.RemoveRange(jobAddresses);
+
+            var jobAssignments = await _context.JobAssignments.Where(x => x.JobId == id).ToListAsync();
+            _context.JobAssignments.RemoveRange(jobAssignments);
+
+            var jobDocuments = await _context.JobDocuments.Where(x => x.JobId == id).ToListAsync();
+            _context.JobDocuments.RemoveRange(jobDocuments);
+
+            var termsAgreements = await _context.JobsTermsAgreement.Where(x => x.JobId == id).ToListAsync();
+            _context.JobsTermsAgreement.RemoveRange(termsAgreements);
+
+            var jobSubtasks = await _context.JobSubtasks.Where(x => x.JobId == id).ToListAsync();
+            _context.JobSubtasks.RemoveRange(jobSubtasks);
+
+            var notifications = await _context.Notifications.Where(x => x.JobId == id).ToListAsync();
+            _context.Notifications.RemoveRange(notifications);
+            
+            // Finally delete the job
             _context.Jobs.Remove(job);
             await _context.SaveChangesAsync();
 

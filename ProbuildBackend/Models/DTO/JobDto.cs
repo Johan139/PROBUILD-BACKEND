@@ -68,5 +68,6 @@
         public DateTime? BiddingStartDate { get; set; }
         public string? BudgetLevel { get; set; }
         public string? ThumbnailUrl { get; set; }
+        public DateTime? ArchivedAt { get; set; }
     }
 }
