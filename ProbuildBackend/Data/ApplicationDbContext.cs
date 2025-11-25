@@ -65,6 +65,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<CountriesModel> Countries { get; set; }
     public DbSet<StatesModel> States { get; set; }
     public DbSet<CountryNumberCodesModel> CountryNumberCodes { get; set; }
+    public DbSet<BudgetLineItem> BudgetLineItems { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

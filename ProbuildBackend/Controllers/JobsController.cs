@@ -459,6 +459,16 @@ namespace ProbuildBackend.Controllers
         [RequestSizeLimit(200 * 1024 * 1024)]
         public async Task<IActionResult> PostJob([FromForm] JobDto jobRequest)
         {
+            if (jobRequest == null)
+            {
+                return BadRequest("Job request cannot be null.");
+            }
+
+            if (string.IsNullOrWhiteSpace(jobRequest.ProjectName))
+            {
+                return BadRequest("Project name is required.");
+            }
+
             var strategy = _context.Database.CreateExecutionStrategy();
             return await strategy.ExecuteAsync(
                 async () =>
@@ -871,15 +881,25 @@ namespace ProbuildBackend.Controllers
         [HttpPost("{id}")]
         public async Task<IActionResult> PutJob(int id, [FromBody] JobDto jobDto)
         {
+            if (jobDto == null)
+            {
+                return BadRequest("Job data cannot be null.");
+            }
+
             if (id != jobDto.JobId)
             {
-                return BadRequest();
+                return BadRequest("Job ID in URL does not match job ID in body.");
+            }
+
+            if (string.IsNullOrWhiteSpace(jobDto.ProjectName))
+            {
+                return BadRequest("Project name cannot be empty.");
             }
 
             var existingJob = await _context.Jobs.FindAsync(id);
             if (existingJob == null)
             {
-                return NotFound();
+                return NotFound($"Job with ID {id} not found.");
             }
 
             existingJob.ProjectName = jobDto.ProjectName;
@@ -943,7 +963,11 @@ namespace ProbuildBackend.Controllers
             var job = await _context.Jobs.FindAsync(jobId);
             if (job == null)
             {
-                return NotFound("Job not found.");
+                return NotFound($"Job with ID {jobId} not found.");
+            }
+            if (addressDto == null)
+            {
+                return BadRequest("Address data cannot be null.");
             }
 
             var address = await _context.JobAddresses.FirstOrDefaultAsync(a => a.JobId == jobId);
