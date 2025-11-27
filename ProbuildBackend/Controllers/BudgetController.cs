@@ -32,6 +32,14 @@ namespace ProbuildBackend.Controllers
       return CreatedAtAction(nameof(GetBudget), new { jobId = created.JobId }, created);
     }
 
+    [HttpPost("batch")]
+    public async Task<ActionResult<IEnumerable<BudgetLineItem>>> AddBudgetItemsBatch(IEnumerable<BudgetLineItem> items)
+    {
+      if (items == null || !items.Any()) return BadRequest("Budget items cannot be null or empty");
+      var created = await _budgetService.AddBudgetItemsAsync(items);
+      return Ok(created);
+    }
+
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateBudgetItem(int id, BudgetLineItem item)
     {

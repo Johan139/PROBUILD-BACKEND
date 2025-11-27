@@ -29,6 +29,13 @@ namespace ProbuildBackend.Services
       return item;
     }
 
+    public async Task<IEnumerable<BudgetLineItem>> AddBudgetItemsAsync(IEnumerable<BudgetLineItem> items)
+    {
+      _context.BudgetLineItems.AddRange(items);
+      await _context.SaveChangesAsync();
+      return items;
+    }
+
     public async Task<BudgetLineItem> UpdateBudgetItemAsync(int id, BudgetLineItem item)
     {
       var existing = await _context.BudgetLineItems.FindAsync(id);
@@ -37,8 +44,13 @@ namespace ProbuildBackend.Services
       existing.Category = item.Category;
       existing.Item = item.Item;
       existing.Trade = item.Trade;
+      existing.Vendor = item.Vendor;
+      existing.Quantity = item.Quantity;
+      existing.Unit = item.Unit;
+      existing.UnitCost = item.UnitCost;
       existing.EstimatedCost = item.EstimatedCost;
       existing.ActualCost = item.ActualCost;
+      existing.ForecastToComplete = item.ForecastToComplete;
       existing.PercentComplete = item.PercentComplete;
       existing.Status = item.Status;
       existing.Notes = item.Notes;
@@ -66,7 +78,7 @@ namespace ProbuildBackend.Services
       var subtasks = new List<SubtaskDto>();
 
       // Helper to parse JSON subtasks safely
-      void AddSubtasks(string json)
+      void AddSubtasks(string? json)
       {
         if (!string.IsNullOrEmpty(json))
         {
@@ -82,11 +94,11 @@ namespace ProbuildBackend.Services
       AddSubtasks(job.WallStructureSubtask);
       AddSubtasks(job.WallInsulationSubtask);
       AddSubtasks(job.RoofStructureSubtask);
+      AddSubtasks(job.RoofTypeSubtask);
       AddSubtasks(job.RoofInsulationSubtask);
       AddSubtasks(job.FoundationSubtask);
       AddSubtasks(job.FinishesSubtask);
       AddSubtasks(job.ElectricalSupplyNeedsSubtask);
-      // Add other subtask fields as needed...
 
       foreach (var task in subtasks)
       {
@@ -99,11 +111,11 @@ namespace ProbuildBackend.Services
 
         if (existingItem != null)
         {
-          // Update estimated cost if changed? 
-          // Ideally user edits might override, but "Sync" implies refreshing from source TODO: decide on policy
-          if (existingItem.EstimatedCost != task.Cost)
+          // Update estimated cost if changed
+          if (existingItem.EstimatedCost != task.Cost || existingItem.Quantity != task.Days)
           {
             existingItem.EstimatedCost = task.Cost;
+            existingItem.Quantity = task.Days; // Sync Days as Quantity
             existingItem.UpdatedAt = DateTime.UtcNow;
           }
         }
@@ -120,7 +132,10 @@ namespace ProbuildBackend.Services
             Status = task.Status ?? "Pending",
             Source = "Subtask",
             SourceId = task.Id.ToString(),
-            Trade = "General" // Could infer from subtask group if we had that info here TODO: improve
+            Trade = "General",
+            Quantity = task.Days, // Sync Days as Quantity
+            Unit = "Days",
+            UnitCost = task.Days > 0 ? task.Cost / task.Days : 0 // Calculate implied rate
           };
           _context.BudgetLineItems.Add(newItem);
         }
@@ -136,6 +151,7 @@ namespace ProbuildBackend.Services
       public string Task { get; set; }
       public decimal Cost { get; set; }
       public string Status { get; set; }
+      public decimal Days { get; set; } // Map Days from frontend
     }
   }
 }
