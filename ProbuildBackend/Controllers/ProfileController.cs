@@ -2,6 +2,8 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Azure;
+using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
@@ -19,14 +21,16 @@ namespace ProbuildBackend.Controllers
         private readonly UserManager<UserModel> _userManager;
         private readonly AzureBlobService _azureBlobservice;
         private readonly IHttpContextAccessor _httpContextAccessor;
+        public IConfiguration _configuration;
 
-        public ProfileController(ApplicationDbContext context, UserManager<UserModel> userManager, IHubContext<ProgressHub> hubContext, IHttpContextAccessor httpContextAccessor = null, AzureBlobService azureBlobservice = null)
+        public ProfileController(ApplicationDbContext context, UserManager<UserModel> userManager, IHubContext<ProgressHub> hubContext, IHttpContextAccessor httpContextAccessor = null, AzureBlobService azureBlobservice = null, IConfiguration configuration = null)
         {
             _context = context;
             _userManager = userManager;
             _httpContextAccessor = httpContextAccessor;
             _azureBlobservice = azureBlobservice;
             _hubContext = hubContext;
+            _configuration = configuration;
         }
 
         [HttpGet("GetTest")]
@@ -107,6 +111,10 @@ namespace ProbuildBackend.Controllers
         [HttpGet("GetProfile/{id}")]
         public async Task<ActionResult<IEnumerable<UserModel>>> GetUserById(string id)
         {
+            try
+            {
+
+
             if (string.IsNullOrWhiteSpace(id))
                 return BadRequest("Id parameter cannot be null or empty.");
 
@@ -119,7 +127,16 @@ namespace ProbuildBackend.Controllers
             if (user == null)
                 return NotFound("No user found with the specified id.");
 
+            user.UserAddresses = _context.UserAddress.Where(p => p.UserId == id && (p.Deleted == false || p.Deleted == null)).ToList();
+
             return Ok(user);
+
+            }
+            catch (Exception ex)
+            {
+
+                throw;
+            }
 
         }
 
@@ -134,7 +151,7 @@ namespace ProbuildBackend.Controllers
                 var user = await _context.Users.FirstOrDefaultAsync(a => a.Id == model.Id);
                 if (user == null)
                     return NotFound("User not found.");
-
+                var oldSubscription = user.SubscriptionPackage;
                 // Update user fields
                 user.UserName = model.Email;
                 user.Email = model.Email;
@@ -157,9 +174,10 @@ namespace ProbuildBackend.Controllers
                 user.JobPreferences = model.JobPreferences;
                 user.DeliveryArea = model.DeliveryArea;
                 user.DeliveryTime = model.DeliveryTime;
-                user.Country = model.Country;
-                user.State = model.State;
-                user.City = model.City;
+                user.CountryNumberCode = model.CountryNumberCode;
+                //user.Country = model.Country;
+                //user.State = model.State;
+                //user.City = model.City;
                 user.SubscriptionPackage = model.SubscriptionPackage;
 
                 // Add address (can be done before save)
@@ -376,6 +394,100 @@ namespace ProbuildBackend.Controllers
                 return StatusCode(500, $"An error occurred while fetching the blob: {ex.Message}");
             }
         }
+        [HttpPost("AddUserAddress")]
+        public async Task<IActionResult> AddUserAddress(UserAddressDTO address)
+        {
+            if (address == null || string.IsNullOrEmpty(address.UserId))
+                return BadRequest("Invalid address payload or missing userId.");
+
+            try
+            {
+
+                var userAddressModel = new UserAddressModel
+                {
+                    StreetNumber = address.StreetNumber,
+                    StreetName = address.StreetName,
+                    State = address.State,
+                    Country = address.Country,
+                    City = address.City,
+                    PostalCode = address.PostalCode,
+                    CountryCode = address.CountryCode,
+                    FormattedAddress = address.FormattedAddress,
+                    GooglePlaceId = address.GooglePlaceId,
+                    Latitude = address.Latitude,
+                    Longitude = address.Longitude,
+                    UserId = address.UserId,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                    AddressType = address.AddressType,
+
+                };
+                _context.UserAddress.Add(userAddressModel);
+                await _context.SaveChangesAsync();
+
+                return Ok(address);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to add user address", details = ex.Message });
+            }
+        }
+
+        [HttpPut("UpdateUserAddress/{id:int}")]
+        public async Task<IActionResult> UpdateUserAddress(int id, [FromBody] UserAddressModel updated)
+        {
+            if (updated == null)
+                return BadRequest("Invalid payload.");
+
+            var existing = await _context.UserAddress.FirstOrDefaultAsync(a => a.Id == id);
+            if (existing == null)
+                return NotFound("Address not found.");
+
+            try
+            {
+                existing.FormattedAddress = updated.FormattedAddress;
+                existing.GooglePlaceId = updated.GooglePlaceId;
+                existing.Latitude = updated.Latitude;
+                existing.Longitude = updated.Longitude;
+                existing.StreetNumber = updated.StreetNumber;
+                existing.StreetName = updated.StreetName;
+                existing.City = updated.City;
+                existing.State = updated.State;
+                existing.PostalCode = updated.PostalCode;
+                existing.Country = updated.Country;
+                existing.CountryCode = updated.CountryCode;
+                existing.UpdatedAt = DateTime.UtcNow;
+                existing.AddressType = updated.AddressType;
+
+                await _context.SaveChangesAsync();
+                return Ok(existing);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to update address", details = ex.Message });
+            }
+        }
+
+        [HttpDelete("DeleteUserAddress/{id:int}")]
+        public async Task<IActionResult> DeleteUserAddress(int id)
+        {
+            var address = await _context.UserAddress.FirstOrDefaultAsync(a => a.Id == id);
+            if (address == null)
+                return NotFound("Address not found.");
+
+            address.Deleted = true;
+
+            try
+            {
+                _context.UserAddress.Add(address);
+                await _context.SaveChangesAsync();
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to delete address", details = ex.Message });
+            }
+        }
         private string GetContentTypeFromFileName(string fileName)
         {
             var extension = Path.GetExtension(fileName).ToLower();
@@ -387,6 +499,15 @@ namespace ProbuildBackend.Controllers
                 ".jpeg" => "image/jpeg",
                 _ => "application/octet-stream"
             };
+        }
+        [HttpGet("AddressTypes")]
+        public IActionResult GetAddressTypes()
+        {
+            var types = _context.AddressType
+                .OrderBy(t => t.DisplayOrder)
+                .ToList();
+
+            return Ok(types);
         }
     }
 }

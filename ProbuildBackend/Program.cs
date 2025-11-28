@@ -44,10 +44,6 @@ builder.Services.AddCors(options =>
 });
 
 
-
-
-
-
 // Configure the token provider for password reset
 builder.Services.Configure<DataProtectionTokenProviderOptions>(options =>
 {

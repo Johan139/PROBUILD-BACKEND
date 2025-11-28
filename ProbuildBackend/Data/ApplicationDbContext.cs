@@ -57,7 +57,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<BidAnalysis> BidAnalyses { get; set; }
     public DbSet<Invitation> Invitations { get; set; }
 
-
+    public DbSet<AddressTypeModel> AddressType { get; set; }
     public DbSet<CountriesModel> Countries { get; set; }
     public DbSet<StatesModel> States { get; set; }
 
@@ -200,6 +200,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             entity.Property(e => e.State).HasColumnName("state");
             entity.Property(e => e.PostalCode).HasColumnName("postal_code");
             entity.Property(e => e.Country).HasColumnName("country");
+            entity.Property(e => e.CountryCode).HasColumnName("country_code");
             entity.Property(e => e.Latitude).HasColumnName("latitude");
             entity.Property(e => e.Longitude).HasColumnName("longitude");
             entity.Property(e => e.FormattedAddress).HasColumnName("formatted_address").HasMaxLength(255).IsRequired(false);

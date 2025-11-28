@@ -39,6 +39,10 @@ namespace ProbuildBackend.Models.DTO
         public decimal? Longitude { get; set; }
         public string FormattedAddress { get; set; }
         public string GooglePlaceId { get; set; }
+        public string CountryNumberCode { get; set; }
+        public string CountryCode { get; set; }
+
+        public string? AddressType { get; set; }
 
         public string? SessionId { get; set; } // Add sessionId to link documents
 
