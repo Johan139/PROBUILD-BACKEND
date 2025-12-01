@@ -12,6 +12,7 @@ using Hangfire;
 using BomWithCosts = ProbuildBackend.Models.BomWithCosts;
 using ProbuildBackend.Interface;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
+using System.Security.Claims;
 namespace ProbuildBackend.Controllers
 {
     [Route("api/[controller]")]
@@ -458,6 +459,16 @@ namespace ProbuildBackend.Controllers
         [RequestSizeLimit(200 * 1024 * 1024)]
         public async Task<IActionResult> PostJob([FromForm] JobDto jobRequest)
         {
+            if (jobRequest == null)
+            {
+                return BadRequest("Job request cannot be null.");
+            }
+
+            if (string.IsNullOrWhiteSpace(jobRequest.ProjectName))
+            {
+                return BadRequest("Project name is required.");
+            }
+
             var strategy = _context.Database.CreateExecutionStrategy();
             return await strategy.ExecuteAsync(
                 async () =>
@@ -870,15 +881,25 @@ namespace ProbuildBackend.Controllers
         [HttpPost("{id}")]
         public async Task<IActionResult> PutJob(int id, [FromBody] JobDto jobDto)
         {
+            if (jobDto == null)
+            {
+                return BadRequest("Job data cannot be null.");
+            }
+
             if (id != jobDto.JobId)
             {
-                return BadRequest();
+                return BadRequest("Job ID in URL does not match job ID in body.");
+            }
+
+            if (string.IsNullOrWhiteSpace(jobDto.ProjectName))
+            {
+                return BadRequest("Project name cannot be empty.");
             }
 
             var existingJob = await _context.Jobs.FindAsync(id);
             if (existingJob == null)
             {
-                return NotFound();
+                return NotFound($"Job with ID {id} not found.");
             }
 
             existingJob.ProjectName = jobDto.ProjectName;
@@ -942,7 +963,11 @@ namespace ProbuildBackend.Controllers
             var job = await _context.Jobs.FindAsync(jobId);
             if (job == null)
             {
-                return NotFound("Job not found.");
+                return NotFound($"Job with ID {jobId} not found.");
+            }
+            if (addressDto == null)
+            {
+                return BadRequest("Address data cannot be null.");
             }
 
             var address = await _context.JobAddresses.FirstOrDefaultAsync(a => a.JobId == jobId);
@@ -1149,6 +1174,67 @@ namespace ProbuildBackend.Controllers
             }
 
             job.Status = "ARCHIVED";
+            job.ArchivedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            // Send Notification
+            var assignments = await _context.JobAssignments
+                .Where(a => a.JobId == jobId)
+                .ToListAsync();
+
+            var recipientIds = assignments.Select(a => a.UserId).ToList();
+            if (!recipientIds.Contains(job.UserId))
+            {
+                recipientIds.Add(job.UserId);
+            }
+
+            // Also notify the current user (archiver) if not already in list
+            var currentUserId = _httpContextAccessor.HttpContext?.User.FindFirstValue("UserId");
+            if (!string.IsNullOrEmpty(currentUserId) && !recipientIds.Contains(currentUserId))
+            {
+                recipientIds.Add(currentUserId);
+            }
+
+            var notification = new NotificationModel
+            {
+                Message = $"Project '{job.ProjectName}' has been archived.",
+                JobId = job.Id,
+                SenderId = currentUserId ?? job.UserId,
+                Timestamp = DateTime.UtcNow,
+                Recipients = recipientIds
+            };
+
+            _context.Notifications.Add(notification);
+            await _context.SaveChangesAsync();
+
+            await _webSocketManager.BroadcastMessageAsync(
+                notification.Message,
+                notification.Recipients
+            );
+
+            return NoContent();
+        }
+
+        [HttpPut("{jobId}/unarchive")]
+        public async Task<IActionResult> UnarchiveJob(int jobId)
+        {
+            var job = await _context.Jobs.FindAsync(jobId);
+
+            if (job == null)
+            {
+                return NotFound();
+            }
+
+            if (job.Status != "ARCHIVED")
+            {
+                return BadRequest("Job is not archived.");
+            }
+
+            // Restore to DRAFT by default, or maybe check progress?
+            // For now, setting to DRAFT allows the user to re-evaluate.
+            job.Status = "DRAFT";
+            job.ArchivedAt = null;
+
             await _context.SaveChangesAsync();
 
             return NoContent();
@@ -1167,6 +1253,7 @@ namespace ProbuildBackend.Controllers
                             ProjectName = j.ProjectName,
                             JobType = j.JobType,
                             Status = j.Status,
+                            ArchivedAt = j.ArchivedAt,
                             // Note: CompletionDate is not in the JobModel, so it's omitted.
                         }
                 )
@@ -1234,6 +1321,51 @@ namespace ProbuildBackend.Controllers
                 return NotFound();
             }
 
+            // Gather recipients for notification before deletion
+            var assignments = await _context.JobAssignments
+                .Where(a => a.JobId == id)
+                .ToListAsync();
+
+            var recipientIds = assignments.Select(a => a.UserId).ToList();
+            if (!recipientIds.Contains(job.UserId))
+            {
+                recipientIds.Add(job.UserId);
+            }
+
+            var currentUserId = _httpContextAccessor.HttpContext?.User.FindFirstValue("UserId");
+            if (!string.IsNullOrEmpty(currentUserId) && !recipientIds.Contains(currentUserId))
+            {
+                recipientIds.Add(currentUserId);
+            }
+
+            // Send SignalR notification only (cannot save to DB as job is being deleted)
+            await _webSocketManager.BroadcastMessageAsync(
+                $"Project '{job.ProjectName}' has been permanently deleted.",
+                recipientIds
+            );
+
+            // Manually delete related entities to ensure clean cleanup
+            var processingResults = await _context.DocumentProcessingResults.Where(x => x.JobId == id).ToListAsync();
+            _context.DocumentProcessingResults.RemoveRange(processingResults);
+
+            var jobAddresses = await _context.JobAddresses.Where(x => x.JobId == id).ToListAsync();
+            _context.JobAddresses.RemoveRange(jobAddresses);
+
+            _context.JobAssignments.RemoveRange(assignments); // Use the list we already fetched
+
+            var jobDocuments = await _context.JobDocuments.Where(x => x.JobId == id).ToListAsync();
+            _context.JobDocuments.RemoveRange(jobDocuments);
+
+            var termsAgreements = await _context.JobsTermsAgreement.Where(x => x.JobId == id).ToListAsync();
+            _context.JobsTermsAgreement.RemoveRange(termsAgreements);
+
+            var jobSubtasks = await _context.JobSubtasks.Where(x => x.JobId == id).ToListAsync();
+            _context.JobSubtasks.RemoveRange(jobSubtasks);
+
+            var notifications = await _context.Notifications.Where(x => x.JobId == id).ToListAsync();
+            _context.Notifications.RemoveRange(notifications);
+
+            // Finally delete the job
             _context.Jobs.Remove(job);
             await _context.SaveChangesAsync();
 

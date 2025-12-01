@@ -56,9 +56,26 @@ builder.Services.AddControllers(options =>
     options.Filters.Add(new RequestSizeLimitAttribute(200 * 1024 * 1024)); // 200MB
 })
 .ConfigureApiBehaviorOptions(options =>
-{
-    options.SuppressModelStateInvalidFilter = true;
-});
+ {
+     options.InvalidModelStateResponseFactory = context =>
+     {
+         var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+         var errors = context.ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage);
+         logger.LogError("Model binding errors occurred: {Errors}", string.Join(", ", errors));
+
+         foreach (var key in context.ModelState.Keys)
+         {
+             var state = context.ModelState[key];
+             if (state.Errors.Any())
+             {
+                 var rawValue = state.RawValue;
+                 logger.LogError("Error for key '{Key}'. Raw value was '{RawValue}'. Errors: {Errors}", key, rawValue, string.Join(", ", state.Errors.Select(e => e.ErrorMessage)));
+             }
+         }
+
+         return new BadRequestObjectResult(context.ModelState);
+     };
+ });
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
@@ -232,6 +249,7 @@ builder.Services.Configure<OcrSettings>(configuration.GetSection("OcrSettings"))
 builder.Services.AddScoped(sp => sp.GetRequiredService<IOptions<OcrSettings>>().Value);
 builder.Services.AddScoped<UserModerationService>();
 builder.Services.AddScoped<IPdfConversionService, PdfConversionService>();
+builder.Services.AddScoped<IBudgetService, BudgetService>();
 
 builder.Services.AddHostedService<TokenCleanupService>();
 //builder.Services.AddHangfireServer();
