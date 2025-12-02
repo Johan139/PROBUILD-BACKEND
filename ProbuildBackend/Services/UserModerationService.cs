@@ -27,8 +27,8 @@ namespace ProbuildBackend.Services
                 return;
             }
 
-            var oneStarRatings = await _context.Ratings
-                .Where(r => r.RatedUserId == userId && r.RatingValue == 1)
+            var oneStarRatings = await _context
+                .Ratings.Where(r => r.RatedUserId == userId && r.RatingValue == 1)
                 .OrderByDescending(r => r.CreatedAt)
                 .Take(3)
                 .ToListAsync();
@@ -41,8 +41,10 @@ namespace ProbuildBackend.Services
                 return;
             }
 
-            var reports = await _context.Reports
-                .Where(r => r.ReportedUserId == userId && r.CreatedAt > DateTime.UtcNow.AddMonths(-1))
+            var reports = await _context
+                .Reports.Where(r =>
+                    r.ReportedUserId == userId && r.CreatedAt > DateTime.UtcNow.AddMonths(-1)
+                )
                 .ToListAsync();
 
             if (reports.Count >= 3)

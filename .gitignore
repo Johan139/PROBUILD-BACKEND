@@ -375,3 +375,6 @@ sonar-project.properties
 /ProbuildBackend/.sonarqube
 /ProbuildBackend/.scannerwork
 /ProbuildBackend/Demo
+
+.config/
+/ProbuildBackend/dotnet-tools.json

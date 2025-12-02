@@ -4,7 +4,6 @@ namespace ProbuildBackend.Models
 {
     public class EmailTemplate
     {
-
         [Key]
         public int TemplateId { get; set; }
 

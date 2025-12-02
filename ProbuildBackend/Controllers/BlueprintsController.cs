@@ -17,10 +17,10 @@ public class BlueprintsController : ControllerBase
     [HttpGet("by-job/{jobId}")]
     public async Task<ActionResult<BlueprintAnalysisDto>> GetBlueprintForJob(int jobId)
     {
-        var blueprint = await _context.BlueprintAnalyses
-            .FirstOrDefaultAsync(b => b.JobId == jobId);
+        var blueprint = await _context.BlueprintAnalyses.FirstOrDefaultAsync(b => b.JobId == jobId);
 
-        if (blueprint == null) return NotFound();
+        if (blueprint == null)
+            return NotFound();
 
         if (blueprint.JobId == null)
         {
@@ -33,9 +33,11 @@ public class BlueprintsController : ControllerBase
             JobId = blueprint.JobId.Value,
             Name = blueprint.OriginalFileName,
             PdfUrl = blueprint.PdfUrl,
-            PageImageUrls = JsonSerializer.Deserialize<List<string>>(blueprint.PageImageUrlsJson) ?? new List<string>(),
+            PageImageUrls =
+                JsonSerializer.Deserialize<List<string>>(blueprint.PageImageUrlsJson)
+                ?? new List<string>(),
             AnalysisJson = blueprint.AnalysisJson,
-            TotalPages = blueprint.TotalPages
+            TotalPages = blueprint.TotalPages,
         };
 
         return Ok(dto);

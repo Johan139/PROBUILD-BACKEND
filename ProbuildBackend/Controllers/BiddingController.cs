@@ -1,10 +1,10 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Services;
-using System.Security.Claims;
 
 namespace ProbuildBackend.Controllers
 {
@@ -18,7 +18,12 @@ namespace ProbuildBackend.Controllers
 
         private readonly ContractService _contractService;
 
-        public BiddingController(ApplicationDbContext context, IHubContext<NotificationHub> hubContext, JobNotificationService jobNotificationService, ContractService contractService)
+        public BiddingController(
+            ApplicationDbContext context,
+            IHubContext<NotificationHub> hubContext,
+            JobNotificationService jobNotificationService,
+            ContractService contractService
+        )
         {
             _context = context;
             _hubContext = hubContext;
@@ -27,7 +32,10 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("{jobId}/start")]
-        public async Task<IActionResult> StartBidding(int jobId, [FromBody] StartBiddingDto startBiddingDto)
+        public async Task<IActionResult> StartBidding(
+            int jobId,
+            [FromBody] StartBiddingDto startBiddingDto
+        )
         {
             var job = await _context.Jobs.FindAsync(jobId);
             if (job == null)
@@ -47,7 +55,10 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("{jobId}/select-finalists")]
-        public async Task<IActionResult> SelectFinalists(int jobId, [FromBody] SelectFinalistsDto selectFinalistsDto)
+        public async Task<IActionResult> SelectFinalists(
+            int jobId,
+            [FromBody] SelectFinalistsDto selectFinalistsDto
+        )
         {
             var job = await _context.Jobs.FindAsync(jobId);
             if (job == null)
@@ -55,8 +66,8 @@ namespace ProbuildBackend.Controllers
                 return NotFound("Job not found.");
             }
 
-            var bids = await _context.Bids
-                .Where(b => b.JobId == jobId && selectFinalistsDto.BidIds.Contains(b.Id))
+            var bids = await _context
+                .Bids.Where(b => b.JobId == jobId && selectFinalistsDto.BidIds.Contains(b.Id))
                 .ToListAsync();
 
             if (bids.Count != selectFinalistsDto.BidIds.Length)
@@ -73,7 +84,11 @@ namespace ProbuildBackend.Controllers
 
             await _context.SaveChangesAsync();
 
-            await SendNotificationAsync(jobId, $"Congratulations! You have been selected as a finalist for the job: {job.ProjectName}", finalistIds);
+            await SendNotificationAsync(
+                jobId,
+                $"Congratulations! You have been selected as a finalist for the job: {job.ProjectName}",
+                finalistIds
+            );
 
             return Ok();
         }
@@ -98,20 +113,32 @@ namespace ProbuildBackend.Controllers
             // Generate a contract
             await _contractService.GenerateContractAsync(jobId, job.UserId, winningBid.UserId);
 
-            var contract = await _contractService.GenerateContractAsync(jobId, job.UserId, winningBid.UserId);
+            var contract = await _contractService.GenerateContractAsync(
+                jobId,
+                job.UserId,
+                winningBid.UserId
+            );
 
             await _context.SaveChangesAsync();
 
-            await SendNotificationAsync(jobId, $"Congratulations! You have been awarded the job: {job.ProjectName}", new List<string> { winningBid.UserId });
+            await SendNotificationAsync(
+                jobId,
+                $"Congratulations! You have been awarded the job: {job.ProjectName}",
+                new List<string> { winningBid.UserId }
+            );
 
             return Ok(new { contractId = contract.Id });
         }
 
         [HttpPost("{jobId}/analyze-bids")]
-        public async Task<IActionResult> AnalyzeBids(int jobId, [FromBody] AnalyzeBidsDto analyzeBidsDto, [FromServices] AiAnalysisService aiAnalysisService)
+        public async Task<IActionResult> AnalyzeBids(
+            int jobId,
+            [FromBody] AnalyzeBidsDto analyzeBidsDto,
+            [FromServices] AiAnalysisService aiAnalysisService
+        )
         {
-            var bids = await _context.Bids
-                .Include(b => b.User)
+            var bids = await _context
+                .Bids.Include(b => b.User)
                 .Where(b => b.JobId == jobId && analyzeBidsDto.BidIds.Contains(b.Id))
                 .ToListAsync();
 
@@ -132,7 +159,7 @@ namespace ProbuildBackend.Controllers
                     JobId = jobId,
                     BidId = bid.Id,
                     AnalysisResult = analysisResult,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = DateTime.UtcNow,
                 };
                 _context.BidAnalyses.Add(bidAnalysis);
             }
@@ -142,15 +169,18 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("generate-feedback")]
-        public async Task<IActionResult> GenerateFeedback([FromBody] GenerateFeedbackDto dto, [FromServices] AiAnalysisService aiAnalysisService)
+        public async Task<IActionResult> GenerateFeedback(
+            [FromBody] GenerateFeedbackDto dto,
+            [FromServices] AiAnalysisService aiAnalysisService
+        )
         {
-            var unsuccessfulBid = await _context.Bids
-                .Include(b => b.User)
+            var unsuccessfulBid = await _context
+                .Bids.Include(b => b.User)
                 .Include(b => b.Job)
                 .FirstOrDefaultAsync(b => b.Id == dto.UnsuccessfulBidId);
 
-            var winningBid = await _context.Bids
-                .Include(b => b.User)
+            var winningBid = await _context
+                .Bids.Include(b => b.User)
                 .Include(b => b.Job)
                 .FirstOrDefaultAsync(b => b.Id == dto.WinningBidId);
 
@@ -159,12 +189,19 @@ namespace ProbuildBackend.Controllers
                 return NotFound("One or both bids could not be found.");
             }
 
-            var feedback = await aiAnalysisService.GenerateFeedbackForUnsuccessfulBidderAsync(unsuccessfulBid, winningBid);
+            var feedback = await aiAnalysisService.GenerateFeedbackForUnsuccessfulBidderAsync(
+                unsuccessfulBid,
+                winningBid
+            );
 
             return Ok(new { feedback });
         }
 
-        private async Task SendNotificationAsync(int jobId, string message, List<string> recipientIds)
+        private async Task SendNotificationAsync(
+            int jobId,
+            string message,
+            List<string> recipientIds
+        )
         {
             var senderId = User.FindFirstValue("UserId") ?? "system";
 
@@ -174,7 +211,7 @@ namespace ProbuildBackend.Controllers
                 Timestamp = DateTime.UtcNow,
                 JobId = jobId,
                 SenderId = senderId,
-                Recipients = recipientIds
+                Recipients = recipientIds,
             };
 
             _context.Notifications.Add(notification);
@@ -182,7 +219,9 @@ namespace ProbuildBackend.Controllers
 
             foreach (var recipientId in recipientIds)
             {
-                await _hubContext.Clients.User(recipientId).SendAsync("ReceiveNotification", notification);
+                await _hubContext
+                    .Clients.User(recipientId)
+                    .SendAsync("ReceiveNotification", notification);
             }
         }
     }

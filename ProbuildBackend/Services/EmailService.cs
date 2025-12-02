@@ -10,7 +10,8 @@ namespace ProbuildBackend.Services
 
         public EmailService(IConfiguration configuration)
         {
-            _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+            _configuration =
+                configuration ?? throw new ArgumentNullException(nameof(configuration));
         }
 
         public async Task SendEmailAsync(string toEmail, string subject, string body)
@@ -38,7 +39,11 @@ namespace ProbuildBackend.Services
                 // Send the email using MailKit
                 using (var client = new SmtpClient())
                 {
-                    await client.ConnectAsync(smtpHost, smtpPort, MailKit.Security.SecureSocketOptions.StartTls);
+                    await client.ConnectAsync(
+                        smtpHost,
+                        smtpPort,
+                        MailKit.Security.SecureSocketOptions.StartTls
+                    );
                     await client.AuthenticateAsync(smtpUsername, smtpPassword);
                     await client.SendAsync(message);
                     await client.DisconnectAsync(true);

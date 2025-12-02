@@ -1,8 +1,8 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models.DTO;
-using System.Security.Claims;
 
 namespace ProbuildBackend.Controllers
 {
@@ -21,7 +21,9 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("perform-selected")]
-        public async Task<IActionResult> PerformSelectedAnalysis([FromBody] AnalysisRequestDto requestDto)
+        public async Task<IActionResult> PerformSelectedAnalysis(
+            [FromBody] AnalysisRequestDto requestDto
+        )
         {
             var userId = User.FindFirstValue("UserId");
             if (string.IsNullOrEmpty(userId))
@@ -29,18 +31,40 @@ namespace ProbuildBackend.Controllers
                 return Unauthorized();
             }
 
-            if (requestDto == null || requestDto.PromptKeys == null || !requestDto.PromptKeys.Any() || requestDto.DocumentUrls == null || !requestDto.DocumentUrls.Any())
+            if (
+                requestDto == null
+                || requestDto.PromptKeys == null
+                || !requestDto.PromptKeys.Any()
+                || requestDto.DocumentUrls == null
+                || !requestDto.DocumentUrls.Any()
+            )
             {
-                _logger.LogWarning("User {UserId} made an invalid analysis request with missing prompts or documents.", userId);
-                return BadRequest(new { message = "Invalid request. Please provide at least one prompt and one document URL." });
+                _logger.LogWarning(
+                    "User {UserId} made an invalid analysis request with missing prompts or documents.",
+                    userId
+                );
+                return BadRequest(
+                    new
+                    {
+                        message = "Invalid request. Please provide at least one prompt and one document URL.",
+                    }
+                );
             }
 
-            _logger.LogInformation("User {UserId} initiated a one-shot 'Selected' analysis with prompts: {PromptKeys}",
-                userId, string.Join(", ", requestDto.PromptKeys));
+            _logger.LogInformation(
+                "User {UserId} initiated a one-shot 'Selected' analysis with prompts: {PromptKeys}",
+                userId,
+                string.Join(", ", requestDto.PromptKeys)
+            );
 
             try
             {
-                var result = await _aiAnalysisService.PerformSelectedAnalysisAsync(userId, requestDto, requestDto.GenerateDetailsWithAi, requestDto.BudgetLevel);
+                var result = await _aiAnalysisService.PerformSelectedAnalysisAsync(
+                    userId,
+                    requestDto,
+                    requestDto.GenerateDetailsWithAi,
+                    requestDto.BudgetLevel
+                );
                 return Ok(new { report = result });
             }
             catch (ArgumentException ex)
@@ -50,22 +74,41 @@ namespace ProbuildBackend.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "An unexpected error occurred during analysis for user {UserId}", userId);
-                return StatusCode(500, new { message = "An unexpected error occurred during the analysis." });
+                _logger.LogError(
+                    ex,
+                    "An unexpected error occurred during analysis for user {UserId}",
+                    userId
+                );
+                return StatusCode(
+                    500,
+                    new { message = "An unexpected error occurred during the analysis." }
+                );
             }
         }
 
         [HttpPost("{conversationId}/rebuttal")]
-        public async Task<IActionResult> PostRebuttal(string conversationId, [FromBody] RebuttalRequest request)
+        public async Task<IActionResult> PostRebuttal(
+            string conversationId,
+            [FromBody] RebuttalRequest request
+        )
         {
-            var response = await _aiAnalysisService.GenerateRebuttalAsync(conversationId, request.ClientQuery);
+            var response = await _aiAnalysisService.GenerateRebuttalAsync(
+                conversationId,
+                request.ClientQuery
+            );
             return Ok(new { Response = response });
         }
 
         [HttpPost("{conversationId}/revision")]
-        public async Task<IActionResult> PostRevision(string conversationId, [FromBody] RevisionRequest request)
+        public async Task<IActionResult> PostRevision(
+            string conversationId,
+            [FromBody] RevisionRequest request
+        )
         {
-            var response = await _aiAnalysisService.GenerateRevisionAsync(conversationId, request.RevisionRequestText);
+            var response = await _aiAnalysisService.GenerateRevisionAsync(
+                conversationId,
+                request.RevisionRequestText
+            );
             return Ok(new { Response = response });
         }
 
@@ -83,30 +126,47 @@ namespace ProbuildBackend.Controllers
                 return Unauthorized();
             }
 
-            var jobDetails = new Models.JobModel
-            {
-                Id = request.JobId,
-                UserId = userId
-            };
+            var jobDetails = new Models.JobModel { Id = request.JobId, UserId = userId };
 
-            var response = await _aiAnalysisService.PerformRenovationAnalysisAsync(userId, request.DocumentUrls, jobDetails, request.GenerateDetailsWithAi, request.UserContext, request.UserContextFileUrl, request.BudgetLevel);
+            var response = await _aiAnalysisService.PerformRenovationAnalysisAsync(
+                userId,
+                request.DocumentUrls,
+                jobDetails,
+                request.GenerateDetailsWithAi,
+                request.UserContext,
+                request.UserContextFileUrl,
+                request.BudgetLevel
+            );
             return Ok(new { report = response });
         }
 
         [HttpPost("comparison/analyze")]
-        public async Task<IActionResult> AnalyzeComparison([FromForm] ComparisonAnalysisRequestDto request, [FromForm] List<IFormFile> pdfFiles)
+        public async Task<IActionResult> AnalyzeComparison(
+            [FromForm] ComparisonAnalysisRequestDto request,
+            [FromForm] List<IFormFile> pdfFiles
+        )
         {
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
             }
 
-            var response = await _aiAnalysisService.PerformComparisonAnalysisAsync(request, pdfFiles);
+            var response = await _aiAnalysisService.PerformComparisonAnalysisAsync(
+                request,
+                pdfFiles
+            );
             return Ok(response);
         }
     }
 
     // Data Transfer Objects (DTOs) for API requests
-    public class RebuttalRequest { public string ClientQuery { get; set; } }
-    public class RevisionRequest { public string RevisionRequestText { get; set; } }
+    public class RebuttalRequest
+    {
+        public string ClientQuery { get; set; }
+    }
+
+    public class RevisionRequest
+    {
+        public string RevisionRequestText { get; set; }
+    }
 }

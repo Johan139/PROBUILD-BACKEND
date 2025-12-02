@@ -7,6 +7,7 @@ namespace ProbuildBackend.Models.DTO
     {
         [Required]
         public string UserId { get; set; }
+
         [Required]
         public ComparisonType ComparisonType { get; set; } // Enum: Vendor, Subcontractor
     }

@@ -10,6 +10,5 @@
         public string StripeSessionId { get; set; }
         public decimal Amount { get; set; }
         public string PackageName { get; set; }
-
     }
 }

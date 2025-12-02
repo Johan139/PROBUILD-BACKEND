@@ -1,14 +1,13 @@
-﻿// File: Services/WebSocketManager.cs
-using ProbuildBackend.Models;
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text;
+using ProbuildBackend.Models;
 
 public class WebSocketManager
 {
     private readonly ApplicationDbContext _context;
     private readonly ConcurrentDictionary<string, WebSocket> _connectedClients = new();
-    private readonly ConcurrentDictionary<string, string> _userWebSocketMap = new(); 
+    private readonly ConcurrentDictionary<string, string> _userWebSocketMap = new();
 
     public WebSocketManager(ApplicationDbContext context)
     {
@@ -25,14 +24,20 @@ public class WebSocketManager
 
         try
         {
-            WebSocketReceiveResult result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+            WebSocketReceiveResult result = await webSocket.ReceiveAsync(
+                new ArraySegment<byte>(buffer),
+                CancellationToken.None
+            );
 
             while (!result.CloseStatus.HasValue)
             {
                 var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
                 Console.WriteLine($"Received WebSocket message: {message}");
 
-                result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+                result = await webSocket.ReceiveAsync(
+                    new ArraySegment<byte>(buffer),
+                    CancellationToken.None
+                );
             }
         }
         catch (Exception ex)
@@ -43,10 +48,13 @@ public class WebSocketManager
         {
             _connectedClients.TryRemove(webSocketId, out _);
             _userWebSocketMap.TryRemove(webSocketId, out _);
-            await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed by server", CancellationToken.None);
+            await webSocket.CloseAsync(
+                WebSocketCloseStatus.NormalClosure,
+                "Closed by server",
+                CancellationToken.None
+            );
         }
     }
-
 
     public async Task BroadcastMessageAsync(string message, List<string> recipients)
     {
@@ -63,8 +71,12 @@ public class WebSocketManager
             {
                 try
                 {
-                    await webSocket.SendAsync(new ArraySegment<byte>(messageBuffer, 0, messageBuffer.Length),
-                        WebSocketMessageType.Text, true, CancellationToken.None);
+                    await webSocket.SendAsync(
+                        new ArraySegment<byte>(messageBuffer, 0, messageBuffer.Length),
+                        WebSocketMessageType.Text,
+                        true,
+                        CancellationToken.None
+                    );
                 }
                 catch (Exception ex)
                 {
@@ -73,7 +85,6 @@ public class WebSocketManager
             }
         }
     }
-
 
     private string GetUserIdFromClient(string clientId)
     {
@@ -86,7 +97,7 @@ public class WebSocketManager
         var notification = new NotificationModel
         {
             Message = notificationData,
-            Timestamp = DateTime.UtcNow
+            Timestamp = DateTime.UtcNow,
         };
 
         _context.Notifications.Add(notification);

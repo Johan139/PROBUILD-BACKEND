@@ -1,12 +1,10 @@
-using Elastic.Apm.Api;
-using Microsoft.AspNetCore.Identity;
+using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using NetTopologySuite.Geometries;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
-using System.Text.Json;
 
 namespace ProbuildBackend.Services
 {
@@ -18,7 +16,13 @@ namespace ProbuildBackend.Services
         private readonly IHubContext<NotificationHub> _hubContext;
         private readonly IEmailSender _emailSender;
 
-        public JobNotificationService(ApplicationDbContext context, EmailService emailService, IHubContext<NotificationHub> hubContext, IEmailTemplateService emailTemplate,IEmailSender emailSender)
+        public JobNotificationService(
+            ApplicationDbContext context,
+            EmailService emailService,
+            IHubContext<NotificationHub> hubContext,
+            IEmailTemplateService emailTemplate,
+            IEmailSender emailSender
+        )
         {
             _context = context;
             _emailService = emailService;
@@ -39,45 +43,72 @@ namespace ProbuildBackend.Services
 
             if (job.BiddingType == "CONNECTIONS_ONLY")
             {
-                var gcConnections = await _context.Connections
-                    .Where(c => c.RequesterId == job.UserId || c.ReceiverId == job.UserId)
+                var gcConnections = await _context
+                    .Connections.Where(c =>
+                        c.RequesterId == job.UserId || c.ReceiverId == job.UserId
+                    )
                     .Select(c => c.RequesterId == job.UserId ? c.ReceiverId : c.RequesterId)
                     .ToListAsync();
 
-                usersToNotify = await _context.Users
-                    .Where(u => u.NotificationEnabled && gcConnections.Contains(u.Id))
+                usersToNotify = await _context
+                    .Users.Where(u => u.NotificationEnabled && gcConnections.Contains(u.Id))
                     .ToListAsync();
             }
             else if (job.BiddingType == "PUBLIC")
             {
                 // Existing users
-                if (job.JobAddressId != null && job.JobAddress != null && job.JobAddress.Latitude.HasValue && job.JobAddress.Longitude.HasValue)
+                if (
+                    job.JobAddressId != null
+                    && job.JobAddress != null
+                    && job.JobAddress.Latitude.HasValue
+                    && job.JobAddress.Longitude.HasValue
+                )
                 {
-                    var jobLocation = new Point((double)job.JobAddress.Longitude.Value, (double)job.JobAddress.Latitude.Value) { SRID = 4326 };
+                    var jobLocation = new Point(
+                        (double)job.JobAddress.Longitude.Value,
+                        (double)job.JobAddress.Latitude.Value
+                    )
+                    {
+                        SRID = 4326,
+                    };
                     var radiusInMeters = 1609.34; // 1 mile in meters
 
-                    usersToNotify = await _context.Users
-                        .Where(u => u.NotificationEnabled)
+                    usersToNotify = await _context
+                        .Users.Where(u => u.NotificationEnabled)
                         .Join(
                             _context.UserAddress,
                             user => user.Id,
                             address => address.UserId,
                             (user, address) => new { User = user, Address = address }
                         )
-                        .Where(x => x.Address.Location.IsWithinDistance(jobLocation, x.User.NotificationRadiusMiles * radiusInMeters))
+                        .Where(x =>
+                            x.Address.Location.IsWithinDistance(
+                                jobLocation,
+                                x.User.NotificationRadiusMiles * radiusInMeters
+                            )
+                        )
                         .Select(x => x.User)
                         .ToListAsync();
 
-                    externalUsersToNotify = await _context.JobNotificationRecipients
-                        .Where(r => r.notification_enabled == true && r.notification_radius_miles.HasValue && r.location_geo.IsWithinDistance(jobLocation, (double)r.notification_radius_miles.Value * radiusInMeters))
+                    externalUsersToNotify = await _context
+                        .JobNotificationRecipients.Where(r =>
+                            r.notification_enabled == true
+                            && r.notification_radius_miles.HasValue
+                            && r.location_geo.IsWithinDistance(
+                                jobLocation,
+                                (double)r.notification_radius_miles.Value * radiusInMeters
+                            )
+                        )
                         .ToListAsync();
                 }
                 else
                 {
                     // Fallback if job location is not available
-                    usersToNotify = await _context.Users.Where(u => u.NotificationEnabled).ToListAsync();
-                    externalUsersToNotify = await _context.JobNotificationRecipients
-                        .Where(r => r.notification_enabled == true)
+                    usersToNotify = await _context
+                        .Users.Where(u => u.NotificationEnabled)
+                        .ToListAsync();
+                    externalUsersToNotify = await _context
+                        .JobNotificationRecipients.Where(r => r.notification_enabled == true)
                         .ToListAsync();
                 }
             }
@@ -86,32 +117,46 @@ namespace ProbuildBackend.Services
 
             // Filter existing users
             var filteredUsers = usersToNotify
-                .Where(u => !string.IsNullOrEmpty(u.Trade) && requiredTrades.Any(trade => u.Trade.Contains(trade)))
+                .Where(u =>
+                    !string.IsNullOrEmpty(u.Trade)
+                    && requiredTrades.Any(trade => u.Trade.Contains(trade))
+                )
                 .Where(u => DoesJobMatchPreferences(u, job))
                 .ToList();
 
             // Filter external users
             var filteredExternalUsers = externalUsersToNotify
-                .Where(r => !string.IsNullOrEmpty(r.subtypes) && requiredTrades.Any(trade => r.subtypes.Contains(trade)))
+                .Where(r =>
+                    !string.IsNullOrEmpty(r.subtypes)
+                    && requiredTrades.Any(trade => r.subtypes.Contains(trade))
+                )
                 .ToList();
 
             // Process existing users
             //string templatePath = Path.Combine(Directory.GetCurrentDirectory(), "..", "PROBUILD-BACKEND", "ProbuildBackend", "EmailTemplates", "NewJobNotification.html");
             //string emailTemplate = await File.ReadAllTextAsync(templatePath);
 
-            var JobNotificationEmail = await _emailTemplate.GetTemplateAsync("NewJobNotificationEmail");
+            var JobNotificationEmail = await _emailTemplate.GetTemplateAsync(
+                "NewJobNotificationEmail"
+            );
 
             foreach (var user in filteredUsers)
             {
-                JobNotificationEmail.Body = JobNotificationEmail.Body
-                    .Replace("{{UserName}}", user.FirstName + " " + user.LastName)
+                JobNotificationEmail.Body = JobNotificationEmail
+                    .Body.Replace("{{UserName}}", user.FirstName + " " + user.LastName)
                     .Replace("{{JobTitle}}", job.ProjectName)
                     .Replace("{{JobLocation}}", job.Address)
-                    .Replace("{{JobDescription}}", "A new job is available that matches your skills.") // TODO:Could in future introduce detailed description in JobModel
+                    .Replace(
+                        "{{JobDescription}}",
+                        "A new job is available that matches your skills."
+                    ) // TODO:Could in future introduce detailed description in JobModel
                     .Replace("{{JobDetailsLink}}", $"https://app.probuildai.com/jobs/{job.Id}")
-                    .Replace("{{UnsubscribeLink}}", $"https://app.probuildai.com/subscription/unsubscribe?email={user.Email}");
+                    .Replace(
+                        "{{UnsubscribeLink}}",
+                        $"https://app.probuildai.com/subscription/unsubscribe?email={user.Email}"
+                    );
 
-                await _emailSender.SendEmailAsync(JobNotificationEmail,user.Email);
+                await _emailSender.SendEmailAsync(JobNotificationEmail, user.Email);
 
                 var notification = new NotificationModel
                 {
@@ -119,31 +164,46 @@ namespace ProbuildBackend.Services
                     Timestamp = DateTime.UtcNow,
                     JobId = job.Id,
                     SenderId = "system",
-                    Recipients = new List<string> { user.Id }
+                    Recipients = new List<string> { user.Id },
                 };
 
                 _context.Notifications.Add(notification);
-                await _hubContext.Clients.User(user.Id).SendAsync("ReceiveNotification", notification);
+                await _hubContext
+                    .Clients.User(user.Id)
+                    .SendAsync("ReceiveNotification", notification);
             }
 
             // Process external users
             var existingUserEmails = new HashSet<string>(filteredUsers.Select(u => u.Email));
             foreach (var externalUser in filteredExternalUsers)
             {
-                if (!string.IsNullOrEmpty(externalUser.email) && !existingUserEmails.Contains(externalUser.email))
+                if (
+                    !string.IsNullOrEmpty(externalUser.email)
+                    && !existingUserEmails.Contains(externalUser.email)
+                )
                 {
-                    JobNotificationEmail.Body = JobNotificationEmail.Body
-                        .Replace("{{UserName}}", externalUser.name)
+                    JobNotificationEmail.Body = JobNotificationEmail
+                        .Body.Replace("{{UserName}}", externalUser.name)
                         .Replace("{{JobTitle}}", job.ProjectName)
                         .Replace("{{JobLocation}}", job.Address)
-                        .Replace("{{JobDescription}}", "A new job is available that matches your skills.")
-                        .Replace("{{JobDetailsLink}}", $"https://app.probuildai.com/register?email={externalUser.email}") // TODO: Link to registration with pre-filled email. Do something similar to the TeamMember flow where we read from the URL query string
-                        .Replace("{{UnsubscribeLink}}", $"https://app.probuildai.com/subscription/unsubscribe?email={externalUser.email}");
+                        .Replace(
+                            "{{JobDescription}}",
+                            "A new job is available that matches your skills."
+                        )
+                        .Replace(
+                            "{{JobDetailsLink}}",
+                            $"https://app.probuildai.com/register?email={externalUser.email}"
+                        ) // TODO: Link to registration with pre-filled email. Do something similar to the TeamMember flow where we read from the URL query string
+                        .Replace(
+                            "{{UnsubscribeLink}}",
+                            $"https://app.probuildai.com/subscription/unsubscribe?email={externalUser.email}"
+                        );
 
                     await _emailSender.SendEmailAsync(JobNotificationEmail, externalUser.email);
 
                     externalUser.last_job_notification = DateTime.UtcNow;
-                    externalUser.total_notifications_sent = (externalUser.total_notifications_sent ?? 0) + 1;
+                    externalUser.total_notifications_sent =
+                        (externalUser.total_notifications_sent ?? 0) + 1;
                     _context.JobNotificationRecipients.Update(externalUser);
                 }
             }
@@ -162,12 +222,20 @@ namespace ProbuildBackend.Services
             {
                 var preferences = JsonSerializer.Deserialize<JobPreferences>(user.JobPreferences);
 
-                if (preferences.Size != null && preferences.Size.Any() && !preferences.Size.Contains(job.BuildingSize.ToString())) // TODO: Assuming BuildingSize is a string for comparison here, need to check actual type
+                if (
+                    preferences.Size != null
+                    && preferences.Size.Any()
+                    && !preferences.Size.Contains(job.BuildingSize.ToString())
+                ) // TODO: Assuming BuildingSize is a string for comparison here, need to check actual type
                 {
                     return false;
                 }
 
-                if (preferences.Type != null && preferences.Type.Any() && !preferences.Type.Contains(job.JobType))
+                if (
+                    preferences.Type != null
+                    && preferences.Type.Any()
+                    && !preferences.Type.Contains(job.JobType)
+                )
                 {
                     return false;
                 }
@@ -176,7 +244,7 @@ namespace ProbuildBackend.Services
             }
             catch (JsonException)
             {
-                // TODO: Log the error 
+                // TODO: Log the error
                 return true; // Or false, depending on what we want to do for invalid JSON
             }
         }

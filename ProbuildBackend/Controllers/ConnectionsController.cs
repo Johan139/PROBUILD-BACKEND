@@ -1,9 +1,9 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
-using System.Security.Claims;
 
 namespace Probuild.Controllers
 {
@@ -16,7 +16,12 @@ namespace Probuild.Controllers
         private readonly IEmailSender _emailSender;
         private readonly IConfiguration _configuration;
 
-        public ConnectionsController(ApplicationDbContext context, IEmailTemplateService emailTemplate, IEmailSender emailSender, IConfiguration configuration)
+        public ConnectionsController(
+            ApplicationDbContext context,
+            IEmailTemplateService emailTemplate,
+            IEmailSender emailSender,
+            IConfiguration configuration
+        )
         {
             _context = context;
             _emailTemplate = emailTemplate;
@@ -33,14 +38,19 @@ namespace Probuild.Controllers
                 return Unauthorized();
             }
 
-            var existingConnection = await _context.Connections
-                .FirstOrDefaultAsync(c =>
-                    (c.RequesterId == requesterId && c.ReceiverId == request.ReceiverId) ||
-                    (c.RequesterId == request.ReceiverId && c.ReceiverId == requesterId));
+            var existingConnection = await _context.Connections.FirstOrDefaultAsync(c =>
+                (c.RequesterId == requesterId && c.ReceiverId == request.ReceiverId)
+                || (c.RequesterId == request.ReceiverId && c.ReceiverId == requesterId)
+            );
 
             if (existingConnection != null)
             {
-                return BadRequest(new { message = "A connection or pending request already exists between these users." });
+                return BadRequest(
+                    new
+                    {
+                        message = "A connection or pending request already exists between these users.",
+                    }
+                );
             }
 
             var connection = new Connection
@@ -50,12 +60,14 @@ namespace Probuild.Controllers
                 ReceiverId = request.ReceiverId,
                 Status = "PENDING",
                 CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                UpdatedAt = DateTime.UtcNow,
             };
             var receiver = _context.Users.Where(u => u.Id == request.ReceiverId).FirstOrDefault();
             var requester = _context.Users.Where(u => u.Id == requesterId).FirstOrDefault();
 
-            var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["FrontEnd:FRONTEND_URL"];
+            var frontendUrl =
+                Environment.GetEnvironmentVariable("FRONTEND_URL")
+                ?? _configuration["FrontEnd:FRONTEND_URL"];
             var callbackURL = $"{frontendUrl}/connections";
 
             _context.Connections.Add(connection);
@@ -63,9 +75,14 @@ namespace Probuild.Controllers
 
             var ConnectionEmail = await _emailTemplate.GetTemplateAsync("ConnectionRequestEmail");
 
-            ConnectionEmail.Subject = ConnectionEmail.Subject.Replace("{{InviterName}}", requester.FirstName + " " + requester.LastName);
+            ConnectionEmail.Subject = ConnectionEmail.Subject.Replace(
+                "{{InviterName}}",
+                requester.FirstName + " " + requester.LastName
+            );
 
-            ConnectionEmail.Body = ConnectionEmail.Body.Replace("{{UserName}}", receiver.FirstName + " " + receiver.LastName).Replace("{{ConnectionLink}}", callbackURL)
+            ConnectionEmail.Body = ConnectionEmail
+                .Body.Replace("{{UserName}}", receiver.FirstName + " " + receiver.LastName)
+                .Replace("{{ConnectionLink}}", callbackURL)
                 .Replace("{{InviterName}}", requester.FirstName + " " + requester.LastName)
                 .Replace("{{Header}}", ConnectionEmail.HeaderHtml)
                 .Replace("{{Footer}}", ConnectionEmail.FooterHtml);
@@ -81,7 +98,11 @@ namespace Probuild.Controllers
             var userId = User.FindFirstValue("UserId");
             var connection = await _context.Connections.FindAsync(connectionId);
 
-            if (connection == null || connection.ReceiverId != userId || connection.Status != "PENDING")
+            if (
+                connection == null
+                || connection.ReceiverId != userId
+                || connection.Status != "PENDING"
+            )
             {
                 return NotFound();
             }
@@ -99,7 +120,11 @@ namespace Probuild.Controllers
             var userId = User.FindFirstValue("UserId");
             var connection = await _context.Connections.FindAsync(connectionId);
 
-            if (connection == null || (connection.ReceiverId != userId && connection.RequesterId != userId) || connection.Status != "PENDING")
+            if (
+                connection == null
+                || (connection.ReceiverId != userId && connection.RequesterId != userId)
+                || connection.Status != "PENDING"
+            )
             {
                 return NotFound();
             }
@@ -116,8 +141,10 @@ namespace Probuild.Controllers
         {
             var userId = User.FindFirstValue("UserId");
 
-            var connections = await _context.Connections
-                .Where(c => (c.RequesterId == userId || c.ReceiverId == userId) && c.Status != "DECLINED")
+            var connections = await _context
+                .Connections.Where(c =>
+                    (c.RequesterId == userId || c.ReceiverId == userId) && c.Status != "DECLINED"
+                )
                 .Select(c => new ConnectionDto
                 {
                     Id = c.Id.ToString(),
@@ -125,12 +152,12 @@ namespace Probuild.Controllers
                     Status = c.Status,
                     IsInSystem = true,
                     RequesterId = c.RequesterId,
-                    ReceiverId = c.ReceiverId
+                    ReceiverId = c.ReceiverId,
                 })
                 .ToListAsync();
 
-            var invitations = await _context.Invitations
-                .Where(i => i.InviterId == userId)
+            var invitations = await _context
+                .Invitations.Where(i => i.InviterId == userId)
                 .Select(i => new ConnectionDto
                 {
                     Id = i.Id.ToString(),
@@ -139,7 +166,7 @@ namespace Probuild.Controllers
                     IsInSystem = false,
                     FirstName = i.FirstName,
                     LastName = i.LastName,
-                    RequesterId = i.InviterId
+                    RequesterId = i.InviterId,
                 })
                 .ToListAsync();
 
@@ -151,8 +178,8 @@ namespace Probuild.Controllers
         public async Task<IActionResult> GetIncomingRequests()
         {
             var userId = User.FindFirstValue("UserId");
-            var requests = await _context.Connections
-                .Where(c => c.ReceiverId == userId && c.Status == "PENDING")
+            var requests = await _context
+                .Connections.Where(c => c.ReceiverId == userId && c.Status == "PENDING")
                 .Include(c => c.Requester)
                 .ToListAsync();
             return Ok(requests);
@@ -162,8 +189,8 @@ namespace Probuild.Controllers
         public async Task<IActionResult> GetOutgoingRequests()
         {
             var userId = User.FindFirstValue("UserId");
-            var requests = await _context.Connections
-                .Where(c => c.RequesterId == userId && c.Status == "PENDING")
+            var requests = await _context
+                .Connections.Where(c => c.RequesterId == userId && c.Status == "PENDING")
                 .Include(c => c.Receiver)
                 .ToListAsync();
             return Ok(requests);
@@ -175,7 +202,10 @@ namespace Probuild.Controllers
             var userId = User.FindFirstValue("UserId");
             var connection = await _context.Connections.FindAsync(connectionId);
 
-            if (connection == null || (connection.RequesterId != userId && connection.ReceiverId != userId))
+            if (
+                connection == null
+                || (connection.RequesterId != userId && connection.ReceiverId != userId)
+            )
             {
                 return NotFound();
             }

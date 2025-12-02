@@ -6,7 +6,7 @@ namespace ProbuildBackend.Models
     {
         [Key]
         public long Id { get; set; }
-        public Guid UserId { get; set; }        // or int
+        public Guid UserId { get; set; } // or int
         public DateTime LoginTime { get; set; }
         public string IpAddress { get; set; }
         public string UserAgent { get; set; }

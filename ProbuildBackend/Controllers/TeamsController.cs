@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
@@ -9,8 +10,8 @@ using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
-using System.Security.Claims;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
+
 namespace ProbuildBackend.Controllers
 {
     [Authorize]
@@ -24,12 +25,15 @@ namespace ProbuildBackend.Controllers
         private readonly IDataProtectionProvider _dataProtectionProvider;
         private readonly IHubContext<NotificationHub> _hubContext;
         public readonly IEmailTemplateService _emailTemplate;
+
         public TeamsController(
             ApplicationDbContext context,
             UserManager<UserModel> userManager,
             IEmailSender emailSender,
             IDataProtectionProvider dataProtectionProvider,
-            IHubContext<NotificationHub> hubContext, IEmailTemplateService emailTemplate)
+            IHubContext<NotificationHub> hubContext,
+            IEmailTemplateService emailTemplate
+        )
         {
             _context = context;
             _userManager = userManager;
@@ -48,7 +52,9 @@ namespace ProbuildBackend.Controllers
                 return Unauthorized();
             }
 
-            var currentUserAsTeamMember = await _context.TeamMembers.FirstOrDefaultAsync(tm => tm.Id == currentUserId);
+            var currentUserAsTeamMember = await _context.TeamMembers.FirstOrDefaultAsync(tm =>
+                tm.Id == currentUserId
+            );
             var inviterId = currentUserAsTeamMember?.InviterId ?? currentUserId;
 
             var inviter = await _userManager.FindByIdAsync(inviterId);
@@ -57,7 +63,9 @@ namespace ProbuildBackend.Controllers
                 return Unauthorized(new { message = "Inviter not found." });
             }
 
-            var existingTeamMember = await _context.TeamMembers.FirstOrDefaultAsync(tm => tm.Email == dto.Email && tm.InviterId == inviterId);
+            var existingTeamMember = await _context.TeamMembers.FirstOrDefaultAsync(tm =>
+                tm.Email == dto.Email && tm.InviterId == inviterId
+            );
             var inviterFullName = $"{inviter.FirstName} {inviter.LastName}";
             TeamMember teamMemberToInvite;
             string emailSubject;
@@ -80,9 +88,20 @@ namespace ProbuildBackend.Controllers
                 {
                     if (existingTeamMember.Role != dto.Role)
                     {
-                        return Conflict(new { message = "A team member with this email already exists with a different role.", existingRole = existingTeamMember.Role });
+                        return Conflict(
+                            new
+                            {
+                                message = "A team member with this email already exists with a different role.",
+                                existingRole = existingTeamMember.Role,
+                            }
+                        );
                     }
-                    return Conflict(new { message = "You have already invited a team member with this email address." });
+                    return Conflict(
+                        new
+                        {
+                            message = "You have already invited a team member with this email address.",
+                        }
+                    );
                 }
             }
             else
@@ -95,7 +114,7 @@ namespace ProbuildBackend.Controllers
                     LastName = dto.LastName,
                     Email = dto.Email,
                     Role = dto.Role,
-                    Status = "Invited"
+                    Status = "Invited",
                 };
                 emailSubject = "You have been invited to join a team on Probuild";
                 _context.TeamMembers.Add(teamMemberToInvite);
@@ -108,15 +127,21 @@ namespace ProbuildBackend.Controllers
             teamMemberToInvite.InvitationToken = token;
             teamMemberToInvite.TokenExpiration = DateTime.UtcNow.AddDays(7);
 
-            var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
+            var frontendUrl =
+                Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
             var callbackUrl = $"{frontendUrl}/register?token={Uri.EscapeDataString(token)}";
 
             var TeamInvitationEmail = await _emailTemplate.GetTemplateAsync("TeamInvitationEmail");
 
-            TeamInvitationEmail.Subject = TeamInvitationEmail.Subject.Replace("{{inviterFullName}}", inviterFullName);
+            TeamInvitationEmail.Subject = TeamInvitationEmail.Subject.Replace(
+                "{{inviterFullName}}",
+                inviterFullName
+            );
 
-            TeamInvitationEmail.Body = TeamInvitationEmail.Body.Replace("{{inviterFullName}}", inviterFullName)
-                .Replace("{{InvitationLink}}", callbackUrl).Replace("{{Header}}", TeamInvitationEmail.HeaderHtml)
+            TeamInvitationEmail.Body = TeamInvitationEmail
+                .Body.Replace("{{inviterFullName}}", inviterFullName)
+                .Replace("{{InvitationLink}}", callbackUrl)
+                .Replace("{{Header}}", TeamInvitationEmail.HeaderHtml)
                 .Replace("{{Footer}}", TeamInvitationEmail.FooterHtml);
             try
             {
@@ -134,13 +159,15 @@ namespace ProbuildBackend.Controllers
                 SenderId = inviterId,
                 Message = $"You have been invited to a team by {inviterFullName}.",
                 Timestamp = DateTime.UtcNow,
-                Recipients = new List<string> { teamMemberToInvite.Id }
+                Recipients = new List<string> { teamMemberToInvite.Id },
             };
             _context.Notifications.Add(notification);
 
             await _context.SaveChangesAsync();
 
-            await _hubContext.Clients.User(teamMemberToInvite.Id).SendAsync("ReceiveNotification", notification);
+            await _hubContext
+                .Clients.User(teamMemberToInvite.Id)
+                .SendAsync("ReceiveNotification", notification);
 
             return Ok(teamMemberToInvite);
         }
@@ -154,11 +181,13 @@ namespace ProbuildBackend.Controllers
                 return Unauthorized();
             }
 
-            var currentUserAsTeamMember = await _context.TeamMembers.FirstOrDefaultAsync(tm => tm.Id == currentUserId);
+            var currentUserAsTeamMember = await _context.TeamMembers.FirstOrDefaultAsync(tm =>
+                tm.Id == currentUserId
+            );
             var inviterIdToUse = currentUserAsTeamMember?.InviterId ?? currentUserId;
 
-            var teamMembers = await _context.TeamMembers
-                .Where(tm => tm.InviterId == inviterIdToUse)
+            var teamMembers = await _context
+                .TeamMembers.Where(tm => tm.InviterId == inviterIdToUse)
                 .ToListAsync();
 
             return Ok(teamMembers);
@@ -167,8 +196,8 @@ namespace ProbuildBackend.Controllers
         [HttpGet("members/user/{userId}")]
         public async Task<IActionResult> GetTeamMembersByUser(string userId)
         {
-            var teamMembers = await _context.TeamMembers
-                .Where(tm => tm.InviterId == userId)
+            var teamMembers = await _context
+                .TeamMembers.Where(tm => tm.InviterId == userId)
                 .ToListAsync();
 
             return Ok(teamMembers);
@@ -201,7 +230,7 @@ namespace ProbuildBackend.Controllers
                 LastName = teamMember.LastName,
                 Email = teamMember.Email,
                 PhoneNumber = teamMember.PhoneNumber,
-                UserType = teamMember.Role
+                UserType = teamMember.Role,
             };
 
             return Ok(userProfile);
@@ -211,7 +240,9 @@ namespace ProbuildBackend.Controllers
         public async Task<IActionResult> DeactivateMember(string id)
         {
             var inviterId = User.FindFirstValue("UserId");
-            var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(m => m.Id == id && m.InviterId == inviterId);
+            var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(m =>
+                m.Id == id && m.InviterId == inviterId
+            );
 
             if (teamMember == null)
             {
@@ -221,9 +252,13 @@ namespace ProbuildBackend.Controllers
             teamMember.Status = "Deactivated";
             await _context.SaveChangesAsync();
 
-            var TeamDeactivateEmail = await _emailTemplate.GetTemplateAsync("AccountDeactivatedEmail");
+            var TeamDeactivateEmail = await _emailTemplate.GetTemplateAsync(
+                "AccountDeactivatedEmail"
+            );
 
-            TeamDeactivateEmail.Body = TeamDeactivateEmail.Body.Replace("{{UserName}}", teamMember.FirstName + " " + teamMember.LastName).Replace("{{Header}}", TeamDeactivateEmail.HeaderHtml)
+            TeamDeactivateEmail.Body = TeamDeactivateEmail
+                .Body.Replace("{{UserName}}", teamMember.FirstName + " " + teamMember.LastName)
+                .Replace("{{Header}}", TeamDeactivateEmail.HeaderHtml)
                 .Replace("{{Footer}}", TeamDeactivateEmail.FooterHtml);
 
             await _emailSender.SendEmailAsync(TeamDeactivateEmail, teamMember.Email);
@@ -237,7 +272,9 @@ namespace ProbuildBackend.Controllers
         {
             // 1. Get the current user's ID
             var inviterId = User.FindFirstValue("UserId");
-            var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(m => m.Id == id && m.InviterId == inviterId);
+            var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(m =>
+                m.Id == id && m.InviterId == inviterId
+            );
 
             if (teamMember == null)
             {
@@ -249,15 +286,18 @@ namespace ProbuildBackend.Controllers
             _context.TeamMembers.Update(teamMember);
             await _context.SaveChangesAsync();
 
+            var TeamReactivateEmail = await _emailTemplate.GetTemplateAsync(
+                "AccountReactivatedEmail"
+            );
 
-            var TeamReactivateEmail = await _emailTemplate.GetTemplateAsync("AccountReactivatedEmail");
-
-            var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
+            var frontendUrl =
+                Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
             var callbackUrl = $"{frontendUrl}/login";
 
-
-            TeamReactivateEmail.Body = TeamReactivateEmail.Body.Replace("{{UserName}}", teamMember.FirstName + " " + teamMember.LastName)
-                                                                             .Replace("{{LoginLink}}", callbackUrl).Replace("{{Header}}", TeamReactivateEmail.HeaderHtml)
+            TeamReactivateEmail.Body = TeamReactivateEmail
+                .Body.Replace("{{UserName}}", teamMember.FirstName + " " + teamMember.LastName)
+                .Replace("{{LoginLink}}", callbackUrl)
+                .Replace("{{Header}}", TeamReactivateEmail.HeaderHtml)
                 .Replace("{{Footer}}", TeamReactivateEmail.FooterHtml);
             // 5. Send a notification email
             await _emailSender.SendEmailAsync(TeamReactivateEmail, teamMember.Email);
@@ -269,7 +309,9 @@ namespace ProbuildBackend.Controllers
         public async Task<IActionResult> DeleteMember(string id)
         {
             var inviterId = User.FindFirstValue("UserId");
-            var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(m => m.Id == id && m.InviterId == inviterId);
+            var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(m =>
+                m.Id == id && m.InviterId == inviterId
+            );
 
             if (teamMember == null)
             {
@@ -279,14 +321,17 @@ namespace ProbuildBackend.Controllers
             teamMember.Status = "Deleted";
             await _context.SaveChangesAsync();
 
+            var TeamDeleteEmail = await _emailTemplate.GetTemplateAsync(
+                "AccountRemovedFromTeamEmail"
+            );
 
-            var TeamDeleteEmail = await _emailTemplate.GetTemplateAsync("AccountRemovedFromTeamEmail");
-
-            var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
+            var frontendUrl =
+                Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
             var callbackUrl = $"{frontendUrl}/login";
 
-
-            TeamDeleteEmail.Body = TeamDeleteEmail.Body.Replace("{{UserName}}", teamMember.FirstName + " " + teamMember.LastName).Replace("{{Header}}", TeamDeleteEmail.HeaderHtml)
+            TeamDeleteEmail.Body = TeamDeleteEmail
+                .Body.Replace("{{UserName}}", teamMember.FirstName + " " + teamMember.LastName)
+                .Replace("{{Header}}", TeamDeleteEmail.HeaderHtml)
                 .Replace("{{Footer}}", TeamDeleteEmail.FooterHtml);
 
             await _emailSender.SendEmailAsync(TeamDeleteEmail, teamMember.Email);
@@ -303,17 +348,19 @@ namespace ProbuildBackend.Controllers
                 return Unauthorized();
             }
 
-            var teamMemberships = await _context.TeamMembers
-                .Where(tm => tm.Email == userEmail)
+            var teamMemberships = await _context
+                .TeamMembers.Where(tm => tm.Email == userEmail)
                 .Include(tm => tm.Inviter)
                 .ToListAsync();
 
-            var teams = teamMemberships.Select(tm => new TeamDto
-            {
-                Id = tm.Id,
-                InviterId = tm.InviterId,
-                InviterName = tm.Inviter.UserName
-            }).ToList();
+            var teams = teamMemberships
+                .Select(tm => new TeamDto
+                {
+                    Id = tm.Id,
+                    InviterId = tm.InviterId,
+                    InviterName = tm.Inviter.UserName,
+                })
+                .ToList();
 
             return Ok(teams);
         }
@@ -321,9 +368,9 @@ namespace ProbuildBackend.Controllers
         [HttpGet("members/{teamMemberId}/permissions")]
         public async Task<IActionResult> GetTeamMemberPermissions(string teamMemberId)
         {
-            var teamMember = await _context.TeamMembers
-                .Include(t => t.TeamMemberPermissions)
-                .ThenInclude(tp => tp.Permission)
+            var teamMember = await _context
+                .TeamMembers.Include(t => t.TeamMemberPermissions)
+                    .ThenInclude(tp => tp.Permission)
                 .FirstOrDefaultAsync(t => t.Id == teamMemberId);
 
             if (teamMember == null)
@@ -331,15 +378,20 @@ namespace ProbuildBackend.Controllers
                 return NotFound();
             }
 
-            var permissions = teamMember.TeamMemberPermissions.Select(tp => tp.Permission.PermissionName.ToCamelCase()).ToList();
+            var permissions = teamMember
+                .TeamMemberPermissions.Select(tp => tp.Permission.PermissionName.ToCamelCase())
+                .ToList();
             return Ok(permissions);
         }
 
         [HttpPut("members/{teamMemberId}/permissions")]
-        public async Task<IActionResult> UpdateTeamMemberPermissions(string teamMemberId, [FromBody] UpdatePermissionsDto dto)
+        public async Task<IActionResult> UpdateTeamMemberPermissions(
+            string teamMemberId,
+            [FromBody] UpdatePermissionsDto dto
+        )
         {
-            var teamMember = await _context.TeamMembers
-                .Include(t => t.TeamMemberPermissions)
+            var teamMember = await _context
+                .TeamMembers.Include(t => t.TeamMemberPermissions)
                 .FirstOrDefaultAsync(t => t.Id == teamMemberId);
 
             if (teamMember == null)
@@ -348,21 +400,26 @@ namespace ProbuildBackend.Controllers
             }
 
             var allPermissions = await _context.Permissions.ToListAsync();
-            var invalidPermissions = dto.Permissions.Except(allPermissions.Select(p => p.PermissionName.ToCamelCase())).ToList();
+            var invalidPermissions = dto
+                .Permissions.Except(allPermissions.Select(p => p.PermissionName.ToCamelCase()))
+                .ToList();
             if (invalidPermissions.Any())
             {
-                return BadRequest(new { message = "Invalid permission names.", invalidPermissions });
+                return BadRequest(
+                    new { message = "Invalid permission names.", invalidPermissions }
+                );
             }
 
             teamMember.TeamMemberPermissions.Clear();
 
             foreach (var permissionName in dto.Permissions)
             {
-                var permission = allPermissions.First(p => p.PermissionName.ToCamelCase() == permissionName);
-                teamMember.TeamMemberPermissions.Add(new TeamMemberPermission
-                {
-                    PermissionId = permission.PermissionId
-                });
+                var permission = allPermissions.First(p =>
+                    p.PermissionName.ToCamelCase() == permissionName
+                );
+                teamMember.TeamMemberPermissions.Add(
+                    new TeamMemberPermission { PermissionId = permission.PermissionId }
+                );
             }
 
             await _context.SaveChangesAsync();
@@ -377,19 +434,31 @@ namespace ProbuildBackend.Controllers
             switch (teamMember.Role)
             {
                 case "Project Manager":
-                    defaultPermissions = await _context.Permissions.Select(p => p.PermissionName).ToListAsync();
+                    defaultPermissions = await _context
+                        .Permissions.Select(p => p.PermissionName)
+                        .ToListAsync();
                     break;
                 case "General Superintendent":
                 case "Assistant Superintendent":
                 case "Superintendent":
-                    defaultPermissions.AddRange(new[] {
-                        "CreateJobTasks", "DeleteJobTasks", "EditJobTasks",
-                        "CreateJobSubtasks", "DeleteJobSubtasks", "EditJobSubtasks",
-                        "CreateSubtaskNotes", "ManageSubtaskNotes"
-                    });
+                    defaultPermissions.AddRange(
+                        new[]
+                        {
+                            "CreateJobTasks",
+                            "DeleteJobTasks",
+                            "EditJobTasks",
+                            "CreateJobSubtasks",
+                            "DeleteJobSubtasks",
+                            "EditJobSubtasks",
+                            "CreateSubtaskNotes",
+                            "ManageSubtaskNotes",
+                        }
+                    );
                     break;
                 case "Foreman":
-                    defaultPermissions.AddRange(new[] { "CreateSubtaskNotes", "ManageSubtaskNotes" });
+                    defaultPermissions.AddRange(
+                        new[] { "CreateSubtaskNotes", "ManageSubtaskNotes" }
+                    );
                     break;
                 case "Chief Estimator":
                     // No default permissions
@@ -398,16 +467,15 @@ namespace ProbuildBackend.Controllers
 
             if (defaultPermissions.Any())
             {
-                var permissions = await _context.Permissions
-                    .Where(p => defaultPermissions.Contains(p.PermissionName))
+                var permissions = await _context
+                    .Permissions.Where(p => defaultPermissions.Contains(p.PermissionName))
                     .ToListAsync();
 
                 foreach (var permission in permissions)
                 {
-                    teamMember.TeamMemberPermissions.Add(new TeamMemberPermission
-                    {
-                        PermissionId = permission.PermissionId
-                    });
+                    teamMember.TeamMemberPermissions.Add(
+                        new TeamMemberPermission { PermissionId = permission.PermissionId }
+                    );
                 }
             }
         }

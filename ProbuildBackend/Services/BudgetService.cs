@@ -5,153 +5,166 @@ using ProbuildBackend.Models;
 
 namespace ProbuildBackend.Services
 {
-  public class BudgetService : IBudgetService
-  {
-    private readonly ApplicationDbContext _context;
-
-    public BudgetService(ApplicationDbContext context)
+    public class BudgetService : IBudgetService
     {
-      _context = context;
-    }
+        private readonly ApplicationDbContext _context;
 
-    public async Task<IEnumerable<BudgetLineItem>> GetBudgetItemsByJobIdAsync(int jobId)
-    {
-      return await _context.BudgetLineItems
-          .Where(b => b.JobId == jobId)
-          .OrderBy(b => b.CreatedAt)
-          .ToListAsync();
-    }
-
-    public async Task<BudgetLineItem> AddBudgetItemAsync(BudgetLineItem item)
-    {
-      _context.BudgetLineItems.Add(item);
-      await _context.SaveChangesAsync();
-      return item;
-    }
-
-    public async Task<IEnumerable<BudgetLineItem>> AddBudgetItemsAsync(IEnumerable<BudgetLineItem> items)
-    {
-      _context.BudgetLineItems.AddRange(items);
-      await _context.SaveChangesAsync();
-      return items;
-    }
-
-    public async Task<BudgetLineItem> UpdateBudgetItemAsync(int id, BudgetLineItem item)
-    {
-      var existing = await _context.BudgetLineItems.FindAsync(id);
-      if (existing == null) return null;
-
-      existing.Category = item.Category;
-      existing.Item = item.Item;
-      existing.Trade = item.Trade;
-      existing.Vendor = item.Vendor;
-      existing.Quantity = item.Quantity;
-      existing.Unit = item.Unit;
-      existing.UnitCost = item.UnitCost;
-      existing.EstimatedCost = item.EstimatedCost;
-      existing.ActualCost = item.ActualCost;
-      existing.ForecastToComplete = item.ForecastToComplete;
-      existing.PercentComplete = item.PercentComplete;
-      existing.Status = item.Status;
-      existing.Notes = item.Notes;
-      existing.UpdatedAt = DateTime.UtcNow;
-
-      await _context.SaveChangesAsync();
-      return existing;
-    }
-
-    public async Task<bool> DeleteBudgetItemAsync(int id)
-    {
-      var item = await _context.BudgetLineItems.FindAsync(id);
-      if (item == null) return false;
-
-      _context.BudgetLineItems.Remove(item);
-      await _context.SaveChangesAsync();
-      return true;
-    }
-
-    public async Task SyncBudgetFromJobAsync(int jobId)
-    {
-      var job = await _context.Jobs.FindAsync(jobId);
-      if (job == null) throw new Exception("Job not found");
-
-      var subtasks = new List<SubtaskDto>();
-
-      // Helper to parse JSON subtasks safely
-      void AddSubtasks(string? json)
-      {
-        if (!string.IsNullOrEmpty(json))
+        public BudgetService(ApplicationDbContext context)
         {
-          try
-          {
-            var parsed = JsonConvert.DeserializeObject<List<SubtaskDto>>(json);
-            if (parsed != null) subtasks.AddRange(parsed);
-          }
-          catch { /* Ignore parsing errors */ }
+            _context = context;
         }
-      }
 
-      AddSubtasks(job.WallStructureSubtask);
-      AddSubtasks(job.WallInsulationSubtask);
-      AddSubtasks(job.RoofStructureSubtask);
-      AddSubtasks(job.RoofTypeSubtask);
-      AddSubtasks(job.RoofInsulationSubtask);
-      AddSubtasks(job.FoundationSubtask);
-      AddSubtasks(job.FinishesSubtask);
-      AddSubtasks(job.ElectricalSupplyNeedsSubtask);
-
-      foreach (var task in subtasks)
-      {
-        // Only sync if cost > 0
-        if (task.Cost <= 0) continue;
-
-        // Check if already synced
-        var existingItem = await _context.BudgetLineItems
-            .FirstOrDefaultAsync(b => b.JobId == jobId && b.Source == "Subtask" && b.SourceId == task.Id.ToString());
-
-        if (existingItem != null)
+        public async Task<IEnumerable<BudgetLineItem>> GetBudgetItemsByJobIdAsync(int jobId)
         {
-          // Update estimated cost if changed
-          if (existingItem.EstimatedCost != task.Cost || existingItem.Quantity != task.Days)
-          {
-            existingItem.EstimatedCost = task.Cost;
-            existingItem.Quantity = task.Days; // Sync Days as Quantity
-            existingItem.UpdatedAt = DateTime.UtcNow;
-          }
+            return await _context
+                .BudgetLineItems.Where(b => b.JobId == jobId)
+                .OrderBy(b => b.CreatedAt)
+                .ToListAsync();
         }
-        else
+
+        public async Task<BudgetLineItem> AddBudgetItemAsync(BudgetLineItem item)
         {
-          var newItem = new BudgetLineItem
-          {
-            JobId = jobId,
-            Category = "Labor", // Default for subtasks
-            Item = task.Task,
-            EstimatedCost = task.Cost,
-            ActualCost = 0,
-            PercentComplete = 0,
-            Status = task.Status ?? "Pending",
-            Source = "Subtask",
-            SourceId = task.Id.ToString(),
-            Trade = "General",
-            Quantity = task.Days, // Sync Days as Quantity
-            Unit = "Days",
-            UnitCost = task.Days > 0 ? task.Cost / task.Days : 0 // Calculate implied rate
-          };
-          _context.BudgetLineItems.Add(newItem);
+            _context.BudgetLineItems.Add(item);
+            await _context.SaveChangesAsync();
+            return item;
         }
-      }
 
-      await _context.SaveChangesAsync();
-    }
+        public async Task<IEnumerable<BudgetLineItem>> AddBudgetItemsAsync(
+            IEnumerable<BudgetLineItem> items
+        )
+        {
+            _context.BudgetLineItems.AddRange(items);
+            await _context.SaveChangesAsync();
+            return items;
+        }
 
-    // Internal DTO for parsing subtasks JSON
-    private class SubtaskDto
-    {
-      public int Id { get; set; }
-      public string Task { get; set; }
-      public decimal Cost { get; set; }
-      public string Status { get; set; }
-      public decimal Days { get; set; } // Map Days from frontend
+        public async Task<BudgetLineItem> UpdateBudgetItemAsync(int id, BudgetLineItem item)
+        {
+            var existing = await _context.BudgetLineItems.FindAsync(id);
+            if (existing == null)
+                return null;
+
+            existing.Category = item.Category;
+            existing.Item = item.Item;
+            existing.Trade = item.Trade;
+            existing.Vendor = item.Vendor;
+            existing.Quantity = item.Quantity;
+            existing.Unit = item.Unit;
+            existing.UnitCost = item.UnitCost;
+            existing.EstimatedCost = item.EstimatedCost;
+            existing.ActualCost = item.ActualCost;
+            existing.ForecastToComplete = item.ForecastToComplete;
+            existing.PercentComplete = item.PercentComplete;
+            existing.Status = item.Status;
+            existing.Notes = item.Notes;
+            existing.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+            return existing;
+        }
+
+        public async Task<bool> DeleteBudgetItemAsync(int id)
+        {
+            var item = await _context.BudgetLineItems.FindAsync(id);
+            if (item == null)
+                return false;
+
+            _context.BudgetLineItems.Remove(item);
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        public async Task SyncBudgetFromJobAsync(int jobId)
+        {
+            var job = await _context.Jobs.FindAsync(jobId);
+            if (job == null)
+                throw new Exception("Job not found");
+
+            var subtasks = new List<SubtaskDto>();
+
+            // Helper to parse JSON subtasks safely
+            void AddSubtasks(string? json)
+            {
+                if (!string.IsNullOrEmpty(json))
+                {
+                    try
+                    {
+                        var parsed = JsonConvert.DeserializeObject<List<SubtaskDto>>(json);
+                        if (parsed != null)
+                            subtasks.AddRange(parsed);
+                    }
+                    catch
+                    { /* Ignore parsing errors */
+                    }
+                }
+            }
+
+            AddSubtasks(job.WallStructureSubtask);
+            AddSubtasks(job.WallInsulationSubtask);
+            AddSubtasks(job.RoofStructureSubtask);
+            AddSubtasks(job.RoofTypeSubtask);
+            AddSubtasks(job.RoofInsulationSubtask);
+            AddSubtasks(job.FoundationSubtask);
+            AddSubtasks(job.FinishesSubtask);
+            AddSubtasks(job.ElectricalSupplyNeedsSubtask);
+
+            foreach (var task in subtasks)
+            {
+                // Only sync if cost > 0
+                if (task.Cost <= 0)
+                    continue;
+
+                // Check if already synced
+                var existingItem = await _context.BudgetLineItems.FirstOrDefaultAsync(b =>
+                    b.JobId == jobId && b.Source == "Subtask" && b.SourceId == task.Id.ToString()
+                );
+
+                if (existingItem != null)
+                {
+                    // Update estimated cost if changed
+                    if (
+                        existingItem.EstimatedCost != task.Cost
+                        || existingItem.Quantity != task.Days
+                    )
+                    {
+                        existingItem.EstimatedCost = task.Cost;
+                        existingItem.Quantity = task.Days; // Sync Days as Quantity
+                        existingItem.UpdatedAt = DateTime.UtcNow;
+                    }
+                }
+                else
+                {
+                    var newItem = new BudgetLineItem
+                    {
+                        JobId = jobId,
+                        Category = "Labor", // Default for subtasks
+                        Item = task.Task,
+                        EstimatedCost = task.Cost,
+                        ActualCost = 0,
+                        PercentComplete = 0,
+                        Status = task.Status ?? "Pending",
+                        Source = "Subtask",
+                        SourceId = task.Id.ToString(),
+                        Trade = "General",
+                        Quantity = task.Days, // Sync Days as Quantity
+                        Unit = "Days",
+                        UnitCost = task.Days > 0 ? task.Cost / task.Days : 0, // Calculate implied rate
+                    };
+                    _context.BudgetLineItems.Add(newItem);
+                }
+            }
+
+            await _context.SaveChangesAsync();
+        }
+
+        // Internal DTO for parsing subtasks JSON
+        private class SubtaskDto
+        {
+            public int Id { get; set; }
+            public string Task { get; set; }
+            public decimal Cost { get; set; }
+            public string Status { get; set; }
+            public decimal Days { get; set; } // Map Days from frontend
+        }
     }
-  }
 }
