@@ -425,7 +425,7 @@ namespace ProbuildBackend.Controllers
                 _context.UserAddress.Add(userAddressModel);
                 await _context.SaveChangesAsync();
 
-                return Ok(address);
+                return Ok(userAddressModel);
             }
             catch (Exception ex)
             {
@@ -475,12 +475,11 @@ namespace ProbuildBackend.Controllers
             if (address == null)
                 return NotFound("Address not found.");
 
-            address.Deleted = true;
+            address.Deleted = true;   // soft delete
 
             try
             {
-                _context.UserAddress.Add(address);
-                await _context.SaveChangesAsync();
+                await _context.SaveChangesAsync(); // EF tracks the entity → UPDATE
                 return NoContent();
             }
             catch (Exception ex)
@@ -488,6 +487,7 @@ namespace ProbuildBackend.Controllers
                 return StatusCode(500, new { error = "Failed to delete address", details = ex.Message });
             }
         }
+
         private string GetContentTypeFromFileName(string fileName)
         {
             var extension = Path.GetExtension(fileName).ToLower();
