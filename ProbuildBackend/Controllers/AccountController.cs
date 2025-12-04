@@ -118,28 +118,26 @@ namespace ProbuildBackend.Controllers
 
                 };
 
-                _context.UserMetaData.Add(userMetaData);
-
                 // Add address (can be done before save)
-                var address = new UserAddressModel
-                {
-                    StreetNumber = model.StreetNumber,
-                    StreetName = model.StreetName,
-                    City = model.City,
-                    State = model.State,
-                    PostalCode = model.PostalCode,
-                    Country = model.Country,
-                    Latitude = model.Latitude,
-                    Longitude = model.Longitude,
-                    FormattedAddress = model.FormattedAddress,
-                    GooglePlaceId = model.GooglePlaceId,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow,
-                    UserId = user.Id,
-                    CountryCode = model.CountryCode,
-                    AddressType = model.AddressType,
-                };
-                _context.UserAddress.Add(address);
+                //var address = new UserAddressModel
+                //{
+                //    StreetNumber = model.StreetNumber,
+                //    StreetName = model.StreetName,
+                //    City = model.City,
+                //    State = model.State,
+                //    PostalCode = model.PostalCode,
+                //    Country = model.Country,
+                //    Latitude = model.Latitude,
+                //    Longitude = model.Longitude,
+                //    FormattedAddress = model.FormattedAddress,
+                //    GooglePlaceId = model.GooglePlaceId,
+                //    CreatedAt = DateTime.UtcNow,
+                //    UpdatedAt = DateTime.UtcNow,
+                //    UserId = user.Id,
+                //    CountryCode = model.CountryCode,
+                //    AddressType = model.AddressType,
+                //};
+                //_context.UserAddress.Add(address);
                 // Only save agreement if user was created successfully
                 var userAgree = new UserTermsAgreementModel
                 {
@@ -159,7 +157,7 @@ namespace ProbuildBackend.Controllers
                 .Replace("{{Footer}}", EmailConfirmation.FooterHtml);
                 await _emailSender.SendEmailAsync(EmailConfirmation, model.Email);
 
-                if(user.SubscriptionPackage.Contains("Trial"))
+                if (user.SubscriptionPackage.Contains("Trial"))
                 {
                     var callbackUrlWelcome = $"{frontendUrl}/dashboard";
                     var WelcomeEmail = await _emailTemplate.GetTemplateAsync("WelcomeTrialEmail");

@@ -491,7 +491,6 @@ namespace ProbuildBackend.Controllers
 
             try
             {
-                _context.UserAddress.Add(address);
                 await _context.SaveChangesAsync();
                 return NoContent();
             }
