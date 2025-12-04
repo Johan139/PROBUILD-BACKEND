@@ -1695,5 +1695,69 @@ namespace ProbuildBackend.Controllers
                 );
             }
         }
+
+        [HttpGet("{jobId}/client-details")]
+        public async Task<ActionResult<ClientDetailsModel>> GetClientDetails(int jobId)
+        {
+            var clientDetails = await _context.ClientDetails.FirstOrDefaultAsync(c =>
+                c.JobId == jobId
+            );
+
+            if (clientDetails == null)
+            {
+                return NotFound("Client details not found for this job.");
+            }
+
+            return Ok(clientDetails);
+        }
+
+        [HttpPut("{jobId}/client-details")]
+        public async Task<IActionResult> UpdateClientDetails(
+            int jobId,
+            [FromBody] ClientDetailsModel clientDetails
+        )
+        {
+            if (clientDetails == null)
+            {
+                return BadRequest("Client details cannot be null.");
+            }
+
+            var existingClientDetails = await _context.ClientDetails.FirstOrDefaultAsync(c =>
+                c.JobId == jobId
+            );
+
+            if (existingClientDetails == null)
+            {
+                // Optionally create if not exists, but usually it should exist if job exists
+                existingClientDetails = new ClientDetailsModel
+                {
+                    JobId = jobId,
+                    CreatedAt = DateTime.UtcNow,
+                };
+                _context.ClientDetails.Add(existingClientDetails);
+            }
+
+            existingClientDetails.FirstName = clientDetails.FirstName;
+            existingClientDetails.LastName = clientDetails.LastName;
+            existingClientDetails.Email = clientDetails.Email;
+            existingClientDetails.Phone = clientDetails.Phone;
+            existingClientDetails.CompanyName = clientDetails.CompanyName;
+            existingClientDetails.Position = clientDetails.Position;
+            existingClientDetails.UpdatedAt = DateTime.UtcNow;
+
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex)
+            {
+                return StatusCode(
+                    500,
+                    $"An error occurred while updating client details: {ex.Message}"
+                );
+            }
+
+            return NoContent();
+        }
     }
 }
