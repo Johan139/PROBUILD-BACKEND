@@ -271,9 +271,6 @@ using (var scope = app.Services.CreateScope())
     {
         app.Logger.LogInformation("No data protection keys found. Creating new key...");
         // This will trigger key creation
-        var dataProtector = scope.ServiceProvider.GetRequiredService<IDataProtectionProvider>()
-            .CreateProtector("Microsoft.AspNetCore.Identity.UserManager<UserModel>");
-        var testData = dataProtector.Protect("test");
         app.Logger.LogInformation("Data protection key created successfully");
     }
     else

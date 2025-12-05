@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Helpers;
 using ProbuildBackend.Interface;
@@ -10,6 +11,7 @@ using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using System.Security.Claims;
+using System.Text;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 namespace ProbuildBackend.Controllers
 {
@@ -63,6 +65,11 @@ namespace ProbuildBackend.Controllers
             string emailSubject;
             bool isReInvite = false;
 
+            var protector = _dataProtectionProvider.CreateProtector("TeamMemberInvitation");
+            var raw = protector.Protect(dto.Email);
+            var safeToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(raw));
+
+
             if (existingTeamMember != null)
             {
                 if (existingTeamMember.Status == "Deleted")
@@ -72,6 +79,8 @@ namespace ProbuildBackend.Controllers
                     existingTeamMember.LastName = dto.LastName;
                     existingTeamMember.Role = dto.Role;
                     teamMemberToInvite = existingTeamMember;
+                    teamMemberToInvite.InvitationToken = safeToken;
+                    teamMemberToInvite.TokenExpiration = DateTime.UtcNow.AddDays(7);
                     emailSubject = "You have been re-invited to join a team on Probuild";
                     _context.TeamMembers.Update(existingTeamMember);
                     isReInvite = true;
@@ -95,7 +104,9 @@ namespace ProbuildBackend.Controllers
                     LastName = dto.LastName,
                     Email = dto.Email,
                     Role = dto.Role,
-                    Status = "Invited"
+                    Status = "Invited",
+                    InvitationToken = safeToken,
+                    TokenExpiration = DateTime.UtcNow.AddDays(7)
                 };
                 emailSubject = "You have been invited to join a team on Probuild";
                 _context.TeamMembers.Add(teamMemberToInvite);
@@ -103,13 +114,33 @@ namespace ProbuildBackend.Controllers
 
             await AssignDefaultPermissions(teamMemberToInvite);
 
-            var protector = _dataProtectionProvider.CreateProtector("TeamMemberInvitation");
-            var token = protector.Protect(dto.Email);
-            teamMemberToInvite.InvitationToken = token;
-            teamMemberToInvite.TokenExpiration = DateTime.UtcNow.AddDays(7);
+
+            var notification = new NotificationModel
+            {
+                SenderId = inviterId,
+                Message = $"You have been invited to a team by {inviterFullName}.",
+                Timestamp = DateTime.UtcNow,
+                Recipients = new List<string> { teamMemberToInvite.Id }
+            };
+            _context.Notifications.Add(notification);
+
+            await _context.SaveChangesAsync();
+
+            var existingUserAccount = await _context.Users.FirstOrDefaultAsync(u => u.Email == dto.Email);
 
             var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
-            var callbackUrl = $"{frontendUrl}/register?token={Uri.EscapeDataString(token)}";
+            string callbackUrl;
+
+            if (existingUserAccount != null)
+            {
+                // User already has a ProBuild account ? send them to accept-invite page
+                callbackUrl = $"{frontendUrl}/accept-invite?token={safeToken}";
+            }
+            else
+            {
+                // User does NOT exist ? send them to team-member registration page
+                callbackUrl = $"{frontendUrl}/register?token={safeToken}";
+            }
 
             var TeamInvitationEmail = await _emailTemplate.GetTemplateAsync("TeamInvitationEmail");
 
@@ -129,16 +160,7 @@ namespace ProbuildBackend.Controllers
                 return StatusCode(500, "Failed to send invitation email.");
             }
 
-            var notification = new NotificationModel
-            {
-                SenderId = inviterId,
-                Message = $"You have been invited to a team by {inviterFullName}.",
-                Timestamp = DateTime.UtcNow,
-                Recipients = new List<string> { teamMemberToInvite.Id }
-            };
-            _context.Notifications.Add(notification);
 
-            await _context.SaveChangesAsync();
 
             await _hubContext.Clients.User(teamMemberToInvite.Id).SendAsync("ReceiveNotification", notification);
 
@@ -410,6 +432,29 @@ namespace ProbuildBackend.Controllers
                     });
                 }
             }
+        }
+        [HttpPost("accept-invitation")]
+        public async Task<IActionResult> AcceptInvitation([FromBody] AcceptInviteDto dto)
+        {
+            var teamMember = await _context.TeamMembers
+                .FirstOrDefaultAsync(tm => tm.InvitationToken == dto.Token &&
+                                           tm.TokenExpiration > DateTime.UtcNow);
+
+            if (teamMember == null)
+                return BadRequest("Invalid or expired token.");
+
+            teamMember.Status = "Registered";
+            teamMember.InvitationToken = null;
+            teamMember.TokenExpiration = null;
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Invitation accepted." });
+        }
+
+        public class AcceptInviteDto
+        {
+            public string Token { get; set; }
         }
     }
 }
