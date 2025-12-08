@@ -1,6 +1,4 @@
 ﻿namespace ProbuildBackend.Interface
 {
-    public interface IBomConsolidator
-    {
-    }
+    public interface IBomConsolidator { }
 }

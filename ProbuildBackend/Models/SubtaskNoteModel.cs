@@ -10,7 +10,7 @@
 
         public string NoteText { get; set; }
 
-        public string CreatedByUserId { get; set; } 
+        public string CreatedByUserId { get; set; }
 
         public DateTime CreatedAt { get; set; }
 
@@ -19,6 +19,10 @@
         public bool Approved { get; set; }
         public bool Rejected { get; set; }
         public bool Archived { get; set; }
-        public string Status => Archived ? "Archived" : Approved ? "Approved" : Rejected ? "Rejected" : "Pending";
+        public string Status =>
+            Archived ? "Archived"
+            : Approved ? "Approved"
+            : Rejected ? "Rejected"
+            : "Pending";
     }
 }

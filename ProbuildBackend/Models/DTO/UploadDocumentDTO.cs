@@ -10,6 +10,5 @@ namespace ProbuildBackend.Models.DTO
         public string? Description { get; set; }
         public string? connectionId { get; set; }
         public string? sessionId { get; set; }
-
     }
 }

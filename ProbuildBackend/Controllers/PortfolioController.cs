@@ -18,8 +18,8 @@ namespace ProbuildBackend.Controllers
         [HttpGet("{userId}")]
         public async Task<IActionResult> GetPortfolio(string userId)
         {
-            var portfolio = await _context.Portfolios
-                .Include(p => p.Jobs)
+            var portfolio = await _context
+                .Portfolios.Include(p => p.Jobs)
                 .FirstOrDefaultAsync(p => p.UserId == userId);
 
             if (portfolio == null)
@@ -33,8 +33,8 @@ namespace ProbuildBackend.Controllers
         [HttpPost("{userId}/add/{jobId}")]
         public async Task<IActionResult> AddJobToPortfolio(string userId, int jobId)
         {
-            var portfolio = await _context.Portfolios
-                .Include(p => p.Jobs)
+            var portfolio = await _context
+                .Portfolios.Include(p => p.Jobs)
                 .FirstOrDefaultAsync(p => p.UserId == userId);
 
             if (portfolio == null)
@@ -58,8 +58,8 @@ namespace ProbuildBackend.Controllers
         [HttpDelete("{userId}/remove/{jobId}")]
         public async Task<IActionResult> RemoveJobFromPortfolio(string userId, int jobId)
         {
-            var portfolio = await _context.Portfolios
-                .Include(p => p.Jobs)
+            var portfolio = await _context
+                .Portfolios.Include(p => p.Jobs)
                 .FirstOrDefaultAsync(p => p.UserId == userId);
 
             if (portfolio == null)

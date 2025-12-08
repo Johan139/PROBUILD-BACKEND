@@ -1,6 +1,4 @@
 ﻿namespace ProbuildBackend.Services
 {
-    public class BomConsolidator
-    {
-    }
+    public class BomConsolidator { }
 }

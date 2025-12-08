@@ -1,8 +1,8 @@
-﻿using Microsoft.AspNetCore.Identity;
+﻿using System.IO.Compression;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Azure;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
@@ -26,7 +26,16 @@ namespace ProbuildBackend.Controllers
         private readonly IEmailService _emailService;
         public IConfiguration _configuration;
 
-        public ProfileController(ApplicationDbContext context, UserManager<UserModel> userManager, IHubContext<ProgressHub> hubContext, IHttpContextAccessor httpContextAccessor = null, AzureBlobService azureBlobservice = null, IEmailService emailService = null,IEmailTemplateService emailTemplate = null, IConfiguration configuration = null)
+        public ProfileController(
+            ApplicationDbContext context,
+            UserManager<UserModel> userManager,
+            IHubContext<ProgressHub> hubContext,
+            IHttpContextAccessor httpContextAccessor = null,
+            AzureBlobService azureBlobservice = null,
+            IEmailService emailService = null,
+            IEmailTemplateService emailTemplate = null,
+            IConfiguration configuration = null
+        )
         {
             _context = context;
             _userManager = userManager;
@@ -47,8 +56,8 @@ namespace ProbuildBackend.Controllers
         [HttpGet("GetDocuments/{UserId}")]
         public async Task<IActionResult> GetUserDocuments(string UserId)
         {
-            var documents = await _context.ProfileDocuments
-                .Where(doc => doc.UserId == UserId)
+            var documents = await _context
+                .ProfileDocuments.Where(doc => doc.UserId == UserId)
                 .ToListAsync();
 
             if (documents == null || !documents.Any())
@@ -62,24 +71,30 @@ namespace ProbuildBackend.Controllers
                 try
                 {
                     var properties = await _azureBlobservice.GetBlobContentAsync(doc.BlobUrl);
-                    documentDetails.Add(new
-                    {
-                        doc.Id,
-                        doc.UserId,
-                        doc.FileName,
-                        Size = properties.Content.Length
-                    });
+                    documentDetails.Add(
+                        new
+                        {
+                            doc.Id,
+                            doc.UserId,
+                            doc.FileName,
+                            Size = properties.Content.Length,
+                        }
+                    );
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Error fetching properties for blob {doc.BlobUrl}: {ex.Message}");
-                    documentDetails.Add(new
-                    {
-                        doc.Id,
-                        doc.UserId,
-                        doc.FileName,
-                        Size = 0L
-                    });
+                    Console.WriteLine(
+                        $"Error fetching properties for blob {doc.BlobUrl}: {ex.Message}"
+                    );
+                    documentDetails.Add(
+                        new
+                        {
+                            doc.Id,
+                            doc.UserId,
+                            doc.FileName,
+                            Size = 0L,
+                        }
+                    );
                 }
             }
 
@@ -87,27 +102,26 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpGet("getusersubscription/{userId}")]
-        public async Task<ActionResult<IEnumerable<PaymentRecord>>> GetUserSubscription(string userId)
+        public async Task<ActionResult<IEnumerable<PaymentRecord>>> GetUserSubscription(
+            string userId
+        )
         {
             try
             {
+                if (string.IsNullOrWhiteSpace(userId))
+                    return BadRequest("Id parameter cannot be null or empty.");
 
-      
-            if (string.IsNullOrWhiteSpace(userId))
-                return BadRequest("Id parameter cannot be null or empty.");
+                var PaymentRecord = await _context
+                    .PaymentRecords.Where(p => p.UserId == userId)
+                    .ToListAsync();
 
-            var PaymentRecord = await _context.PaymentRecords
-                .Where(p => p.UserId == userId).ToListAsync();
+                if (PaymentRecord == null || !PaymentRecord.Any())
+                    return NotFound("No payment record found with the specified user id.");
 
-            if (PaymentRecord == null || !PaymentRecord.Any())
-                return NotFound("No payment record found with the specified user id.");
-
-
-            return Ok(PaymentRecord);
+                return Ok(PaymentRecord);
             }
             catch (Exception ex)
             {
-
                 throw;
             }
         }
@@ -138,27 +152,28 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
+                if (string.IsNullOrWhiteSpace(id))
+                    return BadRequest("Id parameter cannot be null or empty.");
 
-          
-            if (string.IsNullOrWhiteSpace(id))
-                return BadRequest("Id parameter cannot be null or empty.");
+                var user = await _context
+                    .Users.Include(u => u.Portfolio)
+                        .ThenInclude(p => p.Jobs)
+                    .FirstOrDefaultAsync(a => a.Id == id);
 
-            var user = await _context.Users
-                .Include(u => u.Portfolio)
-                .ThenInclude(p => p.Jobs)
-                .FirstOrDefaultAsync(a => a.Id == id);
+                if (user == null)
+                    return NotFound("No user found with the specified id.");
 
-            if (user == null)
-                return NotFound("No user found with the specified id.");
-
-            user.UserAddresses = _context.UserAddress.Where(p => p.UserId == id && (p.Deleted == false || p.Deleted == null)).ToList();
-            return Ok(user);
+                user.UserAddresses = _context
+                    .UserAddress.Where(p =>
+                        p.UserId == id && (p.Deleted == false || p.Deleted == null)
+                    )
+                    .ToList();
+                return Ok(user);
             }
             catch (Exception ex)
             {
                 return StatusCode(500, ex.ToString());
             }
-
         }
 
         [HttpPost("Update")]
@@ -204,12 +219,18 @@ namespace ProbuildBackend.Controllers
                 //user.City = model.City;
                 user.SubscriptionPackage = model.SubscriptionPackage;
 
-                if(oldSubscription != model.SubscriptionPackage)
+                if (oldSubscription != model.SubscriptionPackage)
                 {
                     var upgradeEmail = await _emailTemplate.GetTemplateAsync("ProWelcomeSetup");
-                    var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["FrontEnd:FRONTEND_URL"];
+                    var frontendUrl =
+                        Environment.GetEnvironmentVariable("FRONTEND_URL")
+                        ?? _configuration["FrontEnd:FRONTEND_URL"];
                     var callbackUrl = $"{frontendUrl}/dashboard";
-                    upgradeEmail.Body = upgradeEmail.Body.Replace("{{first_name}}", user.FirstName + " " + user.LastName).Replace("{{Header}}", upgradeEmail.HeaderHtml).Replace("{{Footer}}", upgradeEmail.FooterHtml).Replace("{{setup_url}}", "");
+                    upgradeEmail.Body = upgradeEmail
+                        .Body.Replace("{{first_name}}", user.FirstName + " " + user.LastName)
+                        .Replace("{{Header}}", upgradeEmail.HeaderHtml)
+                        .Replace("{{Footer}}", upgradeEmail.FooterHtml)
+                        .Replace("{{setup_url}}", "");
                 }
 
                 // Add address (can be done before save)
@@ -227,15 +248,17 @@ namespace ProbuildBackend.Controllers
                     GooglePlaceId = model.GooglePlaceId,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow,
-                    UserId = user.Id
+                    UserId = user.Id,
                 };
                 _context.UserAddress.Add(address);
 
                 // Update documents
                 if (!string.IsNullOrEmpty(model.SessionId))
                 {
-                    var documents = await _context.ProfileDocuments
-                        .Where(doc => doc.sessionId == model.SessionId && string.IsNullOrEmpty(doc.UserId))
+                    var documents = await _context
+                        .ProfileDocuments.Where(doc =>
+                            doc.sessionId == model.SessionId && string.IsNullOrEmpty(doc.UserId)
+                        )
                         .ToListAsync();
 
                     foreach (var doc in documents)
@@ -255,7 +278,6 @@ namespace ProbuildBackend.Controllers
                 return BadRequest(new { error = ex.Message });
             }
         }
-
 
         [HttpPost("UploadImage")]
         [RequestSizeLimit(200 * 1024 * 1024)]
@@ -290,13 +312,21 @@ namespace ProbuildBackend.Controllers
                     }
                 }
 
-                string connectionId = jobRequest.connectionId ?? _httpContextAccessor.HttpContext?.Connection.Id
+                string connectionId =
+                    jobRequest.connectionId
+                    ?? _httpContextAccessor.HttpContext?.Connection.Id
                     ?? throw new InvalidOperationException("No valid connectionId provided.");
 
                 Console.WriteLine($"Received connectionId from client: {connectionId}");
-                uploadedFileUrls = await _azureBlobservice.UploadFiles(jobRequest.Blueprint, _hubContext, connectionId);
+                uploadedFileUrls = await _azureBlobservice.UploadFiles(
+                    jobRequest.Blueprint,
+                    _hubContext,
+                    connectionId
+                );
 
-                foreach (var (file, url) in jobRequest.Blueprint.Zip(uploadedFileUrls, (f, u) => (f, u)))
+                foreach (
+                    var (file, url) in jobRequest.Blueprint.Zip(uploadedFileUrls, (f, u) => (f, u))
+                )
                 {
                     string blobFileName = Path.GetFileName(new Uri(url).LocalPath);
 
@@ -310,7 +340,7 @@ namespace ProbuildBackend.Controllers
                         FileName = blobFileName,
                         BlobUrl = url,
                         sessionId = jobRequest.sessionId,
-                        UploadedAt = DateTime.Now
+                        UploadedAt = DateTime.Now,
                     };
                     _context.ProfileDocuments.Add(Document);
                 }
@@ -323,14 +353,17 @@ namespace ProbuildBackend.Controllers
                     FileUrls = uploadedFileUrls,
                     FileNames = jobRequest.Blueprint.Select(f => f.FileName).ToList(),
                     Message = $"Successfully uploaded {jobRequest.Blueprint.Count} file(s)",
-                    BillOfMaterials = null
+                    BillOfMaterials = null,
                 };
 
                 return Ok(response);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Failed to upload files", details = ex.Message });
+                return StatusCode(
+                    500,
+                    new { error = "Failed to upload files", details = ex.Message }
+                );
             }
         }
 
@@ -342,39 +375,48 @@ namespace ProbuildBackend.Controllers
                 var normUserId = (userId ?? "").Trim().ToLower();
 
                 // Get the viewer's email once (for matching AssignedUser by email)
-                var viewerEmail = await _context.Users.AsNoTracking()
+                var viewerEmail = await _context
+                    .Users.AsNoTracking()
                     .Where(u => (u.Id ?? "").ToLower() == normUserId)
                     .Select(u => u.Email)
                     .FirstOrDefaultAsync();
 
                 var normEmail = (viewerEmail ?? "").Trim().ToLower();
 
-                var result = await _context.PaymentRecords.AsNoTracking()
+                var result = await _context
+                    .PaymentRecords.AsNoTracking()
                     .Where(pr =>
                         // payer
                         ((pr.UserId ?? "").ToLower().Trim() == normUserId)
                         // assignee by id
                         || ((pr.AssignedUser ?? "").ToLower().Trim() == normUserId)
                         // assignee by email
-                        || (normEmail != "" && ((pr.AssignedUser ?? "").ToLower().Trim() == normEmail))
+                        || (
+                            normEmail != ""
+                            && ((pr.AssignedUser ?? "").ToLower().Trim() == normEmail)
+                        )
                     )
                     .Select(pr => new UserPaymentRecordDTO
                     {
                         Package = pr.Package,
                         ValidUntil = pr.ValidUntil,
                         Amount = pr.Amount,
-                        AssignedUser = pr.AssignedUser,   // raw AssignedUser (id/email)
+                        AssignedUser = pr.AssignedUser, // raw AssignedUser (id/email)
                         Status = pr.Status,
                         SubscriptionID = pr.SubscriptionID,
 
                         // Resolve a displayable name/email for the assignee (id OR email)
-                        AssignedUserName = _context.Users.AsNoTracking()
+                        AssignedUserName = _context
+                            .Users.AsNoTracking()
                             .Where(u =>
-                                ((u.Id ?? "").ToLower() == (pr.AssignedUser ?? "").ToLower().Trim()) ||
-                                ((u.Email ?? "").ToLower() == (pr.AssignedUser ?? "").ToLower().Trim())
+                                ((u.Id ?? "").ToLower() == (pr.AssignedUser ?? "").ToLower().Trim())
+                                || (
+                                    (u.Email ?? "").ToLower()
+                                    == (pr.AssignedUser ?? "").ToLower().Trim()
+                                )
                             )
-                            .Select(u => u.Email)          // or $"{u.FirstName} {u.LastName}" if you prefer
-                            .FirstOrDefault()
+                            .Select(u => u.Email) // or $"{u.FirstName} {u.LastName}" if you prefer
+                            .FirstOrDefault(),
                     })
                     .ToListAsync();
 
@@ -387,26 +429,29 @@ namespace ProbuildBackend.Controllers
             }
         }
 
-
         [HttpGet("download/{documentId}")]
         public async Task<IActionResult> DownloadBlob(int documentId)
         {
             try
             {
-                var document = await _context.ProfileDocuments
-                    .FirstOrDefaultAsync(doc => doc.Id == documentId);
+                var document = await _context.ProfileDocuments.FirstOrDefaultAsync(doc =>
+                    doc.Id == documentId
+                );
 
                 if (document == null)
                 {
                     return NotFound("Document not found.");
                 }
 
-                var (contentStream, contentType, originalFileName) = await _azureBlobservice.GetBlobContentAsync(document.BlobUrl);
+                var (contentStream, contentType, originalFileName) =
+                    await _azureBlobservice.GetBlobContentAsync(document.BlobUrl);
 
                 if (contentType == "application/gzip")
                 {
                     using var decompressedStream = new MemoryStream();
-                    using (var gzipStream = new GZipStream(contentStream, CompressionMode.Decompress))
+                    using (
+                        var gzipStream = new GZipStream(contentStream, CompressionMode.Decompress)
+                    )
                     {
                         await gzipStream.CopyToAsync(decompressedStream);
                     }
@@ -435,7 +480,6 @@ namespace ProbuildBackend.Controllers
 
             try
             {
-
                 var userAddressModel = new UserAddressModel
                 {
                     StreetNumber = address.StreetNumber,
@@ -453,7 +497,6 @@ namespace ProbuildBackend.Controllers
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow,
                     AddressType = address.AddressType,
-
                 };
                 _context.UserAddress.Add(userAddressModel);
                 await _context.SaveChangesAsync();
@@ -462,12 +505,18 @@ namespace ProbuildBackend.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Failed to add user address", details = ex.Message });
+                return StatusCode(
+                    500,
+                    new { error = "Failed to add user address", details = ex.Message }
+                );
             }
         }
 
         [HttpPut("UpdateUserAddress/{id:int}")]
-        public async Task<IActionResult> UpdateUserAddress(int id, [FromBody] UserAddressModel updated)
+        public async Task<IActionResult> UpdateUserAddress(
+            int id,
+            [FromBody] UserAddressModel updated
+        )
         {
             if (updated == null)
                 return BadRequest("Invalid payload.");
@@ -497,7 +546,10 @@ namespace ProbuildBackend.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Failed to update address", details = ex.Message });
+                return StatusCode(
+                    500,
+                    new { error = "Failed to update address", details = ex.Message }
+                );
             }
         }
 
@@ -517,9 +569,13 @@ namespace ProbuildBackend.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Failed to delete address", details = ex.Message });
+                return StatusCode(
+                    500,
+                    new { error = "Failed to delete address", details = ex.Message }
+                );
             }
         }
+
         private string GetContentTypeFromFileName(string fileName)
         {
             var extension = Path.GetExtension(fileName).ToLower();
@@ -529,15 +585,14 @@ namespace ProbuildBackend.Controllers
                 ".png" => "image/png",
                 ".jpg" => "image/jpeg",
                 ".jpeg" => "image/jpeg",
-                _ => "application/octet-stream"
+                _ => "application/octet-stream",
             };
         }
+
         [HttpGet("AddressTypes")]
         public IActionResult GetAddressTypes()
         {
-            var types = _context.AddressType
-                .OrderBy(t => t.DisplayOrder)
-                .ToList();
+            var types = _context.AddressType.OrderBy(t => t.DisplayOrder).ToList();
 
             return Ok(types);
         }

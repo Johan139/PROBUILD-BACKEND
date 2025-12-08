@@ -1,6 +1,4 @@
 namespace ProbuildBackend.Models.DTO
 {
-    public class UpdateJobAddressDto : AddressDto
-    {
-    }
+    public class UpdateJobAddressDto : AddressDto { }
 }

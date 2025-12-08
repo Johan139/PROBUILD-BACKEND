@@ -1,6 +1,4 @@
 ﻿namespace ProbuildBackend.Interface
 {
-    public class IUserNotifier
-    {
-    }
+    public class IUserNotifier { }
 }

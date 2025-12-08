@@ -1,7 +1,7 @@
-using Microsoft.AspNetCore.Mvc;
-using ProbuildBackend.Models;
-using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using ProbuildBackend.Models;
 
 namespace ProbuildBackend.Controllers
 {
@@ -25,8 +25,9 @@ namespace ProbuildBackend.Controllers
                 return NotFound("Job not found.");
             }
 
-            var winningQuote = await _context.Quotes
-                .FirstOrDefaultAsync(q => q.JobID == jobId && q.Status == "AWARDED");
+            var winningQuote = await _context.Quotes.FirstOrDefaultAsync(q =>
+                q.JobID == jobId && q.Status == "AWARDED"
+            );
 
             if (winningQuote == null)
             {
@@ -38,9 +39,10 @@ namespace ProbuildBackend.Controllers
                 JobId = jobId,
                 GcId = job.UserId,
                 ScVendorId = winningQuote.CreatedID,
-                ContractText = "This is a sample contract text. Replace with actual contract generation logic.",
+                ContractText =
+                    "This is a sample contract text. Replace with actual contract generation logic.",
                 Status = "PENDING",
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.UtcNow,
             };
 
             _context.Contracts.Add(contract);
@@ -61,7 +63,10 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("{contractId}/sign")]
-        public async Task<IActionResult> SignContract(Guid contractId, [FromBody] Models.DTO.SignatureDto signature)
+        public async Task<IActionResult> SignContract(
+            Guid contractId,
+            [FromBody] Models.DTO.SignatureDto signature
+        )
         {
             var contract = await _context.Contracts.FindAsync(contractId);
             if (contract == null)
@@ -84,7 +89,10 @@ namespace ProbuildBackend.Controllers
                 return Forbid();
             }
 
-            if (!string.IsNullOrEmpty(contract.GcSignature) && !string.IsNullOrEmpty(contract.ScVendorSignature))
+            if (
+                !string.IsNullOrEmpty(contract.GcSignature)
+                && !string.IsNullOrEmpty(contract.ScVendorSignature)
+            )
             {
                 contract.Status = "SIGNED";
             }

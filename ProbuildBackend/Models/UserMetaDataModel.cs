@@ -17,6 +17,5 @@ namespace ProbuildBackend.Models
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         public string OperatingSystem { get; set; }
-
     }
 }

@@ -5,6 +5,7 @@ using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Services;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
+
 namespace ProbuildBackend.Controllers
 {
     [ApiController]
@@ -18,7 +19,15 @@ namespace ProbuildBackend.Controllers
         public readonly IEmailTemplateService _emailTemplate;
         private readonly IConfiguration _configuration;
         private readonly AzureBlobService _azureBlobService;
-        public QuotesController(ApplicationDbContext context, IEmailSender emailSender, SubscriptionService subscriptionService, IEmailTemplateService emailTemplate, IConfiguration configuration, AzureBlobService azureBlobService)
+
+        public QuotesController(
+            ApplicationDbContext context,
+            IEmailSender emailSender,
+            SubscriptionService subscriptionService,
+            IEmailTemplateService emailTemplate,
+            IConfiguration configuration,
+            AzureBlobService azureBlobService
+        )
         {
             _context = context;
             _emailSender = emailSender;
@@ -33,8 +42,8 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var quotes = await _context.Quotes
-                    .Where(q => q.CreatedID == id)
+                var quotes = await _context
+                    .Quotes.Where(q => q.CreatedID == id)
                     .GroupBy(q => q.Number)
                     .Select(g => g.OrderByDescending(q => q.Version).First())
                     .ToListAsync();
@@ -42,7 +51,9 @@ namespace ProbuildBackend.Controllers
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error retrieving quotes: {ex.Message}\nStackTrace: {ex.StackTrace}");
+                Console.WriteLine(
+                    $"Error retrieving quotes: {ex.Message}\nStackTrace: {ex.StackTrace}"
+                );
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }
@@ -80,8 +91,7 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var quote = await _context.Quotes
-                    .FirstOrDefaultAsync(q => q.Id == id);
+                var quote = await _context.Quotes.FirstOrDefaultAsync(q => q.Id == id);
                 if (quote == null)
                     return NotFound();
 
@@ -102,8 +112,7 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var quote = await _context.Quotes
-                    .Where(q => q.JobID == jobId).ToListAsync();
+                var quote = await _context.Quotes.Where(q => q.JobID == jobId).ToListAsync();
                 if (quote == null)
                     return NotFound();
 
@@ -121,15 +130,14 @@ namespace ProbuildBackend.Controllers
             try
             {
                 List<Quote> quoteList = new List<Quote>();
-                var jobList = await _context.Jobs
-                    .Where(q => q.UserId == userId).ToListAsync();
+                var jobList = await _context.Jobs.Where(q => q.UserId == userId).ToListAsync();
                 if (jobList == null)
                     return NotFound();
 
                 foreach (var job in jobList)
                 {
-                    var quote = await _context.Quotes
-                        .Where(q => q.JobID == job.Id && q.Status == "Submitted")
+                    var quote = await _context
+                        .Quotes.Where(q => q.JobID == job.Id && q.Status == "Submitted")
                         .GroupBy(q => q.Number)
                         .Select(g => g.OrderByDescending(q => q.Version).First())
                         .ToListAsync();
@@ -154,8 +162,8 @@ namespace ProbuildBackend.Controllers
                 return BadRequest("Invalid quote data or ID mismatch.");
             }
 
-            var existingQuote = await _context.Quotes
-                .Include(q => q.Rows)
+            var existingQuote = await _context
+                .Quotes.Include(q => q.Rows)
                 .Include(q => q.ExtraCosts)
                 .FirstOrDefaultAsync(q => q.Id == id);
 
@@ -190,7 +198,9 @@ namespace ProbuildBackend.Controllers
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error updating quote: {ex.Message}\nStackTrace: {ex.StackTrace}");
+                Console.WriteLine(
+                    $"Error updating quote: {ex.Message}\nStackTrace: {ex.StackTrace}"
+                );
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }
@@ -259,8 +269,8 @@ namespace ProbuildBackend.Controllers
 
             if (quote.JobID != null)
             {
-                var existingQuotes = await _context.Quotes
-                    .Where(q => q.JobID == quote.JobID)
+                var existingQuotes = await _context
+                    .Quotes.Where(q => q.JobID == quote.JobID)
                     .ToListAsync();
 
                 if (existingQuotes.Any())
@@ -298,7 +308,6 @@ namespace ProbuildBackend.Controllers
         [HttpPost("ChangeStatus/{id}")]
         public async Task<ActionResult> ChangeStatus(string id, [FromBody] string newStatus)
         {
-
             if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(newStatus))
                 return BadRequest("Invalid ID or status.");
 
@@ -315,50 +324,75 @@ namespace ProbuildBackend.Controllers
                 string subject;
                 string message;
 
-                var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["FrontEnd:FRONTEND_URL"];
+                var frontendUrl =
+                    Environment.GetEnvironmentVariable("FRONTEND_URL")
+                    ?? _configuration["FrontEnd:FRONTEND_URL"];
                 var callbackURL = $"{frontendUrl}/quote?quoteId=" + quote.Id;
 
-                var quoteUser = await _context.Users.FirstOrDefaultAsync(a => a.Id == quote.CreatedID);
+                var quoteUser = await _context.Users.FirstOrDefaultAsync(a =>
+                    a.Id == quote.CreatedID
+                );
                 switch (quote.Status)
                 {
                     case "Approved":
-                        quoteUser = await _context.Users.FirstOrDefaultAsync(a => a.Id == quote.CreatedID);
+                        quoteUser = await _context.Users.FirstOrDefaultAsync(a =>
+                            a.Id == quote.CreatedID
+                        );
                         if (quoteUser == null)
                             return NotFound("Quote creator not found.");
                         if (string.IsNullOrEmpty(quoteUser.Email))
                             return BadRequest("Quote creator email is missing.");
 
+                        var QuoteApproved = await _emailTemplate.GetTemplateAsync(
+                            "QuoteApprovedEmail"
+                        );
 
-                        var QuoteApproved = await _emailTemplate.GetTemplateAsync("QuoteApprovedEmail");
+                        QuoteApproved.Subject = QuoteApproved.Subject.Replace(
+                            "{{quote.Number}}",
+                            quote.Number
+                        );
 
-                        QuoteApproved.Subject = QuoteApproved.Subject.Replace("{{quote.Number}}", quote.Number);
-
-                        QuoteApproved.Body = QuoteApproved.Body.Replace("{{UserName}}", quoteUser.FirstName + " " + quoteUser.LastName)
+                        QuoteApproved.Body = QuoteApproved
+                            .Body.Replace(
+                                "{{UserName}}",
+                                quoteUser.FirstName + " " + quoteUser.LastName
+                            )
                             .Replace("{{quote.Number}}", quote.Number)
                             .Replace("{{job.ProjectName}}", jobName.ProjectName)
                             .Replace("{{QuoteLink}}", callbackURL)
                             .Replace("{{Header}}", QuoteApproved.HeaderHtml)
-                .Replace("{{Footer}}", QuoteApproved.FooterHtml);
+                            .Replace("{{Footer}}", QuoteApproved.FooterHtml);
 
                         await _emailSender.SendEmailAsync(QuoteApproved, quoteUser.Email);
                         break;
                     case "Rejected":
-                        quoteUser = await _context.Users.FirstOrDefaultAsync(a => a.Id == quote.CreatedID);
+                        quoteUser = await _context.Users.FirstOrDefaultAsync(a =>
+                            a.Id == quote.CreatedID
+                        );
                         if (quoteUser == null)
                             return NotFound("Quote creator not found.");
                         if (string.IsNullOrEmpty(quoteUser.Email))
                             return BadRequest("Quote creator email is missing.");
 
+                        var QuoteDeclined = await _emailTemplate.GetTemplateAsync(
+                            "QuoteDeclinedEmail"
+                        );
 
-                        var QuoteDeclined = await _emailTemplate.GetTemplateAsync("QuoteDeclinedEmail");
+                        QuoteDeclined.Subject = QuoteDeclined.Subject.Replace(
+                            "{{quote.Number}}",
+                            quote.Number
+                        );
 
-                        QuoteDeclined.Subject = QuoteDeclined.Subject.Replace("{{quote.Number}}", quote.Number);
-
-                        QuoteDeclined.Body = QuoteDeclined.Body.Replace("{{UserName}}", quoteUser.FirstName + " " + quoteUser.LastName)
+                        QuoteDeclined.Body = QuoteDeclined
+                            .Body.Replace(
+                                "{{UserName}}",
+                                quoteUser.FirstName + " " + quoteUser.LastName
+                            )
                             .Replace("{{quote.Number}}", quote.Number)
                             .Replace("{{job.ProjectName}}", jobName.ProjectName)
-                            .Replace("{{QuoteLink}}", callbackURL).Replace("{{Header}}", QuoteDeclined.HeaderHtml)
-                .Replace("{{Footer}}", QuoteDeclined.FooterHtml);
+                            .Replace("{{QuoteLink}}", callbackURL)
+                            .Replace("{{Header}}", QuoteDeclined.HeaderHtml)
+                            .Replace("{{Footer}}", QuoteDeclined.FooterHtml);
 
                         await _emailSender.SendEmailAsync(QuoteDeclined, quoteUser.Email);
                         break;
@@ -367,26 +401,41 @@ namespace ProbuildBackend.Controllers
                         var createBidResult = await CreateBidFromQuote(quote);
                         if (createBidResult is not OkResult)
                         {
-                            return StatusCode(500, "Failed to create a corresponding bid for the quote.");
+                            return StatusCode(
+                                500,
+                                "Failed to create a corresponding bid for the quote."
+                            );
                         }
 
                         var job = await _context.Jobs.FirstOrDefaultAsync(j => j.Id == quote.JobID);
                         if (job == null)
                             return NotFound("Linked job not found.");
 
-                        var jobCreator = await _context.Users.FirstOrDefaultAsync(u => u.Id == job.UserId);
+                        var jobCreator = await _context.Users.FirstOrDefaultAsync(u =>
+                            u.Id == job.UserId
+                        );
                         if (jobCreator == null || string.IsNullOrEmpty(jobCreator.Email))
                             return BadRequest("Job creator not found or email is missing.");
 
-                        var QuoteNew = await _emailTemplate.GetTemplateAsync("NewQuoteSubmittedEmail");
+                        var QuoteNew = await _emailTemplate.GetTemplateAsync(
+                            "NewQuoteSubmittedEmail"
+                        );
 
-                        QuoteNew.Subject = QuoteNew.Subject.Replace("{{job.ProjectName}}", job.ProjectName);
+                        QuoteNew.Subject = QuoteNew.Subject.Replace(
+                            "{{job.ProjectName}}",
+                            job.ProjectName
+                        );
 
-                        QuoteNew.Body = QuoteNew.Body.Replace("{{UserName}}", jobCreator.FirstName + " " + jobCreator.LastName)
+                        QuoteNew.Body = QuoteNew
+                            .Body.Replace(
+                                "{{UserName}}",
+                                jobCreator.FirstName + " " + jobCreator.LastName
+                            )
                             .Replace("{{quote.Number}}", quote.Number)
                             .Replace("{{job.ProjectName}}", job.ProjectName)
-                            .Replace("{{QuoteLink}}", callbackURL).Replace("{{Header}}", QuoteNew.HeaderHtml)
-                .Replace("{{Footer}}", QuoteNew.FooterHtml);
+                            .Replace("{{QuoteLink}}", callbackURL)
+                            .Replace("{{Header}}", QuoteNew.HeaderHtml)
+                            .Replace("{{Footer}}", QuoteNew.FooterHtml);
 
                         await _emailSender.SendEmailAsync(QuoteNew, jobCreator.Email);
                         break;
@@ -420,7 +469,7 @@ namespace ProbuildBackend.Controllers
                 Task = job.ProjectName,
                 Duration = 0,
                 DocumentUrl = null,
-                QuoteId = quote.Id
+                QuoteId = quote.Id,
             };
 
             _context.Bids.Add(bid);
@@ -433,7 +482,11 @@ namespace ProbuildBackend.Controllers
         [RequestSizeLimit(200 * 1024 * 1024)]
         public async Task<IActionResult> Upload([FromForm] UploadQuoteDto uploadQuoteDto)
         {
-            if (uploadQuoteDto == null || uploadQuoteDto.Quote == null || !uploadQuoteDto.Quote.Any())
+            if (
+                uploadQuoteDto == null
+                || uploadQuoteDto.Quote == null
+                || !uploadQuoteDto.Quote.Any()
+            )
             {
                 return BadRequest(new { error = "No quote file provided" });
             }
@@ -444,7 +497,9 @@ namespace ProbuildBackend.Controllers
 
             if (!allowedExtensions.Contains(extension))
             {
-                return BadRequest(new { error = "Invalid file type. Only PDF files are allowed for quotes." });
+                return BadRequest(
+                    new { error = "Invalid file type. Only PDF files are allowed for quotes." }
+                );
             }
 
             var uploadedFileUrls = await _azureBlobService.UploadFiles(
@@ -462,16 +517,13 @@ namespace ProbuildBackend.Controllers
                     FileName = Path.GetFileName(new Uri(fileUrl).LocalPath),
                     BlobUrl = fileUrl,
                     SessionId = uploadQuoteDto.sessionId,
-                    UploadedAt = DateTime.Now
+                    UploadedAt = DateTime.Now,
                 };
                 _context.JobDocuments.Add(jobDocument);
                 await _context.SaveChangesAsync();
             }
 
-            var response = new
-            {
-                FileUrl = fileUrl
-            };
+            var response = new { FileUrl = fileUrl };
 
             return Ok(response);
         }

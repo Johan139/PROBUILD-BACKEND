@@ -14,6 +14,6 @@ namespace ProbuildBackend.Models.Enums
         /// <summary>
         /// A specialized analysis for renovation projects, using the dedicated renovation persona.
         /// </summary>
-        Renovation
+        Renovation,
     }
 }

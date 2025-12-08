@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using ProbuildBackend.Models;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
+
 namespace ProbuildBackend.Controllers
 {
     [ApiController]
@@ -15,9 +16,15 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("send-subscription-confirmation")]
-        public async Task<IActionResult> SendSubscriptionConfirmation([FromBody] SubscriptionModel data)
+        public async Task<IActionResult> SendSubscriptionConfirmation(
+            [FromBody] SubscriptionModel data
+        )
         {
-            var templatePath = Path.Combine(Directory.GetCurrentDirectory(), "Templates", "subscription-confirmation.html");
+            var templatePath = Path.Combine(
+                Directory.GetCurrentDirectory(),
+                "Templates",
+                "subscription-confirmation.html"
+            );
             var templateContent = await System.IO.File.ReadAllTextAsync(templatePath);
 
             // Replace placeholders with actual values

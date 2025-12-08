@@ -1,6 +1,4 @@
 ﻿namespace ProbuildBackend.Models
 {
-    public class JobRole
-    {
-    }
+    public class JobRole { }
 }

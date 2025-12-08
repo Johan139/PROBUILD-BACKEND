@@ -1,7 +1,7 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using System.Security.Claims;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Models;
-using System.Security.Claims;
 
 namespace ProbuildBackend.Controllers
 {
@@ -17,7 +17,11 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost]
-        public async Task<IActionResult> UploadLogo([FromForm] IFormFile file, [FromForm] string type, [FromForm] string uploadedBy)
+        public async Task<IActionResult> UploadLogo(
+            [FromForm] IFormFile file,
+            [FromForm] string type,
+            [FromForm] string uploadedBy
+        )
         {
             try
             {
@@ -74,7 +78,9 @@ namespace ProbuildBackend.Controllers
                 var base64 = Convert.ToBase64String(ms.ToArray());
                 var url = $"data:{file.ContentType};base64,{base64}";
 
-                var existingLogo = await _context.Logos.FirstOrDefaultAsync(l => l.UploadedBy == userId && l.Type == "user_logo");
+                var existingLogo = await _context.Logos.FirstOrDefaultAsync(l =>
+                    l.UploadedBy == userId && l.Type == "user_logo"
+                );
 
                 if (existingLogo != null)
                 {
@@ -116,7 +122,9 @@ namespace ProbuildBackend.Controllers
                 return Unauthorized();
             }
 
-            var logo = await _context.Logos.FirstOrDefaultAsync(l => l.UploadedBy == userId && l.Type == "user_logo");
+            var logo = await _context.Logos.FirstOrDefaultAsync(l =>
+                l.UploadedBy == userId && l.Type == "user_logo"
+            );
             if (logo == null)
                 return NotFound();
 
@@ -132,7 +140,9 @@ namespace ProbuildBackend.Controllers
                 return Unauthorized();
             }
 
-            var logo = await _context.Logos.FirstOrDefaultAsync(l => l.UploadedBy == userId && l.Type == "user_logo");
+            var logo = await _context.Logos.FirstOrDefaultAsync(l =>
+                l.UploadedBy == userId && l.Type == "user_logo"
+            );
             if (logo != null)
             {
                 _context.Logos.Remove(logo);

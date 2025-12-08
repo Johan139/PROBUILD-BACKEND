@@ -8,14 +8,19 @@ public static class MimeTypeValidator
     {
         if (fileBytes == null || fileBytes.Length < 4)
         {
-            throw new ArgumentException("File byte array is null or too short to determine MIME type.");
+            throw new ArgumentException(
+                "File byte array is null or too short to determine MIME type."
+            );
         }
 
         var header = fileBytes.Take(4).ToArray();
 
-        if (header.SequenceEqual(Jpeg)) return ("image/jpeg", ".jpg");
-        if (header.SequenceEqual(Png)) return ("image/png", ".png");
-        if (header.SequenceEqual(Pdf)) return ("application/pdf", ".pdf");
+        if (header.SequenceEqual(Jpeg))
+            return ("image/jpeg", ".jpg");
+        if (header.SequenceEqual(Png))
+            return ("image/png", ".png");
+        if (header.SequenceEqual(Pdf))
+            return ("application/pdf", ".pdf");
 
         // Add more types as needed
 

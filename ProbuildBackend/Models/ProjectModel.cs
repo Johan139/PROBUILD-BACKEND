@@ -32,7 +32,6 @@
         public string? RoofStructureSubtask { get; set; }
         public string? RoofStructureStatus { get; set; }
 
-
         public string? SubContractorRoofStructureId { get; set; }
         public UserModel? SubContractorRoofStructure { get; set; }
 
@@ -40,15 +39,12 @@
         public string? RoofTypeSubtask { get; set; }
         public string? RoofTypeStatus { get; set; }
 
-
         public string? SubContractorRoofTypeId { get; set; }
         public UserModel? SubContractorRoofType { get; set; }
-
 
         public string? RoofInsulation { get; set; }
         public string? RoofInsulationSubtask { get; set; }
         public string? RoofInsulationStatus { get; set; }
-
 
         public string? SubContractorRoofInsulationId { get; set; }
         public UserModel? SubContractorRoofInsulation { get; set; }
@@ -57,7 +53,6 @@
         public string? FoundationSubtask { get; set; }
         public string? FoundationStatus { get; set; }
 
-
         public string? SubContractorFoundationId { get; set; }
         public UserModel? SubContractorFoundation { get; set; }
 
@@ -65,15 +60,12 @@
         public string? FinishesSubtask { get; set; }
         public string? FinishesStatus { get; set; }
 
-
-
         public string? SubContractorFinishesId { get; set; }
         public UserModel? SubContractorFinishes { get; set; }
 
         public string? ElectricalSupplyNeeds { get; set; }
         public string? ElectricalSupplyNeedsSubtask { get; set; }
         public string? ElectricalStatus { get; set; }
-
 
         public string? SubContractorElectricalSupplyNeedsId { get; set; }
         public UserModel? SubContractorElectricalSupplyNeeds { get; set; }

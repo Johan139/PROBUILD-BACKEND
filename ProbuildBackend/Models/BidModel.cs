@@ -30,8 +30,7 @@ namespace ProbuildBackend.Models
         public string? DocumentUrl { get; set; }
         public string? QuoteId { get; set; }
 
-        // Prevent circular loops
-        [JsonIgnore]
+        [ForeignKey("QuoteId")]
         public Quote? Quote { get; set; }
     }
 }

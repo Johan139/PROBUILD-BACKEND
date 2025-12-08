@@ -1,13 +1,13 @@
+using System.IO.Compression;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Helpers;
+using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Services;
-using System.IO.Compression;
-using ProbuildBackend.Interface;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 
 namespace ProbuildBackend.Controllers
@@ -53,13 +53,14 @@ namespace ProbuildBackend.Controllers
             _webSocketManager = webSocketManager;
             _emailTemplate = emailTemplate;
         }
+
         [HttpGet("downloadNote/{documentId}")]
         public async Task<IActionResult> DownloadNoteBlob(int documentId)
         {
             try
             {
-                var document = await _context.SubtaskNoteDocument.FirstOrDefaultAsync(
-                    doc => doc.Id == documentId
+                var document = await _context.SubtaskNoteDocument.FirstOrDefaultAsync(doc =>
+                    doc.Id == documentId
                 );
 
                 if (document == null)
@@ -160,7 +161,7 @@ namespace ProbuildBackend.Controllers
                         FileName = blobFileName,
                         BlobUrl = url,
                         sessionId = jobRequest.sessionId,
-                        UploadedAt = DateTime.Now
+                        UploadedAt = DateTime.Now,
                     };
                     _context.SubtaskNoteDocument.Add(NoteDocument);
                 }
@@ -173,7 +174,7 @@ namespace ProbuildBackend.Controllers
                     FileUrls = uploadedFileUrls,
                     FileNames = jobRequest.Blueprint.Select(f => f.FileName).ToList(),
                     Message = $"Successfully uploaded {jobRequest.Blueprint.Count} file(s)",
-                    BillOfMaterials = null
+                    BillOfMaterials = null,
                 };
 
                 return Ok(response);
@@ -192,8 +193,8 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var assignedNotes = await _context.SubtaskNoteUser
-                    .Where(link => link.UserId == userId)
+                var assignedNotes = await _context
+                    .SubtaskNoteUser.Where(link => link.UserId == userId)
                     .Select(link => link.SubtaskNoteId)
                     .ToListAsync();
 
@@ -216,7 +217,7 @@ namespace ProbuildBackend.Controllers
                         note.ModifiedAt,
                         note.Approved,
                         note.Rejected,
-                        note.Archived
+                        note.Archived,
                     }
                 ).ToListAsync();
 
@@ -231,21 +232,18 @@ namespace ProbuildBackend.Controllers
                         ProjectName = g.First().note.ProjectName,
                         CreatedAt = g.Min(x => x.note.CreatedAt),
                         SubtaskName = g.First().subtask.Task,
-                        Notes = g.Select(
-                                x =>
-                                    new
-                                    {
-                                        x.note.Id,
-                                        x.note.NoteText,
-                                        x.note.CreatedByUserId,
-                                        x.note.CreatedAt,
-                                        x.note.ModifiedAt,
-                                        x.note.Approved,
-                                        x.note.Rejected,
-                                        x.note.Archived
-                                    }
-                            )
-                            .ToList()
+                        Notes = g.Select(x => new
+                            {
+                                x.note.Id,
+                                x.note.NoteText,
+                                x.note.CreatedByUserId,
+                                x.note.CreatedAt,
+                                x.note.ModifiedAt,
+                                x.note.Approved,
+                                x.note.Rejected,
+                                x.note.Archived,
+                            })
+                            .ToList(),
                     }
                 ).ToList();
 
@@ -265,8 +263,8 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var assignedNotes = await _context.SubtaskNoteUser
-                    .Where(link => link.UserId == userId)
+                var assignedNotes = await _context
+                    .SubtaskNoteUser.Where(link => link.UserId == userId)
                     .Select(link => link.SubtaskNoteId)
                     .ToListAsync();
 
@@ -289,7 +287,7 @@ namespace ProbuildBackend.Controllers
                         note.ModifiedAt,
                         note.Approved,
                         note.Rejected,
-                        note.Archived
+                        note.Archived,
                     }
                 ).ToListAsync();
 
@@ -304,21 +302,18 @@ namespace ProbuildBackend.Controllers
                         ProjectName = g.First().note.ProjectName,
                         CreatedAt = g.Min(x => x.note.CreatedAt),
                         SubtaskName = g.First().subtask.Task,
-                        Notes = g.Select(
-                                x =>
-                                    new
-                                    {
-                                        x.note.Id,
-                                        x.note.NoteText,
-                                        x.note.CreatedByUserId,
-                                        x.note.CreatedAt,
-                                        x.note.ModifiedAt,
-                                        x.note.Approved,
-                                        x.note.Rejected,
-                                        x.note.Archived
-                                    }
-                            )
-                            .ToList()
+                        Notes = g.Select(x => new
+                            {
+                                x.note.Id,
+                                x.note.NoteText,
+                                x.note.CreatedByUserId,
+                                x.note.CreatedAt,
+                                x.note.ModifiedAt,
+                                x.note.Approved,
+                                x.note.Rejected,
+                                x.note.Archived,
+                            })
+                            .ToList(),
                     }
                 ).ToList();
 
@@ -338,8 +333,8 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var assignedJobIds = await _context.JobAssignments
-                    .Where(ja => ja.UserId == userId)
+                var assignedJobIds = await _context
+                    .JobAssignments.Where(ja => ja.UserId == userId)
                     .Select(ja => ja.JobId)
                     .Distinct()
                     .ToListAsync();
@@ -367,38 +362,32 @@ namespace ProbuildBackend.Controllers
                         note.ModifiedAt,
                         note.Approved,
                         note.Rejected,
-                        note.Archived
+                        note.Archived,
                     }
                 ).ToListAsync();
 
                 var groupedNotes = notesWithDetails
                     .GroupBy(n => new { n.JobId, n.SubtaskName })
-                    .Select(
-                        g =>
-                            new
+                    .Select(g => new
+                    {
+                        JobId = g.Key.JobId,
+                        SubtaskName = g.Key.SubtaskName,
+                        ProjectName = g.First().ProjectName,
+                        JobSubtaskId = g.First().JobSubtaskId,
+                        CreatedAt = g.Min(x => x.CreatedAt),
+                        Notes = g.Select(x => new
                             {
-                                JobId = g.Key.JobId,
-                                SubtaskName = g.Key.SubtaskName,
-                                ProjectName = g.First().ProjectName,
-                                JobSubtaskId = g.First().JobSubtaskId,
-                                CreatedAt = g.Min(x => x.CreatedAt),
-                                Notes = g.Select(
-                                        x =>
-                                            new
-                                            {
-                                                x.Id,
-                                                x.NoteText,
-                                                x.CreatedByUserId,
-                                                x.CreatedAt,
-                                                x.ModifiedAt,
-                                                x.Approved,
-                                                x.Rejected,
-                                                x.Archived
-                                            }
-                                    )
-                                    .ToList()
-                            }
-                    )
+                                x.Id,
+                                x.NoteText,
+                                x.CreatedByUserId,
+                                x.CreatedAt,
+                                x.ModifiedAt,
+                                x.Approved,
+                                x.Rejected,
+                                x.Archived,
+                            })
+                            .ToList(),
+                    })
                     .ToList();
 
                 Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(groupedNotes));
@@ -421,8 +410,8 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var assignedJobIds = await _context.JobAssignments
-                    .Where(ja => ja.UserId == userId)
+                var assignedJobIds = await _context
+                    .JobAssignments.Where(ja => ja.UserId == userId)
                     .Select(ja => ja.JobId)
                     .Distinct()
                     .ToListAsync();
@@ -450,38 +439,32 @@ namespace ProbuildBackend.Controllers
                         note.ModifiedAt,
                         note.Approved,
                         note.Rejected,
-                        note.Archived
+                        note.Archived,
                     }
                 ).ToListAsync();
 
                 var groupedNotes = notesWithDetails
                     .GroupBy(n => new { n.JobId, n.SubtaskName })
-                    .Select(
-                        g =>
-                            new
+                    .Select(g => new
+                    {
+                        JobId = g.Key.JobId,
+                        SubtaskName = g.Key.SubtaskName,
+                        ProjectName = g.First().ProjectName,
+                        JobSubtaskId = g.First().JobSubtaskId,
+                        CreatedAt = g.Min(x => x.CreatedAt),
+                        Notes = g.Select(x => new
                             {
-                                JobId = g.Key.JobId,
-                                SubtaskName = g.Key.SubtaskName,
-                                ProjectName = g.First().ProjectName,
-                                JobSubtaskId = g.First().JobSubtaskId,
-                                CreatedAt = g.Min(x => x.CreatedAt),
-                                Notes = g.Select(
-                                        x =>
-                                            new
-                                            {
-                                                x.Id,
-                                                x.NoteText,
-                                                x.CreatedByUserId,
-                                                x.CreatedAt,
-                                                x.ModifiedAt,
-                                                x.Approved,
-                                                x.Rejected,
-                                                x.Archived
-                                            }
-                                    )
-                                    .ToList()
-                            }
-                    )
+                                x.Id,
+                                x.NoteText,
+                                x.CreatedByUserId,
+                                x.CreatedAt,
+                                x.ModifiedAt,
+                                x.Approved,
+                                x.Rejected,
+                                x.Archived,
+                            })
+                            .ToList(),
+                    })
                     .ToList();
 
                 Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(groupedNotes));
@@ -495,7 +478,7 @@ namespace ProbuildBackend.Controllers
                     new
                     {
                         error = "Failed to fetch archived notes for assigned jobs",
-                        details = ex.Message
+                        details = ex.Message,
                     }
                 );
             }
@@ -506,11 +489,9 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var note = await _context.SubtaskNote
-                    .Where(
-                        m =>
-                            m.JobSubtaskId == noteUpdate.JobSubtaskId
-                            && (!m.Approved && !m.Rejected)
+                var note = await _context
+                    .SubtaskNote.Where(m =>
+                        m.JobSubtaskId == noteUpdate.JobSubtaskId && (!m.Approved && !m.Rejected)
                     )
                     .ToListAsync();
                 if (note == null)
@@ -536,14 +517,14 @@ namespace ProbuildBackend.Controllers
                         CreatedByUserId = noteUpdate.CreatedByUserId,
                         Approved = true,
                         CreatedAt = DateTime.UtcNow,
-                        ModifiedAt = DateTime.UtcNow
+                        ModifiedAt = DateTime.UtcNow,
                     };
                     _context.SubtaskNote.Add(noteResponse);
                     await _context.SaveChangesAsync();
                     var usernote = new SubtaskNoteUserModel
                     {
                         SubtaskNoteId = noteResponse.Id,
-                        UserId = noteUpdate.CreatedByUserId
+                        UserId = noteUpdate.CreatedByUserId,
                     };
                     _context.SubtaskNoteUser.Add(usernote);
                     await _context.SaveChangesAsync();
@@ -558,14 +539,14 @@ namespace ProbuildBackend.Controllers
                         CreatedByUserId = noteUpdate.CreatedByUserId,
                         Approved = true,
                         CreatedAt = DateTime.UtcNow,
-                        ModifiedAt = DateTime.UtcNow
+                        ModifiedAt = DateTime.UtcNow,
                     };
                     _context.SubtaskNote.Add(noteResponse);
                     await _context.SaveChangesAsync();
                     var usernote = new SubtaskNoteUserModel
                     {
                         SubtaskNoteId = noteResponse.Id,
-                        UserId = noteUpdate.CreatedByUserId
+                        UserId = noteUpdate.CreatedByUserId,
                     };
                     _context.SubtaskNoteUser.Add(usernote);
                     await _context.SaveChangesAsync();
@@ -594,8 +575,8 @@ namespace ProbuildBackend.Controllers
                 return BadRequest("Only approved or rejected notes can be archived.");
             }
 
-            var notesToUpdate = await _context.SubtaskNote
-                .Where(n => n.JobSubtaskId == noteToArchive.JobSubtaskId)
+            var notesToUpdate = await _context
+                .SubtaskNote.Where(n => n.JobSubtaskId == noteToArchive.JobSubtaskId)
                 .ToListAsync();
 
             foreach (var note in notesToUpdate)
@@ -612,8 +593,8 @@ namespace ProbuildBackend.Controllers
         [HttpGet("GetNoteDocuments/{noteId}")]
         public async Task<IActionResult> GetNoteDocuments(int noteId)
         {
-            var documents = await _context.SubtaskNoteDocument
-                .Where(doc => doc.SubTaskId == noteId)
+            var documents = await _context
+                .SubtaskNoteDocument.Where(doc => doc.SubTaskId == noteId)
                 .ToListAsync();
 
             if (documents == null || !documents.Any())
@@ -628,7 +609,13 @@ namespace ProbuildBackend.Controllers
                 {
                     var properties = await _azureBlobservice.GetBlobContentAsync(doc.BlobUrl);
                     documentDetails.Add(
-                        new { doc.Id, doc.NoteId, doc.FileName, Size = properties.Content.Length }
+                        new
+                        {
+                            doc.Id,
+                            doc.NoteId,
+                            doc.FileName,
+                            Size = properties.Content.Length,
+                        }
                     );
                 }
                 catch (Exception ex)
@@ -636,7 +623,15 @@ namespace ProbuildBackend.Controllers
                     Console.WriteLine(
                         $"Error fetching properties for blob {doc.BlobUrl}: {ex.Message}"
                     );
-                    documentDetails.Add(new { doc.Id, doc.NoteId, doc.FileName, Size = 0L });
+                    documentDetails.Add(
+                        new
+                        {
+                            doc.Id,
+                            doc.NoteId,
+                            doc.FileName,
+                            Size = 0L,
+                        }
+                    );
                 }
             }
 
@@ -660,7 +655,7 @@ namespace ProbuildBackend.Controllers
                 NoteText = request.NoteText,
                 CreatedByUserId = request.CreatedByUserId,
                 CreatedAt = DateTime.UtcNow,
-                ModifiedAt = DateTime.UtcNow
+                ModifiedAt = DateTime.UtcNow,
             };
 
             _context.SubtaskNote.Add(note);
@@ -668,8 +663,10 @@ namespace ProbuildBackend.Controllers
 
             if (!string.IsNullOrWhiteSpace(request.SessionId))
             {
-                var tempFiles = await _context.SubtaskNoteDocument
-                    .Where(d => d.sessionId == request.SessionId && d.NoteId == null)
+                var tempFiles = await _context
+                    .SubtaskNoteDocument.Where(d =>
+                        d.sessionId == request.SessionId && d.NoteId == null
+                    )
                     .ToListAsync();
 
                 foreach (var file in tempFiles)
@@ -686,7 +683,7 @@ namespace ProbuildBackend.Controllers
                 var usernote = new SubtaskNoteUserModel
                 {
                     SubtaskNoteId = note.Id,
-                    UserId = item.UserId
+                    UserId = item.UserId,
                 };
                 useridEmail.Add(item.UserId);
                 _context.SubtaskNoteUser.Add(usernote);
@@ -696,15 +693,26 @@ namespace ProbuildBackend.Controllers
             foreach (var item in useridEmail)
             {
                 var userEmail = await _context.Users.Where(d => d.Id == item).ToListAsync();
-                var ActionRequired = await _emailTemplate.GetTemplateAsync("TaskActionRequiredEmail");
-                var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
+                var ActionRequired = await _emailTemplate.GetTemplateAsync(
+                    "TaskActionRequiredEmail"
+                );
+                var frontendUrl =
+                    Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
                 var callbackUrl = $"{frontendUrl}/login";
-                ActionRequired.Subject = ActionRequired.Subject.Replace("{{job.ProjectName}}", Jobs[0].ProjectName);
+                ActionRequired.Subject = ActionRequired.Subject.Replace(
+                    "{{job.ProjectName}}",
+                    Jobs[0].ProjectName
+                );
 
-                ActionRequired.Body = ActionRequired.Body.Replace("{{UserName}}", userEmail[0].FirstName + " " + userEmail[0].LastName).Replace("{{job.ProjectName}}", Jobs[0].ProjectName)
-                .Replace("{{Header}}", ActionRequired.HeaderHtml)
-                .Replace("{{Footer}}", ActionRequired.FooterHtml)
-                .Replace("{{TaskLink}}", callbackUrl);
+                ActionRequired.Body = ActionRequired
+                    .Body.Replace(
+                        "{{UserName}}",
+                        userEmail[0].FirstName + " " + userEmail[0].LastName
+                    )
+                    .Replace("{{job.ProjectName}}", Jobs[0].ProjectName)
+                    .Replace("{{Header}}", ActionRequired.HeaderHtml)
+                    .Replace("{{Footer}}", ActionRequired.FooterHtml)
+                    .Replace("{{TaskLink}}", callbackUrl);
 
                 try
                 {
@@ -721,7 +729,7 @@ namespace ProbuildBackend.Controllers
                 new
                 {
                     message = "Note and any uploaded files saved successfully.",
-                    noteId = note.Id
+                    noteId = note.Id,
                 }
             );
         }

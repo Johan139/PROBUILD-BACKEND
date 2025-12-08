@@ -1,12 +1,12 @@
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Models.Enums;
-using System.Text;
-using System.Text.Json;
-using System.Text.RegularExpressions;
 
 namespace ProbuildBackend.Services
 {
@@ -35,7 +35,8 @@ namespace ProbuildBackend.Services
             IPdfTextExtractionService pdfTextExtractionService,
             AzureBlobService azureBlobService,
             IHubContext<Middleware.ProgressHub> hubContext,
-            IKeepAliveService keepAliveService)
+            IKeepAliveService keepAliveService
+        )
         {
             _logger = logger;
             _promptManager = promptManager;
@@ -48,18 +49,29 @@ namespace ProbuildBackend.Services
             _keepAliveService = keepAliveService;
         }
 
-        public async Task<string> PerformSelectedAnalysisAsync(string userId, AnalysisRequestDto requestDto, bool generateDetailsWithAi, string budgetLevel, string? conversationId = null, string? connectionId = null)
+        public async Task<string> PerformSelectedAnalysisAsync(
+            string userId,
+            AnalysisRequestDto requestDto,
+            bool generateDetailsWithAi,
+            string budgetLevel,
+            string? conversationId = null,
+            string? connectionId = null
+        )
         {
             _keepAliveService.StartPinging();
             try
             {
                 if (requestDto?.PromptKeys == null || !requestDto.PromptKeys.Any())
                 {
-                    throw new ArgumentException("At least one prompt key must be provided.", nameof(requestDto.PromptKeys));
+                    throw new ArgumentException(
+                        "At least one prompt key must be provided.",
+                        nameof(requestDto.PromptKeys)
+                    );
                 }
 
                 var job = await _context.Jobs.FindAsync(requestDto.JobId);
-                var title = $"Selected Analysis for {job?.ProjectName ?? "Job ID " + requestDto.JobId}";
+                var title =
+                    $"Selected Analysis for {job?.ProjectName ?? "Job ID " + requestDto.JobId}";
 
                 if (string.IsNullOrEmpty(conversationId))
                 {
@@ -74,13 +86,26 @@ namespace ProbuildBackend.Services
                 }
 
                 string personaPromptKey = SelectedAnalysisPersonaKey;
-                _logger.LogInformation("Performing 'Selected' analysis with persona: {PersonaKey}", personaPromptKey);
+                _logger.LogInformation(
+                    "Performing 'Selected' analysis with persona: {PersonaKey}",
+                    personaPromptKey
+                );
 
                 string personaPrompt = await _promptManager.GetPromptAsync(null, personaPromptKey);
                 var userContext = await GetUserContextAsString(requestDto.UserContext, null);
-                var budgetPrompt = await _promptManager.GetPromptAsync(null, $"{budgetLevel}-budget-prompt.txt");
+                var budgetPrompt = await _promptManager.GetPromptAsync(
+                    null,
+                    $"{budgetLevel}-budget-prompt.txt"
+                );
 
-                var (initialResponse, newConversationId) = await _aiService.StartMultimodalConversationAsync(userId, requestDto.DocumentUrls, personaPrompt, budgetPrompt + "\n" + userContext, conversationId);
+                var (initialResponse, newConversationId) =
+                    await _aiService.StartMultimodalConversationAsync(
+                        userId,
+                        requestDto.DocumentUrls,
+                        personaPrompt,
+                        budgetPrompt + "\n" + userContext,
+                        conversationId
+                    );
 
                 // Link Conversation to Job if not already linked
                 if (job.ConversationId != newConversationId)
@@ -90,20 +115,38 @@ namespace ProbuildBackend.Services
                 }
                 conversationId = newConversationId;
 
-                if (initialResponse.Contains("BLUEPRINT FAILURE", StringComparison.OrdinalIgnoreCase))
+                if (
+                    initialResponse.Contains(
+                        "BLUEPRINT FAILURE",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
                 {
-                    _logger.LogWarning("Initial analysis failed for prompts: {PromptKeys}. Triggering corrective action.", string.Join(", ", requestDto.PromptKeys));
-                    initialResponse = await HandleFailureAsync(conversationId, userId, requestDto.DocumentUrls, initialResponse);
+                    _logger.LogWarning(
+                        "Initial analysis failed for prompts: {PromptKeys}. Triggering corrective action.",
+                        string.Join(", ", requestDto.PromptKeys)
+                    );
+                    initialResponse = await HandleFailureAsync(
+                        conversationId,
+                        userId,
+                        requestDto.DocumentUrls,
+                        initialResponse
+                    );
                 }
 
                 var reportBuilder = new StringBuilder();
                 reportBuilder.Append(initialResponse);
 
                 // Remove the JSON requirement from the persona for subsequent calls
-                var personaWithoutJson = new Regex(@"CRITICAL OUTPUT REQUIREMENT:.*?\}", RegexOptions.Singleline).Replace(personaPrompt, ""); // TODO: Check this, is it causing issues with the subsequent prompts?
+                var personaWithoutJson = new Regex(
+                    @"CRITICAL OUTPUT REQUIREMENT:.*?\}",
+                    RegexOptions.Singleline
+                ).Replace(personaPrompt, ""); // TODO: Check this, is it causing issues with the subsequent prompts?
 
                 var dailyPlanPromptKey = "selected-prompt-daily-plan.txt";
-                var orderedPrompts = requestDto.PromptKeys.Where(p => p != dailyPlanPromptKey).ToList();
+                var orderedPrompts = requestDto
+                    .PromptKeys.Where(p => p != dailyPlanPromptKey)
+                    .ToList();
                 orderedPrompts.Add(dailyPlanPromptKey);
 
                 int step = 1;
@@ -111,20 +154,39 @@ namespace ProbuildBackend.Services
                 {
                     if (!string.IsNullOrEmpty(connectionId))
                     {
-                        await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new Middleware.AnalysisProgressUpdate
-                        {
-                            JobId = job.Id,
-                            StatusMessage = $"Analyzing: {promptKey.Replace(".txt", "").Replace("-", " ")}",
-                            CurrentStep = step,
-                            TotalSteps = orderedPrompts.Count,
-                            IsComplete = false,
-                            HasFailed = false
-                        });
+                        await _hubContext
+                            .Clients.Client(connectionId)
+                            .SendAsync(
+                                "ReceiveAnalysisProgress",
+                                new Middleware.AnalysisProgressUpdate
+                                {
+                                    JobId = job.Id,
+                                    StatusMessage =
+                                        $"Analyzing: {promptKey.Replace(".txt", "").Replace("-", " ")}",
+                                    CurrentStep = step,
+                                    TotalSteps = orderedPrompts.Count,
+                                    IsComplete = false,
+                                    HasFailed = false,
+                                }
+                            );
                     }
 
                     var subPrompt = await _promptManager.GetPromptAsync(null, promptKey);
-                    var (analysisResult, _) = await _aiService.ContinueConversationAsync(conversationId, userId, subPrompt, requestDto.DocumentUrls, true, personaWithoutJson);
-                    var message = new Message { ConversationId = conversationId, Role = "model", Content = analysisResult, Timestamp = DateTime.UtcNow };
+                    var (analysisResult, _) = await _aiService.ContinueConversationAsync(
+                        conversationId,
+                        userId,
+                        subPrompt,
+                        requestDto.DocumentUrls,
+                        true,
+                        personaWithoutJson
+                    );
+                    var message = new Message
+                    {
+                        ConversationId = conversationId,
+                        Role = "model",
+                        Content = analysisResult,
+                        Timestamp = DateTime.UtcNow,
+                    };
                     await _conversationRepo.AddMessageAsync(message);
                     reportBuilder.Append("\n\n---\n\n");
                     reportBuilder.Append(analysisResult);
@@ -132,12 +194,22 @@ namespace ProbuildBackend.Services
                 }
 
                 // Extract and execute Timeline and Cost prompts
-                var timelinePromptRegex = new Regex(@"2\. Timeline Prompt:.*?(?=3\. Cost Prompt:)", RegexOptions.Singleline);
+                var timelinePromptRegex = new Regex(
+                    @"2\. Timeline Prompt:.*?(?=3\. Cost Prompt:)",
+                    RegexOptions.Singleline
+                );
                 var timelineMatch = timelinePromptRegex.Match(personaPrompt);
                 if (timelineMatch.Success)
                 {
                     var timelinePrompt = timelineMatch.Value;
-                    var (timelineResult, _) = await _aiService.ContinueConversationAsync(conversationId, userId, timelinePrompt, requestDto.DocumentUrls, true, personaWithoutJson);
+                    var (timelineResult, _) = await _aiService.ContinueConversationAsync(
+                        conversationId,
+                        userId,
+                        timelinePrompt,
+                        requestDto.DocumentUrls,
+                        true,
+                        personaWithoutJson
+                    );
                     reportBuilder.Append("\n\n---\n\n");
                     reportBuilder.Append(timelineResult);
                 }
@@ -147,7 +219,14 @@ namespace ProbuildBackend.Services
                 if (costMatch.Success)
                 {
                     var costPrompt = costMatch.Value;
-                    var (costResult, _) = await _aiService.ContinueConversationAsync(conversationId, userId, costPrompt, requestDto.DocumentUrls, true, personaWithoutJson);
+                    var (costResult, _) = await _aiService.ContinueConversationAsync(
+                        conversationId,
+                        userId,
+                        costPrompt,
+                        requestDto.DocumentUrls,
+                        true,
+                        personaWithoutJson
+                    );
                     reportBuilder.Append("\n\n---\n\n");
                     reportBuilder.Append(costResult);
                 }
@@ -159,36 +238,53 @@ namespace ProbuildBackend.Services
 
                 if (!string.IsNullOrEmpty(connectionId))
                 {
-                    await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new Middleware.AnalysisProgressUpdate
-                    {
-                        JobId = job.Id,
-                        StatusMessage = "Analysis complete.",
-                        CurrentStep = orderedPrompts.Count,
-                        TotalSteps = orderedPrompts.Count,
-                        IsComplete = true,
-                        HasFailed = false
-                    });
+                    await _hubContext
+                        .Clients.Client(connectionId)
+                        .SendAsync(
+                            "ReceiveAnalysisProgress",
+                            new Middleware.AnalysisProgressUpdate
+                            {
+                                JobId = job.Id,
+                                StatusMessage = "Analysis complete.",
+                                CurrentStep = orderedPrompts.Count,
+                                TotalSteps = orderedPrompts.Count,
+                                IsComplete = true,
+                                HasFailed = false,
+                            }
+                        );
                 }
 
-                _logger.LogInformation("Analysis completed successfully for prompts: {PromptKeys}", string.Join(", ", requestDto.PromptKeys));
+                _logger.LogInformation(
+                    "Analysis completed successfully for prompts: {PromptKeys}",
+                    string.Join(", ", requestDto.PromptKeys)
+                );
                 return reportBuilder.ToString();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "An error occurred during analysis for prompts: {PromptKeys}", string.Join(", ", requestDto.PromptKeys));
+                _logger.LogError(
+                    ex,
+                    "An error occurred during analysis for prompts: {PromptKeys}",
+                    string.Join(", ", requestDto.PromptKeys)
+                );
                 if (!string.IsNullOrEmpty(connectionId))
                 {
                     var jobForError = await _context.Jobs.FindAsync(requestDto.JobId);
                     if (jobForError != null)
                     {
-                        await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new Middleware.AnalysisProgressUpdate
-                        {
-                            JobId = jobForError.Id,
-                            StatusMessage = "Analysis failed.",
-                            IsComplete = false,
-                            HasFailed = true,
-                            ErrorMessage = ex.Message
-                        });
+                        await _hubContext
+                            .Clients.Client(connectionId)
+                            .SendAsync(
+                                "ReceiveAnalysisProgress",
+                                new Middleware.AnalysisProgressUpdate
+                                {
+                                    JobId = jobForError.Id,
+                                    StatusMessage = "Analysis failed.",
+                                    IsComplete = false,
+                                    HasFailed = true,
+                                    ErrorMessage = ex.Message,
+                                }
+                            );
                     }
                 }
                 throw;
@@ -199,42 +295,78 @@ namespace ProbuildBackend.Services
             }
         }
 
-        public async Task<string> PerformComprehensiveAnalysisAsync(string userId, IEnumerable<string> documentUris, JobModel jobDetails, bool generateDetailsWithAi, string userContextText, string userContextFileUrl, string budgetLevel, string? connectionId = null, string promptKey = "prompt-00-initial-analysis.txt")
+        public async Task<string> PerformComprehensiveAnalysisAsync(
+            string userId,
+            IEnumerable<string> documentUris,
+            JobModel jobDetails,
+            bool generateDetailsWithAi,
+            string userContextText,
+            string userContextFileUrl,
+            string budgetLevel,
+            string? connectionId = null,
+            string promptKey = "prompt-00-initial-analysis.txt"
+        )
         {
-            _logger.LogInformation("START: PerformComprehensiveAnalysisAsync for User {UserId}, Job {JobId}", userId, jobDetails.Id);
+            _logger.LogInformation(
+                "START: PerformComprehensiveAnalysisAsync for User {UserId}, Job {JobId}",
+                userId,
+                jobDetails.Id
+            );
             _keepAliveService.StartPinging();
             try
             {
                 _logger.LogInformation("Fetching system persona prompt.");
-                var systemPersonaPrompt = await _promptManager.GetPromptAsync("", "system-persona.txt");
+                var systemPersonaPrompt = await _promptManager.GetPromptAsync(
+                    "",
+                    "system-persona.txt"
+                );
                 _logger.LogInformation("Fetching initial analysis prompt: {PromptKey}", promptKey);
                 var initialAnalysisPrompt = await _promptManager.GetPromptAsync("", promptKey);
 
                 _logger.LogInformation("Getting user context as string.");
                 var userContext = await GetUserContextAsString(userContextText, userContextFileUrl);
-                var budgetPrompt = await _promptManager.GetPromptAsync(null, $"{budgetLevel}-budget-prompt.txt");
+                var budgetPrompt = await _promptManager.GetPromptAsync(
+                    null,
+                    $"{budgetLevel}-budget-prompt.txt"
+                );
 
-                var initialUserPrompt = $"{budgetPrompt}\n\n{initialAnalysisPrompt}\n\n{userContext}\n\nHere are the project details:\n" +
-                                        $"Project Name: {jobDetails.ProjectName}\n" +
-                                        $"Job Type: {jobDetails.JobType}\n" +
-                                        $"Address: {jobDetails.Address}\n" +
-                                        $"Operating Area: {jobDetails.OperatingArea}\n" +
-                                        $"Desired Start Date: {jobDetails.DesiredStartDate:yyyy-MM-dd}\n" +
-                                        $"Stories: {jobDetails.Stories}\n" +
-                                        $"Building Size: {jobDetails.BuildingSize} sq ft\n" +
-                                        $"Wall Structure: {jobDetails.WallStructure}\n" +
-                                        $"Wall Insulation: {jobDetails.WallInsulation}\n" +
-                                        $"Roof Structure: {jobDetails.RoofStructure}\n" +
-                                        $"Roof Insulation: {jobDetails.RoofInsulation}\n" +
-                                        $"Foundation: {jobDetails.Foundation}\n" +
-                                        $"Finishes: {jobDetails.Finishes}\n" +
-                                        $"Electrical Needs: {jobDetails.ElectricalSupplyNeeds}";
+                var initialUserPrompt =
+                    $"{budgetPrompt}\n\n{initialAnalysisPrompt}\n\n{userContext}\n\nHere are the project details:\n"
+                    + $"Project Name: {jobDetails.ProjectName}\n"
+                    + $"Job Type: {jobDetails.JobType}\n"
+                    + $"Address: {jobDetails.Address}\n"
+                    + $"Operating Area: {jobDetails.OperatingArea}\n"
+                    + $"Desired Start Date: {jobDetails.DesiredStartDate:yyyy-MM-dd}\n"
+                    + $"Stories: {jobDetails.Stories}\n"
+                    + $"Building Size: {jobDetails.BuildingSize} sq ft\n"
+                    + $"Wall Structure: {jobDetails.WallStructure}\n"
+                    + $"Wall Insulation: {jobDetails.WallInsulation}\n"
+                    + $"Roof Structure: {jobDetails.RoofStructure}\n"
+                    + $"Roof Insulation: {jobDetails.RoofInsulation}\n"
+                    + $"Foundation: {jobDetails.Foundation}\n"
+                    + $"Finishes: {jobDetails.Finishes}\n"
+                    + $"Electrical Needs: {jobDetails.ElectricalSupplyNeeds}";
 
-                _logger.LogInformation("Initial user prompt created. Length: {Length}", initialUserPrompt.Length);
+                _logger.LogInformation(
+                    "Initial user prompt created. Length: {Length}",
+                    initialUserPrompt.Length
+                );
 
                 _logger.LogInformation("Calling StartMultimodalConversationAsync.");
-                var (initialResponse, conversationId) = await _aiService.StartMultimodalConversationAsync(userId, documentUris, systemPersonaPrompt, initialUserPrompt, jobDetails.ConversationId);
-                _logger.LogInformation("Started multimodal conversation {ConversationId} for user {UserId}. Initial response length: {Length}", conversationId, userId, initialResponse?.Length ?? 0);
+                var (initialResponse, conversationId) =
+                    await _aiService.StartMultimodalConversationAsync(
+                        userId,
+                        documentUris,
+                        systemPersonaPrompt,
+                        initialUserPrompt,
+                        jobDetails.ConversationId
+                    );
+                _logger.LogInformation(
+                    "Started multimodal conversation {ConversationId} for user {UserId}. Initial response length: {Length}",
+                    conversationId,
+                    userId,
+                    initialResponse?.Length ?? 0
+                );
 
                 // Link Conversation to Job if not already linked
                 if (jobDetails.ConversationId != conversationId)
@@ -247,66 +379,147 @@ namespace ProbuildBackend.Services
                     }
                 }
 
-                if (initialResponse.Contains("BLUEPRINT FAILURE", StringComparison.OrdinalIgnoreCase))
+                if (
+                    initialResponse.Contains(
+                        "BLUEPRINT FAILURE",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
                 {
-                    _logger.LogWarning("Initial analysis failed for conversation {ConversationId}. Triggering corrective action.", conversationId);
-                    return await HandleFailureAsync(conversationId, userId, documentUris, initialResponse);
+                    _logger.LogWarning(
+                        "Initial analysis failed for conversation {ConversationId}. Triggering corrective action.",
+                        conversationId
+                    );
+                    return await HandleFailureAsync(
+                        conversationId,
+                        userId,
+                        documentUris,
+                        initialResponse
+                    );
                 }
 
-                _logger.LogInformation("Blueprint fitness check PASSED for conversation {ConversationId}. Proceeding with full sequential analysis.", conversationId);
+                _logger.LogInformation(
+                    "Blueprint fitness check PASSED for conversation {ConversationId}. Proceeding with full sequential analysis.",
+                    conversationId
+                );
 
                 if (generateDetailsWithAi)
                 {
-                    _logger.LogInformation("Parsing and saving AI job details for Job {JobId}", jobDetails.Id);
+                    _logger.LogInformation(
+                        "Parsing and saving AI job details for Job {JobId}",
+                        jobDetails.Id
+                    );
                     await ParseAndSaveAiJobDetails(jobDetails.Id, initialResponse);
                 }
 
-                _logger.LogInformation("Executing sequential prompts for conversation {ConversationId}", conversationId);
-                return await ExecuteSequentialPromptsAsync(conversationId, userId, initialResponse, jobDetails.Id, connectionId);
+                _logger.LogInformation(
+                    "Executing sequential prompts for conversation {ConversationId}",
+                    conversationId
+                );
+                return await ExecuteSequentialPromptsAsync(
+                    conversationId,
+                    userId,
+                    initialResponse,
+                    jobDetails.Id,
+                    connectionId
+                );
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "EXCEPTION in PerformComprehensiveAnalysisAsync for User {UserId}, Job {JobId}", userId, jobDetails.Id);
+                _logger.LogError(
+                    ex,
+                    "EXCEPTION in PerformComprehensiveAnalysisAsync for User {UserId}, Job {JobId}",
+                    userId,
+                    jobDetails.Id
+                );
                 if (!string.IsNullOrEmpty(connectionId))
                 {
-                    await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new Middleware.AnalysisProgressUpdate
-                    {
-                        JobId = jobDetails.Id,
-                        StatusMessage = "Analysis failed - we're sorry for the inconvenience",
-                        IsComplete = false,
-                        HasFailed = true,
-                        ErrorMessage = ex.Message
-                    });
+                    await _hubContext
+                        .Clients.Client(connectionId)
+                        .SendAsync(
+                            "ReceiveAnalysisProgress",
+                            new Middleware.AnalysisProgressUpdate
+                            {
+                                JobId = jobDetails.Id,
+                                StatusMessage =
+                                    "Analysis failed - we're sorry for the inconvenience",
+                                IsComplete = false,
+                                HasFailed = true,
+                                ErrorMessage = ex.Message,
+                            }
+                        );
                 }
                 throw;
             }
             finally
             {
-                _logger.LogInformation("END: PerformComprehensiveAnalysisAsync for User {UserId}, Job {JobId}", userId, jobDetails.Id);
+                _logger.LogInformation(
+                    "END: PerformComprehensiveAnalysisAsync for User {UserId}, Job {JobId}",
+                    userId,
+                    jobDetails.Id
+                );
                 _keepAliveService.StopPinging();
             }
         }
 
-        public async Task<string> PerformRenovationAnalysisAsync(string userId, IEnumerable<string> documentUris, JobModel jobDetails, bool generateDetailsWithAi, string userContextText, string userContextFileUrl, string budgetLevel, string? connectionId = null, string promptKey = "renovation-00-initial-analysis.txt")
+        public async Task<string> PerformRenovationAnalysisAsync(
+            string userId,
+            IEnumerable<string> documentUris,
+            JobModel jobDetails,
+            bool generateDetailsWithAi,
+            string userContextText,
+            string userContextFileUrl,
+            string budgetLevel,
+            string? connectionId = null,
+            string promptKey = "renovation-00-initial-analysis.txt"
+        )
         {
-            _logger.LogInformation("START: PerformRenovationAnalysisAsync for User {UserId}, Job {JobId}", userId, jobDetails.Id);
+            _logger.LogInformation(
+                "START: PerformRenovationAnalysisAsync for User {UserId}, Job {JobId}",
+                userId,
+                jobDetails.Id
+            );
             _keepAliveService.StartPinging();
             try
             {
                 _logger.LogInformation("Fetching renovation persona prompt.");
-                var personaPrompt = await _promptManager.GetPromptAsync("RenovationPrompts/", "renovation-persona.txt");
+                var personaPrompt = await _promptManager.GetPromptAsync(
+                    "RenovationPrompts/",
+                    "renovation-persona.txt"
+                );
                 _logger.LogInformation("Fetching initial renovation analysis prompt.");
-                var initialAnalysisPrompt = await _promptManager.GetPromptAsync("RenovationPrompts/", promptKey);
+                var initialAnalysisPrompt = await _promptManager.GetPromptAsync(
+                    "RenovationPrompts/",
+                    promptKey
+                );
 
                 _logger.LogInformation("Getting user context as string.");
                 var userContext = await GetUserContextAsString(userContextText, userContextFileUrl);
-                var budgetPrompt = await _promptManager.GetPromptAsync(null, $"{budgetLevel}-budget-prompt.txt");
+                var budgetPrompt = await _promptManager.GetPromptAsync(
+                    null,
+                    $"{budgetLevel}-budget-prompt.txt"
+                );
 
-                var initialUserPrompt = $"{budgetPrompt}\n\n{initialAnalysisPrompt}\n\n{userContext}";
+                var initialUserPrompt =
+                    $"{budgetPrompt}\n\n{initialAnalysisPrompt}\n\n{userContext}";
 
-                _logger.LogInformation("Calling StartMultimodalConversationAsync for renovation analysis.");
-                var (initialResponse, conversationId) = await _aiService.StartMultimodalConversationAsync(userId, documentUris, personaPrompt, initialUserPrompt, jobDetails.ConversationId);
-                _logger.LogInformation("Started multimodal conversation {ConversationId} for user {UserId}. Initial response length: {Length}", conversationId, userId, initialResponse?.Length ?? 0);
+                _logger.LogInformation(
+                    "Calling StartMultimodalConversationAsync for renovation analysis."
+                );
+                var (initialResponse, conversationId) =
+                    await _aiService.StartMultimodalConversationAsync(
+                        userId,
+                        documentUris,
+                        personaPrompt,
+                        initialUserPrompt,
+                        jobDetails.ConversationId
+                    );
+                _logger.LogInformation(
+                    "Started multimodal conversation {ConversationId} for user {UserId}. Initial response length: {Length}",
+                    conversationId,
+                    userId,
+                    initialResponse?.Length ?? 0
+                );
 
                 // Link Conversation to Job if not already linked
                 if (jobDetails.ConversationId != conversationId)
@@ -319,53 +532,98 @@ namespace ProbuildBackend.Services
                     }
                 }
 
-                if (initialResponse.Contains("BLUEPRINT FAILURE", StringComparison.OrdinalIgnoreCase))
+                if (
+                    initialResponse.Contains(
+                        "BLUEPRINT FAILURE",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
                 {
-                    _logger.LogWarning("Initial renovation analysis failed for conversation {ConversationId}. Triggering corrective action.", conversationId);
-                    return await HandleFailureAsync(conversationId, userId, documentUris, initialResponse);
+                    _logger.LogWarning(
+                        "Initial renovation analysis failed for conversation {ConversationId}. Triggering corrective action.",
+                        conversationId
+                    );
+                    return await HandleFailureAsync(
+                        conversationId,
+                        userId,
+                        documentUris,
+                        initialResponse
+                    );
                 }
 
-                _logger.LogInformation("Blueprint fitness check PASSED for renovation conversation {ConversationId}. Proceeding with full sequential analysis.", conversationId);
+                _logger.LogInformation(
+                    "Blueprint fitness check PASSED for renovation conversation {ConversationId}. Proceeding with full sequential analysis.",
+                    conversationId
+                );
 
                 if (generateDetailsWithAi)
                 {
-                    _logger.LogInformation("Parsing and saving AI job details for Job {JobId}", jobDetails.Id);
+                    _logger.LogInformation(
+                        "Parsing and saving AI job details for Job {JobId}",
+                        jobDetails.Id
+                    );
                     await ParseAndSaveAiJobDetails(jobDetails.Id, initialResponse);
                 }
 
-                _logger.LogInformation("Executing sequential renovation prompts for conversation {ConversationId}", conversationId);
-                return await ExecuteSequentialRenovationPromptsAsync(conversationId, userId, initialResponse, jobDetails.Id, connectionId);
+                _logger.LogInformation(
+                    "Executing sequential renovation prompts for conversation {ConversationId}",
+                    conversationId
+                );
+                return await ExecuteSequentialRenovationPromptsAsync(
+                    conversationId,
+                    userId,
+                    initialResponse,
+                    jobDetails.Id,
+                    connectionId
+                );
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "EXCEPTION in PerformRenovationAnalysisAsync for User {UserId}, Job {JobId}", userId, jobDetails.Id);
+                _logger.LogError(
+                    ex,
+                    "EXCEPTION in PerformRenovationAnalysisAsync for User {UserId}, Job {JobId}",
+                    userId,
+                    jobDetails.Id
+                );
                 if (!string.IsNullOrEmpty(connectionId))
                 {
-                    await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new Middleware.AnalysisProgressUpdate
-                    {
-                        JobId = jobDetails.Id,
-                        StatusMessage = "Analysis failed.",
-                        IsComplete = false,
-                        HasFailed = true,
-                        ErrorMessage = ex.Message
-                    });
+                    await _hubContext
+                        .Clients.Client(connectionId)
+                        .SendAsync(
+                            "ReceiveAnalysisProgress",
+                            new Middleware.AnalysisProgressUpdate
+                            {
+                                JobId = jobDetails.Id,
+                                StatusMessage = "Analysis failed.",
+                                IsComplete = false,
+                                HasFailed = true,
+                                ErrorMessage = ex.Message,
+                            }
+                        );
                 }
                 throw;
             }
             finally
             {
-                _logger.LogInformation("END: PerformRenovationAnalysisAsync for User {UserId}, Job {JobId}", userId, jobDetails.Id);
+                _logger.LogInformation(
+                    "END: PerformRenovationAnalysisAsync for User {UserId}, Job {JobId}",
+                    userId,
+                    jobDetails.Id
+                );
                 _keepAliveService.StopPinging();
             }
         }
 
-        public async Task<AnalysisResponseDto> PerformComparisonAnalysisAsync(ComparisonAnalysisRequestDto request, List<IFormFile> pdfFiles)
+        public async Task<AnalysisResponseDto> PerformComparisonAnalysisAsync(
+            ComparisonAnalysisRequestDto request,
+            List<IFormFile> pdfFiles
+        )
         {
             string promptFileName = request.ComparisonType switch
             {
                 ComparisonType.Vendor => "vendor-comparison-prompt.pdf",
                 ComparisonType.Subcontractor => "subcontractor-comparison-prompt.pdf",
-                _ => throw new ArgumentException("Invalid comparison type")
+                _ => throw new ArgumentException("Invalid comparison type"),
             };
 
             var prompt = await _promptManager.GetPromptAsync("ComparisonPrompts/", promptFileName);
@@ -382,45 +640,96 @@ namespace ProbuildBackend.Services
 
             var fullPrompt = $"{prompt}\n\n{combinedPdfText}";
 
-            var (analysisResult, conversationId) = await _aiService.StartMultimodalConversationAsync(request.UserId, null, fullPrompt, "Analyze the document based on the provided details.");
+            var (analysisResult, conversationId) =
+                await _aiService.StartMultimodalConversationAsync(
+                    request.UserId,
+                    null,
+                    fullPrompt,
+                    "Analyze the document based on the provided details."
+                );
 
             return new AnalysisResponseDto
             {
                 AnalysisResult = analysisResult,
-                ConversationId = conversationId
+                ConversationId = conversationId,
             };
         }
 
         public async Task<string> GenerateRebuttalAsync(string conversationId, string clientQuery)
         {
-            var rebuttalPrompt = await _promptManager.GetPromptAsync("", "bid-justification-rebuttal-prompt.txt") + $"\n\n**Client Query to Address:**\n{clientQuery}";
-            var (response, _) = await _aiService.ContinueConversationAsync(conversationId, "system-user", rebuttalPrompt, null, false);
+            var rebuttalPrompt =
+                await _promptManager.GetPromptAsync("", "bid-justification-rebuttal-prompt.txt")
+                + $"\n\n**Client Query to Address:**\n{clientQuery}";
+            var (response, _) = await _aiService.ContinueConversationAsync(
+                conversationId,
+                "system-user",
+                rebuttalPrompt,
+                null,
+                false
+            );
             return response;
         }
 
-        public async Task<string> GenerateRevisionAsync(string conversationId, string revisionRequest)
+        public async Task<string> GenerateRevisionAsync(
+            string conversationId,
+            string revisionRequest
+        )
         {
-            var revisionPrompt = await _promptManager.GetPromptAsync("", "prompt-revision.txt") + $"\n\n**Revision Request:**\n{revisionRequest}";
-            var (response, _) = await _aiService.ContinueConversationAsync(conversationId, "system-user", revisionPrompt, null, false);
+            var revisionPrompt =
+                await _promptManager.GetPromptAsync("", "prompt-revision.txt")
+                + $"\n\n**Revision Request:**\n{revisionRequest}";
+            var (response, _) = await _aiService.ContinueConversationAsync(
+                conversationId,
+                "system-user",
+                revisionPrompt,
+                null,
+                false
+            );
             return response;
         }
 
-        private async Task<string> ExecuteSequentialPromptsAsync(string conversationId, string userId, string initialResponse, int jobId, string? connectionId)
+        private async Task<string> ExecuteSequentialPromptsAsync(
+            string conversationId,
+            string userId,
+            string initialResponse,
+            int jobId,
+            string? connectionId
+        )
         {
             var stringBuilder = new StringBuilder();
             stringBuilder.Append(initialResponse);
 
-            var promptNames = new[] {
-                "prompt-01-site-logistics", "prompt-02-quality-management", "prompt-03-demolition",
-                "prompt-04-groundwork", "prompt-05-framing", "prompt-06-roofing",
-                "prompt-07-exterior", "prompt-08-electrical", "prompt-09-plumbing",
-                "prompt-10-hvac", "prompt-11-fire-protection", "prompt-12-insulation",
-                "prompt-13-drywall", "prompt-14-painting", "prompt-15-trim",
-                "prompt-16-kitchen-bath", "prompt-17-flooring", "prompt-18-exterior-flatwork",
-                "prompt-19-cleaning", "prompt-20-risk-analyst", "prompt-21-timeline",
-                "prompt-22-general-conditions", "prompt-23-procurement", "prompt-24-daily-construction-plan",
-                "prompt-25-cost-breakdowns", "prompt-26-value-engineering", "prompt-27-environmental-lifecycle",
-                "prompt-28-project-closeout", "executive-summary-prompt"
+            var promptNames = new[]
+            {
+                "prompt-01-site-logistics",
+                "prompt-02-quality-management",
+                "prompt-03-demolition",
+                "prompt-04-groundwork",
+                "prompt-05-framing",
+                "prompt-06-roofing",
+                "prompt-07-exterior",
+                "prompt-08-electrical",
+                "prompt-09-plumbing",
+                "prompt-10-hvac",
+                "prompt-11-fire-protection",
+                "prompt-12-insulation",
+                "prompt-13-drywall",
+                "prompt-14-painting",
+                "prompt-15-trim",
+                "prompt-16-kitchen-bath",
+                "prompt-17-flooring",
+                "prompt-18-exterior-flatwork",
+                "prompt-19-cleaning",
+                "prompt-20-risk-analyst",
+                "prompt-21-timeline",
+                "prompt-22-general-conditions",
+                "prompt-23-procurement",
+                "prompt-24-daily-construction-plan",
+                "prompt-25-cost-breakdowns",
+                "prompt-26-value-engineering",
+                "prompt-27-environmental-lifecycle",
+                "prompt-28-project-closeout",
+                "executive-summary-prompt",
             };
 
             try
@@ -429,25 +738,50 @@ namespace ProbuildBackend.Services
                 int step = 1;
                 foreach (var promptName in promptNames)
                 {
-                    _logger.LogInformation("Executing step {Step} of {TotalSteps}: {PromptName} for conversation {ConversationId}", step, promptNames.Length, promptName, conversationId);
+                    _logger.LogInformation(
+                        "Executing step {Step} of {TotalSteps}: {PromptName} for conversation {ConversationId}",
+                        step,
+                        promptNames.Length,
+                        promptName,
+                        conversationId
+                    );
 
                     if (!string.IsNullOrEmpty(connectionId))
                     {
-                        await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new Middleware.AnalysisProgressUpdate
-                        {
-                            JobId = jobId,
-                            StatusMessage = $"Analyzing: {promptName.Replace(".txt", "").Replace("-", " ")}",
-                            CurrentStep = step,
-                            TotalSteps = promptNames.Length,
-                            IsComplete = false,
-                            HasFailed = false
-                        });
+                        await _hubContext
+                            .Clients.Client(connectionId)
+                            .SendAsync(
+                                "ReceiveAnalysisProgress",
+                                new Middleware.AnalysisProgressUpdate
+                                {
+                                    JobId = jobId,
+                                    StatusMessage =
+                                        $"Analyzing: {promptName.Replace(".txt", "").Replace("-", " ")}",
+                                    CurrentStep = step,
+                                    TotalSteps = promptNames.Length,
+                                    IsComplete = false,
+                                    HasFailed = false,
+                                }
+                            );
                     }
 
                     var promptText = await _promptManager.GetPromptAsync("", $"{promptName}.txt");
-                    (lastResponse, _) = await _aiService.ContinueConversationAsync(conversationId, userId, promptText, null, true);
+                    (lastResponse, _) = await _aiService.ContinueConversationAsync(
+                        conversationId,
+                        userId,
+                        promptText,
+                        null,
+                        true
+                    );
 
-                    await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "model", Content = lastResponse });
+                    await _conversationRepo.AddMessageAsync(
+                        new Message
+                        {
+                            ConversationId = conversationId,
+                            Role = "model",
+                            Content = lastResponse,
+                        }
+                    );
 
                     stringBuilder.Append("\n\n---\n\n");
                     stringBuilder.Append(lastResponse);
@@ -457,54 +791,95 @@ namespace ProbuildBackend.Services
 
                 if (!string.IsNullOrEmpty(connectionId))
                 {
-                    await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new Middleware.AnalysisProgressUpdate
-                    {
-                        JobId = jobId,
-                        StatusMessage = "Analysis complete.",
-                        CurrentStep = promptNames.Length,
-                        TotalSteps = promptNames.Length,
-                        IsComplete = true,
-                        HasFailed = false
-                    });
+                    await _hubContext
+                        .Clients.Client(connectionId)
+                        .SendAsync(
+                            "ReceiveAnalysisProgress",
+                            new Middleware.AnalysisProgressUpdate
+                            {
+                                JobId = jobId,
+                                StatusMessage = "Analysis complete.",
+                                CurrentStep = promptNames.Length,
+                                TotalSteps = promptNames.Length,
+                                IsComplete = true,
+                                HasFailed = false,
+                            }
+                        );
                 }
 
-                _logger.LogInformation("Full sequential analysis completed successfully for conversation {ConversationId}", conversationId);
+                _logger.LogInformation(
+                    "Full sequential analysis completed successfully for conversation {ConversationId}",
+                    conversationId
+                );
                 return stringBuilder.ToString();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "An error occurred during sequential prompt execution for conversation {ConversationId}", conversationId);
+                _logger.LogError(
+                    ex,
+                    "An error occurred during sequential prompt execution for conversation {ConversationId}",
+                    conversationId
+                );
                 if (!string.IsNullOrEmpty(connectionId))
                 {
-                    await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new Middleware.AnalysisProgressUpdate
-                    {
-                        JobId = jobId,
-                        StatusMessage = "Analysis failed during sequential execution.",
-                        IsComplete = false,
-                        HasFailed = true,
-                        ErrorMessage = ex.Message
-                    });
+                    await _hubContext
+                        .Clients.Client(connectionId)
+                        .SendAsync(
+                            "ReceiveAnalysisProgress",
+                            new Middleware.AnalysisProgressUpdate
+                            {
+                                JobId = jobId,
+                                StatusMessage = "Analysis failed during sequential execution.",
+                                IsComplete = false,
+                                HasFailed = true,
+                                ErrorMessage = ex.Message,
+                            }
+                        );
                 }
                 throw;
             }
         }
 
-        private async Task<string> HandleFailureAsync(string conversationId, string userId, IEnumerable<string> documentUrls, string failedResponse)
+        private async Task<string> HandleFailureAsync(
+            string conversationId,
+            string userId,
+            IEnumerable<string> documentUrls,
+            string failedResponse
+        )
         {
-            _logger.LogInformation("Failure prompt called for conversation {ConversationId}", conversationId);
-            var correctivePrompt = await _promptManager.GetPromptAsync(null, FailureCorrectiveActionKey);
-            var correctiveInput = $"{correctivePrompt}\n\nOriginal Failed Response:\n{failedResponse}";
+            _logger.LogInformation(
+                "Failure prompt called for conversation {ConversationId}",
+                conversationId
+            );
+            var correctivePrompt = await _promptManager.GetPromptAsync(
+                null,
+                FailureCorrectiveActionKey
+            );
+            var correctiveInput =
+                $"{correctivePrompt}\n\nOriginal Failed Response:\n{failedResponse}";
 
             _logger.LogInformation("Calling ContinueConversationAsync for corrective action.");
-            var (response, _) = await _aiService.ContinueConversationAsync(conversationId, userId, correctiveInput, null, true);
+            var (response, _) = await _aiService.ContinueConversationAsync(
+                conversationId,
+                userId,
+                correctiveInput,
+                null,
+                true
+            );
 
             return response;
         }
 
-        private async Task<string> GetUserContextAsString(string userContextText, string userContextFileUrl)
+        private async Task<string> GetUserContextAsString(
+            string userContextText,
+            string userContextFileUrl
+        )
         {
             var contextBuilder = new StringBuilder();
-            if (!string.IsNullOrWhiteSpace(userContextText) && !userContextText.Contains("Analysis started with selected prompts:"))
+            if (
+                !string.IsNullOrWhiteSpace(userContextText)
+                && !userContextText.Contains("Analysis started with selected prompts:")
+            )
             {
                 contextBuilder.AppendLine("## User-Provided Context");
                 contextBuilder.AppendLine(userContextText);
@@ -514,7 +889,9 @@ namespace ProbuildBackend.Services
             {
                 try
                 {
-                    var (contentStream, _, _) = await _azureBlobService.GetBlobContentAsync(userContextFileUrl);
+                    var (contentStream, _, _) = await _azureBlobService.GetBlobContentAsync(
+                        userContextFileUrl
+                    );
                     using var reader = new StreamReader(contentStream);
                     var fileContent = await reader.ReadToEndAsync();
 
@@ -530,7 +907,11 @@ namespace ProbuildBackend.Services
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to read user context file from URL: {Url}", userContextFileUrl);
+                    _logger.LogError(
+                        ex,
+                        "Failed to read user context file from URL: {Url}",
+                        userContextFileUrl
+                    );
                 }
             }
 
@@ -546,19 +927,31 @@ namespace ProbuildBackend.Services
                 if (match.Success)
                 {
                     var json = match.Groups[1].Value;
-                    var extractedData = JsonSerializer.Deserialize<JobModel>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    var extractedData = JsonSerializer.Deserialize<JobModel>(
+                        json,
+                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+                    );
 
                     var jobToUpdate = await _context.Jobs.FindAsync(jobId);
                     if (jobToUpdate != null && extractedData != null)
                     {
-                        jobToUpdate.ProjectName = extractedData.ProjectName ?? jobToUpdate.ProjectName;
-                        jobToUpdate.WallStructure = extractedData.WallStructure ?? jobToUpdate.WallStructure;
-                        jobToUpdate.RoofStructure = extractedData.RoofStructure ?? jobToUpdate.RoofStructure;
+                        jobToUpdate.ProjectName =
+                            extractedData.ProjectName ?? jobToUpdate.ProjectName;
+                        jobToUpdate.WallStructure =
+                            extractedData.WallStructure ?? jobToUpdate.WallStructure;
+                        jobToUpdate.RoofStructure =
+                            extractedData.RoofStructure ?? jobToUpdate.RoofStructure;
                         jobToUpdate.Foundation = extractedData.Foundation ?? jobToUpdate.Foundation;
                         jobToUpdate.Finishes = extractedData.Finishes ?? jobToUpdate.Finishes;
-                        jobToUpdate.ElectricalSupplyNeeds = extractedData.ElectricalSupplyNeeds ?? jobToUpdate.ElectricalSupplyNeeds;
-                        jobToUpdate.Stories = extractedData.Stories > 0 ? extractedData.Stories : jobToUpdate.Stories;
-                        jobToUpdate.BuildingSize = extractedData.BuildingSize > 0 ? extractedData.BuildingSize : jobToUpdate.BuildingSize;
+                        jobToUpdate.ElectricalSupplyNeeds =
+                            extractedData.ElectricalSupplyNeeds
+                            ?? jobToUpdate.ElectricalSupplyNeeds;
+                        jobToUpdate.Stories =
+                            extractedData.Stories > 0 ? extractedData.Stories : jobToUpdate.Stories;
+                        jobToUpdate.BuildingSize =
+                            extractedData.BuildingSize > 0
+                                ? extractedData.BuildingSize
+                                : jobToUpdate.BuildingSize;
                         await _context.SaveChangesAsync();
                     }
                 }
@@ -569,17 +962,30 @@ namespace ProbuildBackend.Services
             }
         }
 
-        private async Task<string> ExecuteSequentialRenovationPromptsAsync(string conversationId, string userId, string initialResponse, int jobId, string? connectionId)
+        private async Task<string> ExecuteSequentialRenovationPromptsAsync(
+            string conversationId,
+            string userId,
+            string initialResponse,
+            int jobId,
+            string? connectionId
+        )
         {
             var stringBuilder = new StringBuilder();
             stringBuilder.Append(initialResponse);
 
-            var promptNames = new[] {
-               "renovation-01-demolition", "renovation-02-structural-alterations", "renovation-03-rough-in-mep",
-               "renovation-04-insulation-drywall", "renovation-05-interior-finishes", "renovation-06-fixtures-fittings-equipment",
-               "renovation-07-cost-breakdown-summary", "renovation-08-project-timeline", "renovation-09-environmental-impact",
-               "renovation-10-final-review-rebuttal"
-           };
+            var promptNames = new[]
+            {
+                "renovation-01-demolition",
+                "renovation-02-structural-alterations",
+                "renovation-03-rough-in-mep",
+                "renovation-04-insulation-drywall",
+                "renovation-05-interior-finishes",
+                "renovation-06-fixtures-fittings-equipment",
+                "renovation-07-cost-breakdown-summary",
+                "renovation-08-project-timeline",
+                "renovation-09-environmental-impact",
+                "renovation-10-final-review-rebuttal",
+            };
 
             try
             {
@@ -587,25 +993,53 @@ namespace ProbuildBackend.Services
                 int step = 1;
                 foreach (var promptName in promptNames)
                 {
-                    _logger.LogInformation("Executing step {Step} of {TotalSteps}: {PromptName} for conversation {ConversationId}", step, promptNames.Length, promptName, conversationId);
+                    _logger.LogInformation(
+                        "Executing step {Step} of {TotalSteps}: {PromptName} for conversation {ConversationId}",
+                        step,
+                        promptNames.Length,
+                        promptName,
+                        conversationId
+                    );
 
                     if (!string.IsNullOrEmpty(connectionId))
                     {
-                        await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new Middleware.AnalysisProgressUpdate
-                        {
-                            JobId = jobId,
-                            StatusMessage = $"Analyzing: {promptName.Replace(".txt", "").Replace("-", " ")}",
-                            CurrentStep = step,
-                            TotalSteps = promptNames.Length,
-                            IsComplete = false,
-                            HasFailed = false
-                        });
+                        await _hubContext
+                            .Clients.Client(connectionId)
+                            .SendAsync(
+                                "ReceiveAnalysisProgress",
+                                new Middleware.AnalysisProgressUpdate
+                                {
+                                    JobId = jobId,
+                                    StatusMessage =
+                                        $"Analyzing: {promptName.Replace(".txt", "").Replace("-", " ")}",
+                                    CurrentStep = step,
+                                    TotalSteps = promptNames.Length,
+                                    IsComplete = false,
+                                    HasFailed = false,
+                                }
+                            );
                     }
 
-                    var promptText = await _promptManager.GetPromptAsync("RenovationPrompts/", $"{promptName}.txt");
-                    (lastResponse, _) = await _aiService.ContinueConversationAsync(conversationId, userId, promptText, null, true);
+                    var promptText = await _promptManager.GetPromptAsync(
+                        "RenovationPrompts/",
+                        $"{promptName}.txt"
+                    );
+                    (lastResponse, _) = await _aiService.ContinueConversationAsync(
+                        conversationId,
+                        userId,
+                        promptText,
+                        null,
+                        true
+                    );
 
-                    await _conversationRepo.AddMessageAsync(new Message { ConversationId = conversationId, Role = "model", Content = lastResponse });
+                    await _conversationRepo.AddMessageAsync(
+                        new Message
+                        {
+                            ConversationId = conversationId,
+                            Role = "model",
+                            Content = lastResponse,
+                        }
+                    );
 
                     stringBuilder.Append("\n\n---\n\n");
                     stringBuilder.Append(lastResponse);
@@ -615,33 +1049,50 @@ namespace ProbuildBackend.Services
 
                 if (!string.IsNullOrEmpty(connectionId))
                 {
-                    await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new Middleware.AnalysisProgressUpdate
-                    {
-                        JobId = jobId,
-                        StatusMessage = "Analysis complete.",
-                        CurrentStep = promptNames.Length,
-                        TotalSteps = promptNames.Length,
-                        IsComplete = true,
-                        HasFailed = false
-                    });
+                    await _hubContext
+                        .Clients.Client(connectionId)
+                        .SendAsync(
+                            "ReceiveAnalysisProgress",
+                            new Middleware.AnalysisProgressUpdate
+                            {
+                                JobId = jobId,
+                                StatusMessage = "Analysis complete.",
+                                CurrentStep = promptNames.Length,
+                                TotalSteps = promptNames.Length,
+                                IsComplete = true,
+                                HasFailed = false,
+                            }
+                        );
                 }
 
-                _logger.LogInformation("Full sequential renovation analysis completed successfully for conversation {ConversationId}", conversationId);
+                _logger.LogInformation(
+                    "Full sequential renovation analysis completed successfully for conversation {ConversationId}",
+                    conversationId
+                );
                 return stringBuilder.ToString();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "An error occurred during sequential renovation prompt execution for conversation {ConversationId}", conversationId);
+                _logger.LogError(
+                    ex,
+                    "An error occurred during sequential renovation prompt execution for conversation {ConversationId}",
+                    conversationId
+                );
                 if (!string.IsNullOrEmpty(connectionId))
                 {
-                    await _hubContext.Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", new Middleware.AnalysisProgressUpdate
-                    {
-                        JobId = jobId,
-                        StatusMessage = "Analysis failed during sequential execution.",
-                        IsComplete = false,
-                        HasFailed = true,
-                        ErrorMessage = ex.Message
-                    });
+                    await _hubContext
+                        .Clients.Client(connectionId)
+                        .SendAsync(
+                            "ReceiveAnalysisProgress",
+                            new Middleware.AnalysisProgressUpdate
+                            {
+                                JobId = jobId,
+                                StatusMessage = "Analysis failed during sequential execution.",
+                                IsComplete = false,
+                                HasFailed = true,
+                                ErrorMessage = ex.Message,
+                            }
+                        );
                 }
                 throw;
             }
@@ -652,7 +1103,10 @@ namespace ProbuildBackend.Services
             _keepAliveService.StartPinging();
             try
             {
-                string promptKey = comparisonType.Equals("Vendor", StringComparison.OrdinalIgnoreCase)
+                string promptKey = comparisonType.Equals(
+                    "Vendor",
+                    StringComparison.OrdinalIgnoreCase
+                )
                     ? "vendor-comparison-prompt.txt"
                     : "subcontractor-comparison-prompt.txt";
 
@@ -664,7 +1118,9 @@ namespace ProbuildBackend.Services
                     string quoteText = bid.Task ?? "No detailed quote text provided.";
                     if (!string.IsNullOrEmpty(bid.QuoteId))
                     {
-                        var quote = await _context.Quotes.Include(q => q.Rows).FirstOrDefaultAsync(q => q.Id == bid.QuoteId);
+                        var quote = await _context
+                            .Quotes.Include(q => q.Rows)
+                            .FirstOrDefaultAsync(q => q.Id == bid.QuoteId);
                         if (quote != null)
                         {
                             quoteText = JsonSerializer.Serialize(quote);
@@ -674,31 +1130,46 @@ namespace ProbuildBackend.Services
                     {
                         try
                         {
-                            var (contentStream, _, _) = await _azureBlobService.GetBlobContentAsync(bid.DocumentUrl);
-                            quoteText = await _pdfTextExtractionService.ExtractTextAsync(contentStream);
+                            var (contentStream, _, _) = await _azureBlobService.GetBlobContentAsync(
+                                bid.DocumentUrl
+                            );
+                            quoteText = await _pdfTextExtractionService.ExtractTextAsync(
+                                contentStream
+                            );
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogError(ex, "Failed to extract text from PDF for bid {BidId}", bid.Id);
+                            _logger.LogError(
+                                ex,
+                                "Failed to extract text from PDF for bid {BidId}",
+                                bid.Id
+                            );
                             quoteText = "Error extracting text from PDF.";
                         }
                     }
 
-                    bidsDetails.Add(new
-                    {
-                        bid.Id,
-                        bid.Amount,
-                        bid.User?.ProbuildRating,
-                        bid.User?.GoogleRating,
-                        bid.User?.JobPreferences,
-                        QuoteDetails = quoteText
-                    });
+                    bidsDetails.Add(
+                        new
+                        {
+                            bid.Id,
+                            bid.Amount,
+                            bid.User?.ProbuildRating,
+                            bid.User?.GoogleRating,
+                            bid.User?.JobPreferences,
+                            QuoteDetails = quoteText,
+                        }
+                    );
                 }
 
                 var bidsJson = JsonSerializer.Serialize(bidsDetails);
                 var fullPrompt = $"{prompt}\n\nBids:\n{bidsJson}";
 
-                var (analysisResult, _) = await _aiService.StartMultimodalConversationAsync("system-user", null, fullPrompt, $"Analyze the provided {comparisonType} bids and return the top 3 candidates.");
+                var (analysisResult, _) = await _aiService.StartMultimodalConversationAsync(
+                    "system-user",
+                    null,
+                    fullPrompt,
+                    $"Analyze the provided {comparisonType} bids and return the top 3 candidates."
+                );
 
                 return analysisResult;
             }
@@ -708,14 +1179,18 @@ namespace ProbuildBackend.Services
             }
         }
 
-        public async Task<string> GenerateFeedbackForUnsuccessfulBidderAsync(BidModel bid, BidModel winningBid)
+        public async Task<string> GenerateFeedbackForUnsuccessfulBidderAsync(
+            BidModel bid,
+            BidModel winningBid
+        )
         {
             var user = bid.User;
             if (user != null)
             {
-                bool isFreeTier = user.SubscriptionPackage == "Basic (Free) ($0.00)" ||
-                                  string.IsNullOrEmpty(user.SubscriptionPackage) ||
-                                  user.SubscriptionPackage.ToUpper() == "BASIC";
+                bool isFreeTier =
+                    user.SubscriptionPackage == "Basic (Free) ($0.00)"
+                    || string.IsNullOrEmpty(user.SubscriptionPackage)
+                    || user.SubscriptionPackage.ToUpper() == "BASIC";
 
                 if (isFreeTier)
                 {
@@ -723,23 +1198,26 @@ namespace ProbuildBackend.Services
                 }
             }
 
-            var prompt = await _promptManager.GetPromptAsync("ComparisonPrompts/", "unsuccessful-bid-prompt.txt");
+            var prompt = await _promptManager.GetPromptAsync(
+                "ComparisonPrompts/",
+                "unsuccessful-bid-prompt.txt"
+            );
 
-            var unsuccessfulQuote = await _context.Quotes.FirstOrDefaultAsync(q => q.Id == bid.QuoteId);
-            var winningQuote = await _context.Quotes.FirstOrDefaultAsync(q => q.Id == winningBid.QuoteId);
+            var unsuccessfulQuote = await _context.Quotes.FirstOrDefaultAsync(q =>
+                q.Id == bid.QuoteId
+            );
+            var winningQuote = await _context.Quotes.FirstOrDefaultAsync(q =>
+                q.Id == winningBid.QuoteId
+            );
 
             var unsuccessfulBidAnalysis = new
             {
                 bid.Id,
                 bid.Amount,
-                QuoteDetails = unsuccessfulQuote
+                QuoteDetails = unsuccessfulQuote,
             };
 
-            var winningBidBenchmark = new
-            {
-                winningBid.Amount,
-                QuoteDetails = winningQuote
-            };
+            var winningBidBenchmark = new { winningBid.Amount, QuoteDetails = winningQuote };
 
             var promptInput = new
             {
@@ -748,19 +1226,38 @@ namespace ProbuildBackend.Services
                 OurCompanyName = "Probuild", // Or fetch dynamically
                 UnsuccessfulSubcontractorName = user?.UserName,
                 AnalysisOfUnsuccessfulQuotation = JsonSerializer.Serialize(unsuccessfulBidAnalysis),
-                WinningBidBenchmark = JsonSerializer.Serialize(winningBidBenchmark)
+                WinningBidBenchmark = JsonSerializer.Serialize(winningBidBenchmark),
             };
 
             var fullPrompt = prompt
-                .Replace("[e.g., The Falcon Heights Residential Development]", promptInput.ProjectName)
-                .Replace("[e.g., Structural Steel Fabrication and Erection]", promptInput.WorkPackage)
+                .Replace(
+                    "[e.g., The Falcon Heights Residential Development]",
+                    promptInput.ProjectName
+                )
+                .Replace(
+                    "[e.g., Structural Steel Fabrication and Erection]",
+                    promptInput.WorkPackage
+                )
                 .Replace("[Your Company Name]", promptInput.OurCompanyName)
-                .Replace("[Enter the name of the company you are writing to]", promptInput.UnsuccessfulSubcontractorName)
-                .Replace("[Paste the detailed analysis of the subcontractor's quote here, including price, schedule, inclusions, exclusions, compliance notes.]", promptInput.AnalysisOfUnsuccessfulQuotation)
-                .Replace("[Summarize the key advantages of the winning bid. For example: \"Final price was R 1,150,000 (8% lower). Proposed schedule was 16 weeks (2 weeks shorter). Fully compliant with specifications. Included a detailed plan for managing material price volatility.\"]", promptInput.WinningBidBenchmark);
+                .Replace(
+                    "[Enter the name of the company you are writing to]",
+                    promptInput.UnsuccessfulSubcontractorName
+                )
+                .Replace(
+                    "[Paste the detailed analysis of the subcontractor's quote here, including price, schedule, inclusions, exclusions, compliance notes.]",
+                    promptInput.AnalysisOfUnsuccessfulQuotation
+                )
+                .Replace(
+                    "[Summarize the key advantages of the winning bid. For example: \"Final price was R 1,150,000 (8% lower). Proposed schedule was 16 weeks (2 weeks shorter). Fully compliant with specifications. Included a detailed plan for managing material price volatility.\"]",
+                    promptInput.WinningBidBenchmark
+                );
 
-
-            var (analysisResult, _) = await _aiService.StartMultimodalConversationAsync("system-user", null, fullPrompt, "Generate a feedback report for the provided bid.");
+            var (analysisResult, _) = await _aiService.StartMultimodalConversationAsync(
+                "system-user",
+                null,
+                fullPrompt,
+                "Generate a feedback report for the provided bid."
+            );
 
             return analysisResult;
         }
@@ -778,7 +1275,5 @@ namespace ProbuildBackend.Services
             _logger.LogError("Failed to find or extract blueprint JSON from the AI response.");
             throw new InvalidOperationException("Could not parse blueprint JSON from AI response.");
         }
-
     }
 }
-

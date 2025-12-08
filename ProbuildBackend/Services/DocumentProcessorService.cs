@@ -1,13 +1,13 @@
-﻿using FSharp.Data.Runtime.BaseTypes;
+﻿using System.Text.Json;
+using System.Web;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
-using System.Text.Json;
-using System.Web;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
+
 namespace ProbuildBackend.Services
 {
     public class DocumentProcessorService : IDocumentProcessorService
@@ -19,6 +19,7 @@ namespace ProbuildBackend.Services
         private readonly IConversationRepository _conversationRepository;
         private readonly AzureBlobService _azureBlobService;
         private readonly IEmailTemplateService _emailTemplate;
+
         public DocumentProcessorService(
             ApplicationDbContext context,
             IHubContext<ProgressHub> hubContext,
@@ -83,7 +84,7 @@ namespace ProbuildBackend.Services
                     BomJson = JsonSerializer.Serialize(""), // Placeholder, as analysis service handles this.
                     MaterialsEstimateJson = JsonSerializer.Serialize(""), // Placeholder.
                     FullResponse = finalReport,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = DateTime.UtcNow,
                 };
 
                 _context.DocumentProcessingResults.Add(processingResult);
@@ -91,13 +92,18 @@ namespace ProbuildBackend.Services
 
                 if (user != null)
                 {
+                    var ProjectAnalysisEmail = await _emailTemplate.GetTemplateAsync(
+                        "ProjectAnalysisReadyEmail"
+                    );
 
-                    var ProjectAnalysisEmail = await _emailTemplate.GetTemplateAsync("ProjectAnalysisReadyEmail");
+                    var jobAddress = _context
+                        .JobAddresses.Where(j => j.JobId == job.Id)
+                        .FirstOrDefault();
+                    var jobDocument = _context.JobDocuments.Where(d => d.JobId == job.Id).ToList();
+                    var frontendUrl =
+                        Environment.GetEnvironmentVariable("FRONTEND_URL")
+                        ?? "http://localhost:4200";
 
-                    var jobAddress = _context.JobAddresses.Where(j => j.JobId == job.Id).FirstOrDefault();
-                   var jobDocument = _context.JobDocuments.Where(d => d.JobId == job.Id).ToList();
-                    var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
-                
                     var query = HttpUtility.ParseQueryString(string.Empty);
                     query["jobId"] = job.Id.ToString();
                     query["operatingArea"] = job.OperatingArea;
@@ -114,19 +120,24 @@ namespace ProbuildBackend.Services
                     query["foundation"] = job.Foundation;
                     query["date"] = job.DesiredStartDate.ToString("MM/dd/yyyy");
                     query["documents"] = jobDocument.Any()
-                   ? string.Join(",", jobDocument.Select(d => d.Id))
-                   : "";
+                        ? string.Join(",", jobDocument.Select(d => d.Id))
+                        : "";
                     query["latitude"] = jobAddress?.Latitude?.ToString() ?? "";
                     query["longitude"] = jobAddress?.Longitude?.ToString() ?? "";
 
                     var analysisLink = $"{frontendUrl}/view-quote?{query}";
 
-                    ProjectAnalysisEmail.Subject = ProjectAnalysisEmail.Subject.Replace("{{job.ProjectName}}", job.ProjectName);
+                    ProjectAnalysisEmail.Subject = ProjectAnalysisEmail.Subject.Replace(
+                        "{{job.ProjectName}}",
+                        job.ProjectName
+                    );
 
-                    ProjectAnalysisEmail.Body = ProjectAnalysisEmail.Body.Replace("{{UserName}}", user.FirstName + " " + user.LastName)
-                                                                             .Replace("{{job.ProjectName}}", job.ProjectName)
-                                                                             .Replace("{{AnalysisLink}}", analysisLink).Replace("{{Header}}", ProjectAnalysisEmail.HeaderHtml)
-                .Replace("{{Footer}}", ProjectAnalysisEmail.FooterHtml);
+                    ProjectAnalysisEmail.Body = ProjectAnalysisEmail
+                        .Body.Replace("{{UserName}}", user.FirstName + " " + user.LastName)
+                        .Replace("{{job.ProjectName}}", job.ProjectName)
+                        .Replace("{{AnalysisLink}}", analysisLink)
+                        .Replace("{{Header}}", ProjectAnalysisEmail.HeaderHtml)
+                        .Replace("{{Footer}}", ProjectAnalysisEmail.FooterHtml);
                     try
                     {
                         await _emailService.SendEmailAsync(ProjectAnalysisEmail, user.Email);
@@ -139,14 +150,14 @@ namespace ProbuildBackend.Services
 
                 if (!string.IsNullOrEmpty(connectionId))
                 {
-                    await _hubContext.Clients
-                        .Client(connectionId)
+                    await _hubContext
+                        .Clients.Client(connectionId)
                         .SendAsync(
                             "JobProcessingComplete",
                             new
                             {
                                 JobId = jobId,
-                                Message = "Document processing complete. The analysis report is available."
+                                Message = "Document processing complete. The analysis report is available.",
                             }
                         );
                 }
@@ -158,7 +169,7 @@ namespace ProbuildBackend.Services
                 {
                     Location = "ProcessDocumentsForJobAsync",
                     DateCreated = DateTime.UtcNow,
-                    Description = $"MESSAGE: {ex.Message} STACKTRACE: {ex.StackTrace}"
+                    Description = $"MESSAGE: {ex.Message} STACKTRACE: {ex.StackTrace}",
                 };
                 _context.DocumentProcessingLog.Add(log);
 
@@ -171,8 +182,8 @@ namespace ProbuildBackend.Services
 
                 if (!string.IsNullOrEmpty(connectionId))
                 {
-                    await _hubContext.Clients
-                        .Client(connectionId)
+                    await _hubContext
+                        .Clients.Client(connectionId)
                         .SendAsync(
                             "JobProcessingFailed",
                             new { JobId = jobId, Error = ex.Message }
@@ -208,7 +219,7 @@ namespace ProbuildBackend.Services
                     PromptKeys = promptKeys,
                     DocumentUrls = documentUrls,
                     JobId = jobId,
-                    UserId = job.UserId
+                    UserId = job.UserId,
                 };
 
                 request.UserContext = await GetUserContextAsString(
@@ -231,7 +242,7 @@ namespace ProbuildBackend.Services
                     BomJson = JsonSerializer.Serialize(""),
                     MaterialsEstimateJson = JsonSerializer.Serialize(""),
                     FullResponse = finalReport,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = DateTime.UtcNow,
                 };
 
                 _context.DocumentProcessingResults.Add(result);
@@ -245,11 +256,17 @@ namespace ProbuildBackend.Services
                 }
                 if (user != null)
                 {
-                    var ProjectAnalysisEmail = await _emailTemplate.GetTemplateAsync("ProjectAnalysisReadyEmail");
+                    var ProjectAnalysisEmail = await _emailTemplate.GetTemplateAsync(
+                        "ProjectAnalysisReadyEmail"
+                    );
 
-                    var jobAddress = _context.JobAddresses.Where(j => j.JobId == job.Id).FirstOrDefault();
+                    var jobAddress = _context
+                        .JobAddresses.Where(j => j.JobId == job.Id)
+                        .FirstOrDefault();
                     var jobDocument = _context.JobDocuments.Where(d => d.JobId == job.Id).ToList();
-                    var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
+                    var frontendUrl =
+                        Environment.GetEnvironmentVariable("FRONTEND_URL")
+                        ?? "http://localhost:4200";
 
                     var query = HttpUtility.ParseQueryString(string.Empty);
                     query["jobId"] = job.Id.ToString();
@@ -267,19 +284,24 @@ namespace ProbuildBackend.Services
                     query["foundation"] = job.Foundation;
                     query["date"] = job.DesiredStartDate.ToString("MM/dd/yyyy");
                     query["documents"] = jobDocument.Any()
-                    ? string.Join(",", jobDocument.Select(d => d.Id))
-                    : "";
+                        ? string.Join(",", jobDocument.Select(d => d.Id))
+                        : "";
                     query["latitude"] = jobAddress?.Latitude?.ToString() ?? "";
                     query["longitude"] = jobAddress?.Longitude?.ToString() ?? "";
 
                     var analysisLink = $"{frontendUrl}/view-quote?{query}";
 
-                    ProjectAnalysisEmail.Subject = ProjectAnalysisEmail.Subject.Replace("{{job.ProjectName}}", job.ProjectName);
+                    ProjectAnalysisEmail.Subject = ProjectAnalysisEmail.Subject.Replace(
+                        "{{job.ProjectName}}",
+                        job.ProjectName
+                    );
 
-                    ProjectAnalysisEmail.Body = ProjectAnalysisEmail.Body.Replace("{{UserName}}", user.FirstName + " " + user.LastName)
-                                                                             .Replace("{{job.ProjectName}}", job.ProjectName)
-                                                                             .Replace("{{AnalysisLink}}", analysisLink).Replace("{{Header}}", ProjectAnalysisEmail.HeaderHtml)
-                .Replace("{{Footer}}", ProjectAnalysisEmail.FooterHtml);
+                    ProjectAnalysisEmail.Body = ProjectAnalysisEmail
+                        .Body.Replace("{{UserName}}", user.FirstName + " " + user.LastName)
+                        .Replace("{{job.ProjectName}}", job.ProjectName)
+                        .Replace("{{AnalysisLink}}", analysisLink)
+                        .Replace("{{Header}}", ProjectAnalysisEmail.HeaderHtml)
+                        .Replace("{{Footer}}", ProjectAnalysisEmail.FooterHtml);
 
                     try
                     {
@@ -291,8 +313,8 @@ namespace ProbuildBackend.Services
                     }
                 }
 
-                await _hubContext.Clients
-                    .Client(connectionId)
+                await _hubContext
+                    .Clients.Client(connectionId)
                     .SendAsync("AnalysisComplete", jobId, "Selected analysis is complete.");
             }
             catch (Exception ex)
@@ -300,11 +322,12 @@ namespace ProbuildBackend.Services
                 // Log error
                 job.Status = "FAILED";
                 await _context.SaveChangesAsync();
-                await _hubContext.Clients
-                    .Client(connectionId)
+                await _hubContext
+                    .Clients.Client(connectionId)
                     .SendAsync("AnalysisFailed", jobId, "Selected analysis failed.");
             }
         }
+
         private async Task<string> GetUserContextAsString(
             string userContextText,
             string userContextFileUrl
@@ -385,7 +408,7 @@ namespace ProbuildBackend.Services
                     BomJson = JsonSerializer.Serialize(""),
                     MaterialsEstimateJson = JsonSerializer.Serialize(""),
                     FullResponse = finalReport,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = DateTime.UtcNow,
                 };
 
                 _context.DocumentProcessingResults.Add(result);
@@ -399,11 +422,17 @@ namespace ProbuildBackend.Services
                 }
                 if (user != null)
                 {
-                    var ProjectAnalysisEmail = await _emailTemplate.GetTemplateAsync("ProjectAnalysisReadyEmail");
+                    var ProjectAnalysisEmail = await _emailTemplate.GetTemplateAsync(
+                        "ProjectAnalysisReadyEmail"
+                    );
 
-                    var jobAddress = _context.JobAddresses.Where(j => j.JobId == job.Id).FirstOrDefault();
-                    var jobDocuments =  _context.JobDocuments.Where(d => d.JobId == job.Id).ToList();
-                    var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
+                    var jobAddress = _context
+                        .JobAddresses.Where(j => j.JobId == job.Id)
+                        .FirstOrDefault();
+                    var jobDocuments = _context.JobDocuments.Where(d => d.JobId == job.Id).ToList();
+                    var frontendUrl =
+                        Environment.GetEnvironmentVariable("FRONTEND_URL")
+                        ?? "http://localhost:4200";
 
                     var query = HttpUtility.ParseQueryString(string.Empty);
                     query["jobId"] = job.Id.ToString();
@@ -421,19 +450,24 @@ namespace ProbuildBackend.Services
                     query["foundation"] = job.Foundation;
                     query["date"] = job.DesiredStartDate.ToString("MM/dd/yyyy");
                     query["documents"] = jobDocuments.Any()
-                   ? string.Join(",", jobDocuments.Select(d => d.Id))
-                   : "";
+                        ? string.Join(",", jobDocuments.Select(d => d.Id))
+                        : "";
                     query["latitude"] = jobAddress?.Latitude?.ToString() ?? "";
                     query["longitude"] = jobAddress?.Longitude?.ToString() ?? "";
 
                     var analysisLink = $"{frontendUrl}/view-quote?{query}";
 
-                    ProjectAnalysisEmail.Subject = ProjectAnalysisEmail.Subject.Replace("{{job.ProjectName}}", job.ProjectName);
+                    ProjectAnalysisEmail.Subject = ProjectAnalysisEmail.Subject.Replace(
+                        "{{job.ProjectName}}",
+                        job.ProjectName
+                    );
 
-                    ProjectAnalysisEmail.Body = ProjectAnalysisEmail.Body.Replace("{{UserName}}", user.FirstName + " " + user.LastName)
-                                                                             .Replace("{{job.ProjectName}}", job.ProjectName)
-                                                                             .Replace("{{AnalysisLink}}", analysisLink).Replace("{{Header}}", ProjectAnalysisEmail.HeaderHtml)
-                .Replace("{{Footer}}", ProjectAnalysisEmail.FooterHtml);
+                    ProjectAnalysisEmail.Body = ProjectAnalysisEmail
+                        .Body.Replace("{{UserName}}", user.FirstName + " " + user.LastName)
+                        .Replace("{{job.ProjectName}}", job.ProjectName)
+                        .Replace("{{AnalysisLink}}", analysisLink)
+                        .Replace("{{Header}}", ProjectAnalysisEmail.HeaderHtml)
+                        .Replace("{{Footer}}", ProjectAnalysisEmail.FooterHtml);
 
                     try
                     {
@@ -445,8 +479,8 @@ namespace ProbuildBackend.Services
                     }
                 }
 
-                await _hubContext.Clients
-                    .Client(connectionId)
+                await _hubContext
+                    .Clients.Client(connectionId)
                     .SendAsync("AnalysisComplete", jobId, "Renovation analysis is complete.");
             }
             catch (Exception ex)
@@ -454,8 +488,8 @@ namespace ProbuildBackend.Services
                 // Log error
                 job.Status = "FAILED";
                 await _context.SaveChangesAsync();
-                await _hubContext.Clients
-                    .Client(connectionId)
+                await _hubContext
+                    .Clients.Client(connectionId)
                     .SendAsync("AnalysisFailed", jobId, "Renovation analysis failed.");
             }
         }

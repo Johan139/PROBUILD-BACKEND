@@ -20,17 +20,14 @@ namespace ProbuildBackend.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<BidModel>>> GetBids()
         {
-            return await _context.Bids
-                .Include(b => b.Job)
-                .Include(b => b.User)
-                .ToListAsync();
+            return await _context.Bids.Include(b => b.Job).Include(b => b.User).ToListAsync();
         }
 
         [HttpGet("{id}")]
         public async Task<ActionResult<BidModel>> GetBid(int id)
         {
-            var bid = await _context.Bids
-                .Include(b => b.Job)
+            var bid = await _context
+                .Bids.Include(b => b.Job)
                 .Include(b => b.User)
                 .FirstOrDefaultAsync(b => b.Id == id);
 
@@ -42,14 +39,14 @@ namespace ProbuildBackend.Controllers
             return bid;
         }
 
-       [HttpGet("job/{jobId}")]
-       public async Task<ActionResult<IEnumerable<BidModel>>> GetBidsForJob(int jobId)
-       {
-           return await _context.Bids
-               .Where(b => b.JobId == jobId)
-               .Include(b => b.User)
-               .ToListAsync();
-       }
+        [HttpGet("job/{jobId}")]
+        public async Task<ActionResult<IEnumerable<BidModel>>> GetBidsForJob(int jobId)
+        {
+            return await _context
+                .Bids.Where(b => b.JobId == jobId)
+                .Include(b => b.User)
+                .ToListAsync();
+        }
 
         [HttpPost("upload")]
         public async Task<ActionResult<BidModel>> PostPdfBid([FromBody] PdfBidDto bidRequest)
@@ -67,7 +64,7 @@ namespace ProbuildBackend.Controllers
                 DocumentUrl = bidRequest.DocumentUrl,
                 UserId = userId,
                 Status = "Submitted",
-                SubmittedAt = DateTime.UtcNow
+                SubmittedAt = DateTime.UtcNow,
             };
 
             _context.Bids.Add(bid);
@@ -161,7 +158,7 @@ namespace ProbuildBackend.Controllers
 
             return Ok(bid);
         }
-        
+
         private bool BidExists(int id)
         {
             return _context.Bids.Any(e => e.Id == id);

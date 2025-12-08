@@ -1,9 +1,9 @@
-﻿using ProbuildBackend.Interface;
+﻿using System.Text.Json;
 using Microsoft.AspNetCore.Identity;
-using System.Text.Json;
-using ProbuildBackend.Models;
 using Microsoft.AspNetCore.SignalR;
+using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
+using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Models.Enums;
 
@@ -29,7 +29,8 @@ namespace ProbuildBackend.Services
             IWebHostEnvironment hostingEnvironment,
             AzureBlobService azureBlobService,
             IHubContext<ChatHub> hubContext,
-            IAiAnalysisService aiAnalysisService)
+            IAiAnalysisService aiAnalysisService
+        )
         {
             _conversationRepository = conversationRepository;
             _promptManager = promptManager;
@@ -44,17 +45,28 @@ namespace ProbuildBackend.Services
 
         private List<PromptMapping> LoadPromptMappings()
         {
-            var filePath = Path.Combine(_hostingEnvironment.ContentRootPath, "Config", "prompt_mapping.json");
+            var filePath = Path.Combine(
+                _hostingEnvironment.ContentRootPath,
+                "Config",
+                "prompt_mapping.json"
+            );
             var json = File.ReadAllText(filePath);
-            return JsonSerializer.Deserialize<List<PromptMapping>>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            return JsonSerializer.Deserialize<List<PromptMapping>>(
+                json,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+            );
         }
 
         // --- NEW HELPERS: dual-cast chunks to user AND group (no client changes required) ---
         private Task SendChunkAsync(string conversationId, string userId, string textWithSpace)
         {
             return Task.WhenAll(
-                _hubContext.Clients.User(userId).SendAsync("ReceiveStreamChunk", conversationId, textWithSpace),
-                _hubContext.Clients.Group(conversationId).SendAsync("ReceiveStreamChunk", conversationId, textWithSpace)
+                _hubContext
+                    .Clients.User(userId)
+                    .SendAsync("ReceiveStreamChunk", conversationId, textWithSpace),
+                _hubContext
+                    .Clients.Group(conversationId)
+                    .SendAsync("ReceiveStreamChunk", conversationId, textWithSpace)
             );
         }
 
@@ -62,7 +74,9 @@ namespace ProbuildBackend.Services
         {
             return Task.WhenAll(
                 _hubContext.Clients.User(userId).SendAsync("StreamComplete", conversationId),
-                _hubContext.Clients.Group(conversationId).SendAsync("StreamComplete", conversationId)
+                _hubContext
+                    .Clients.Group(conversationId)
+                    .SendAsync("StreamComplete", conversationId)
             );
         }
 
@@ -77,7 +91,11 @@ namespace ProbuildBackend.Services
             if (user.UserType == "GENERAL_CONTRACTOR")
             {
                 return _promptMappings
-                    .Select(p => new { promptName = p.TradeName.Replace("_", " "), promptKey = p.PromptFileName })
+                    .Select(p => new
+                    {
+                        promptName = p.TradeName.Replace("_", " "),
+                        promptKey = p.PromptFileName,
+                    })
                     .GroupBy(p => p.promptKey)
                     .Select(g => g.First())
                     .Cast<object>()
@@ -104,7 +122,8 @@ namespace ProbuildBackend.Services
             string userType,
             string initialMessage,
             List<string>? promptKeys = null,
-            List<string>? blueprintUrls = null)
+            List<string>? blueprintUrls = null
+        )
         {
             promptKeys ??= new List<string>();
             blueprintUrls ??= new List<string>();
@@ -113,19 +132,27 @@ namespace ProbuildBackend.Services
                 ? string.Join(", ", promptKeys)
                 : (initialMessage.Length > 50 ? initialMessage[..50] : initialMessage);
 
-            var conversationId = await _conversationRepository.CreateConversationAsync(userId, title, promptKeys);
+            var conversationId = await _conversationRepository.CreateConversationAsync(
+                userId,
+                title,
+                promptKeys
+            );
 
             // Save the user's initial message (recommended so history looks right)
-            await _conversationRepository.AddMessageAsync(new Message
-            {
-                ConversationId = conversationId,
-                Role = "user",
-                Content = initialMessage,
-                Timestamp = DateTime.UtcNow
-            });
+            await _conversationRepository.AddMessageAsync(
+                new Message
+                {
+                    ConversationId = conversationId,
+                    Role = "user",
+                    Content = initialMessage,
+                    Timestamp = DateTime.UtcNow,
+                }
+            );
 
             var systemPersonaPrompt = await _promptManager.GetPromptAsync(
-                userType, promptKeys.FirstOrDefault() ?? "generic-prompt.txt");
+                userType,
+                promptKeys.FirstOrDefault() ?? "generic-prompt.txt"
+            );
 
             string aiResponse;
 
@@ -133,9 +160,17 @@ namespace ProbuildBackend.Services
             if (!promptKeys.Any())
             {
                 // Text-only: stream directly from your existing streaming source
-                var (initialResponse, _) = await _aiService.StartMultimodalConversationAsync(conversationId, blueprintUrls, systemPersonaPrompt, initialMessage);
+                var (initialResponse, _) = await _aiService.StartMultimodalConversationAsync(
+                    conversationId,
+                    blueprintUrls,
+                    systemPersonaPrompt,
+                    initialMessage
+                );
 
-                var words = (initialResponse ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                var words = (initialResponse ?? string.Empty).Split(
+                    ' ',
+                    StringSplitOptions.RemoveEmptyEntries
+                );
                 var sb = new System.Text.StringBuilder();
 
                 foreach (var w in words)
@@ -155,9 +190,16 @@ namespace ProbuildBackend.Services
                 // If you have a true streaming API for analysis, call it here.
                 // If not, simulate streaming so the UI behaves identically.
                 var (fullResponse, _) = await _aiService.StartMultimodalConversationAsync(
-                    conversationId, blueprintUrls, systemPersonaPrompt, initialMessage);
+                    conversationId,
+                    blueprintUrls,
+                    systemPersonaPrompt,
+                    initialMessage
+                );
 
-                var words = (fullResponse ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                var words = (fullResponse ?? string.Empty).Split(
+                    ' ',
+                    StringSplitOptions.RemoveEmptyEntries
+                );
                 var sb = new System.Text.StringBuilder();
 
                 foreach (var w in words)
@@ -178,7 +220,7 @@ namespace ProbuildBackend.Services
                 ConversationId = conversationId,
                 Role = "model",
                 Content = aiResponse,
-                Timestamp = DateTime.UtcNow
+                Timestamp = DateTime.UtcNow,
             };
             await _conversationRepository.AddMessageAsync(aiMessage);
 
@@ -186,25 +228,38 @@ namespace ProbuildBackend.Services
             // await _hubContext.Clients.Group(conversationId).SendAsync("ReceiveMessage", aiMessage);
 
             // Return the conversation (frontend can still use it for metadata; content is already streamed)
-            var conversation = await _conversationRepository.GetConversationAsync(conversationId)
-                                ?? throw new Exception("Failed to retrieve conversation after creation.");
+            var conversation =
+                await _conversationRepository.GetConversationAsync(conversationId)
+                ?? throw new Exception("Failed to retrieve conversation after creation.");
 
             return conversation;
         }
 
         public async Task<Conversation> CreateConversationAsync(string userId, string title)
         {
-            var conversationId = await _conversationRepository.CreateConversationAsync(userId, title, new List<string>());
-            var conversation = await _conversationRepository.GetConversationAsync(conversationId) ?? throw new Exception("Failed to retrieve conversation after creation.");
+            var conversationId = await _conversationRepository.CreateConversationAsync(
+                userId,
+                title,
+                new List<string>()
+            );
+            var conversation =
+                await _conversationRepository.GetConversationAsync(conversationId)
+                ?? throw new Exception("Failed to retrieve conversation after creation.");
             return conversation;
         }
 
-        public async Task<Message> SendMessageAsync(string conversationId, string userId, PostMessageDto dto)
+        public async Task<Message> SendMessageAsync(
+            string conversationId,
+            string userId,
+            PostMessageDto dto
+        )
         {
             var conversation = await _conversationRepository.GetConversationAsync(conversationId);
             if (conversation == null || conversation.UserId != userId)
             {
-                throw new UnauthorizedAccessException("User is not authorized to access this conversation.");
+                throw new UnauthorizedAccessException(
+                    "User is not authorized to access this conversation."
+                );
             }
 
             List<string> fileUrls = [];
@@ -223,8 +278,11 @@ namespace ProbuildBackend.Services
             string userMessageContent;
             if (string.IsNullOrEmpty(dto.Message))
             {
-                var formattedPrompts = dto.PromptKeys?.Select(p => p.Replace(".txt", "").Replace("_", " ")) ?? Enumerable.Empty<string>();
-                userMessageContent = $"Analysis started with selected prompts: {string.Join(", ", formattedPrompts)}";
+                var formattedPrompts =
+                    dto.PromptKeys?.Select(p => p.Replace(".txt", "").Replace("_", " "))
+                    ?? Enumerable.Empty<string>();
+                userMessageContent =
+                    $"Analysis started with selected prompts: {string.Join(", ", formattedPrompts)}";
             }
             else
             {
@@ -238,7 +296,7 @@ namespace ProbuildBackend.Services
                     ConversationId = conversationId,
                     Role = "user",
                     Content = userMessageContent,
-                    Timestamp = DateTime.UtcNow
+                    Timestamp = DateTime.UtcNow,
                 };
                 await _conversationRepository.AddMessageAsync(userMessage);
             }
@@ -248,7 +306,15 @@ namespace ProbuildBackend.Services
                 if (dto.PromptKeys.Contains("SYSTEM_RENOVATION_ANALYSIS"))
                 {
                     var jobDetails = new JobModel { UserId = userId };
-                    aiResponse = await _aiAnalysisService.PerformRenovationAnalysisAsync(userId, fileUrls, jobDetails, false, dto.Message, "", "medium");
+                    aiResponse = await _aiAnalysisService.PerformRenovationAnalysisAsync(
+                        userId,
+                        fileUrls,
+                        jobDetails,
+                        false,
+                        dto.Message,
+                        "",
+                        "medium"
+                    );
                 }
                 else
                 {
@@ -258,17 +324,29 @@ namespace ProbuildBackend.Services
                         PromptKeys = dto.PromptKeys,
                         DocumentUrls = fileUrls,
                         UserContext = dto.Message,
-                        ConversationId = conversationId
+                        ConversationId = conversationId,
                     };
-                    aiResponse = await _aiAnalysisService.PerformSelectedAnalysisAsync(userId, analysisRequest, false, conversationId);
+                    aiResponse = await _aiAnalysisService.PerformSelectedAnalysisAsync(
+                        userId,
+                        analysisRequest,
+                        false,
+                        conversationId
+                    );
                 }
             }
-
             else
             {
-                var (continueResponse, _) = await _aiService.ContinueConversationAsync(conversationId, userId, dto.Message, fileUrls);
+                var (continueResponse, _) = await _aiService.ContinueConversationAsync(
+                    conversationId,
+                    userId,
+                    dto.Message,
+                    fileUrls
+                );
 
-                var words = (continueResponse ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                var words = (continueResponse ?? string.Empty).Split(
+                    ' ',
+                    StringSplitOptions.RemoveEmptyEntries
+                );
                 var sb = new System.Text.StringBuilder();
 
                 foreach (var w in words)
@@ -288,7 +366,7 @@ namespace ProbuildBackend.Services
                 ConversationId = conversationId,
                 Role = "model",
                 Content = aiResponse,
-                Timestamp = DateTime.UtcNow
+                Timestamp = DateTime.UtcNow,
             };
             await _conversationRepository.AddMessageAsync(aiMessage);
 
@@ -299,7 +377,7 @@ namespace ProbuildBackend.Services
                 Role = aiMessage.Role,
                 Content = aiMessage.Content,
                 IsSummarized = aiMessage.IsSummarized,
-                Timestamp = aiMessage.Timestamp
+                Timestamp = aiMessage.Timestamp,
             };
 
             // Keep this disabled to avoid double-rendering against the stream
@@ -308,12 +386,17 @@ namespace ProbuildBackend.Services
             return aiMessage;
         }
 
-        public async Task<List<Message>> GetConversationHistoryAsync(string conversationId, string userId)
+        public async Task<List<Message>> GetConversationHistoryAsync(
+            string conversationId,
+            string userId
+        )
         {
             var conversation = await _conversationRepository.GetConversationAsync(conversationId);
             if (conversation == null || conversation.UserId != userId)
             {
-                throw new UnauthorizedAccessException("User is not authorized to access this conversation.");
+                throw new UnauthorizedAccessException(
+                    "User is not authorized to access this conversation."
+                );
             }
             return await _conversationRepository.GetMessagesAsync(conversationId);
         }

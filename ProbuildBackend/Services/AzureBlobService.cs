@@ -1,10 +1,10 @@
+using System.IO.Compression;
 using Azure.Storage;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Azure.Storage.Sas;
 using Microsoft.AspNetCore.SignalR;
 using ProbuildBackend.Middleware;
-using System.IO.Compression;
 
 namespace ProbuildBackend.Services
 {
@@ -16,15 +16,24 @@ namespace ProbuildBackend.Services
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly ILogger<AzureBlobService> _logger;
 
-        public AzureBlobService(IConfiguration configuration, IHttpContextAccessor httpContextAccessor, ILogger<AzureBlobService> logger)
+        public AzureBlobService(
+            IConfiguration configuration,
+            IHttpContextAccessor httpContextAccessor,
+            ILogger<AzureBlobService> logger
+        )
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
-            var azureConnectionString = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY")
-                      ?? configuration["ConnectionStrings:AzureBlobConnection"];
+            _httpContextAccessor =
+                httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
+            var azureConnectionString =
+                Environment.GetEnvironmentVariable("AZURE_BLOB_KEY")
+                ?? configuration["ConnectionStrings:AzureBlobConnection"];
             if (string.IsNullOrEmpty(azureConnectionString))
             {
-                throw new ArgumentNullException(nameof(azureConnectionString), "Azure Blob Storage connection string is not configured");
+                throw new ArgumentNullException(
+                    nameof(azureConnectionString),
+                    "Azure Blob Storage connection string is not configured"
+                );
             }
 
             _blobClient = new BlobServiceClient(azureConnectionString);
@@ -45,7 +54,9 @@ namespace ProbuildBackend.Services
                 {
                     var blobUri = new Uri(blobUrl);
                     // Decode the blob name to match the actual name in Azure Blob Storage
-                    var blobName = Uri.UnescapeDataString(blobUri.AbsolutePath.TrimStart('/').Replace($"{_containerName}/", ""));
+                    var blobName = Uri.UnescapeDataString(
+                        blobUri.AbsolutePath.TrimStart('/').Replace($"{_containerName}/", "")
+                    );
                     Console.WriteLine($"Deleting blob: {blobName}");
 
                     var blobClient = _containerClient.GetBlobClient(blobName);
@@ -60,17 +71,27 @@ namespace ProbuildBackend.Services
             }
         }
 
-        public async Task<List<string>> UploadFiles(List<IFormFile> files, IHubContext<ProgressHub>? hubContext = null, string? connectionId = null)
+        public async Task<List<string>> UploadFiles(
+            List<IFormFile> files,
+            IHubContext<ProgressHub>? hubContext = null,
+            string? connectionId = null
+        )
         {
             try
             {
-                _logger.LogInformation("Starting file upload process for {FileCount} files.", files.Count);
+                _logger.LogInformation(
+                    "Starting file upload process for {FileCount} files.",
+                    files.Count
+                );
                 var uploadedUrls = new List<string>();
                 bool useSignalR = hubContext != null && !string.IsNullOrEmpty(connectionId);
 
                 if (useSignalR)
                 {
-                    _logger.LogInformation("SignalR is enabled for this upload, using connectionId: {ConnectionId}", connectionId);
+                    _logger.LogInformation(
+                        "SignalR is enabled for this upload, using connectionId: {ConnectionId}",
+                        connectionId
+                    );
                 }
 
                 foreach (var file in files)
@@ -80,24 +101,34 @@ namespace ProbuildBackend.Services
                     BlobClient blobClient = _containerClient.GetBlobClient(fileName);
 
                     var blobHttpHeaders = new BlobHttpHeaders { ContentType = "application/gzip" };
-                    string asciiFileName = new string(file.FileName
-                    .Where(c => c <= 127) // Keep only ASCII characters
-                    .ToArray());
+                    string asciiFileName = new string(
+                        file.FileName.Where(c => c <= 127) // Keep only ASCII characters
+                            .ToArray()
+                    );
 
                     var metadata = new Dictionary<string, string>
-{
-                    { "originalFileName", asciiFileName },
-                    { "compression", "gzip" }
-};
+                    {
+                        { "originalFileName", asciiFileName },
+                        { "compression", "gzip" },
+                    };
 
                     using var inputStream = file.OpenReadStream();
                     using var compressedStream = new MemoryStream();
-                    using (var gzipStream = new GZipStream(compressedStream, CompressionLevel.Optimal, leaveOpen: true))
+                    using (
+                        var gzipStream = new GZipStream(
+                            compressedStream,
+                            CompressionLevel.Optimal,
+                            leaveOpen: true
+                        )
+                    )
                     {
                         await inputStream.CopyToAsync(gzipStream);
                         gzipStream.Flush();
                         compressedStream.Position = 0;
-                        _logger.LogInformation("Successfully compressed file: {OriginalFileName}", file.FileName);
+                        _logger.LogInformation(
+                            "Successfully compressed file: {OriginalFileName}",
+                            file.FileName
+                        );
 
                         var uploadOptions = new BlobUploadOptions
                         {
@@ -105,8 +136,8 @@ namespace ProbuildBackend.Services
                             Metadata = metadata,
                             TransferOptions = new StorageTransferOptions
                             {
-                                MaximumTransferSize = 4 * 1024 * 1024 // 4MB chunks
-                            }
+                                MaximumTransferSize = 4 * 1024 * 1024, // 4MB chunks
+                            },
                         };
 
                         if (useSignalR)
@@ -114,36 +145,58 @@ namespace ProbuildBackend.Services
                             long totalBytes = compressedStream.Length;
                             var progressHandler = new Progress<long>(async progress =>
                             {
-                                int progressPercent = totalBytes > 0 ? (int)Math.Min(100, (progress * 100) / totalBytes) : 0;
-                                await hubContext!.Clients.Client(connectionId!).SendAsync("ReceiveProgress", progressPercent);
+                                int progressPercent =
+                                    totalBytes > 0
+                                        ? (int)Math.Min(100, (progress * 100) / totalBytes)
+                                        : 0;
+                                await hubContext!
+                                    .Clients.Client(connectionId!)
+                                    .SendAsync("ReceiveProgress", progressPercent);
                             });
                             uploadOptions.ProgressHandler = progressHandler;
                         }
 
                         await blobClient.UploadAsync(compressedStream, uploadOptions);
-                        _logger.LogInformation("Successfully uploaded file to Azure Blob Storage: {FileName}", fileName);
+                        _logger.LogInformation(
+                            "Successfully uploaded file to Azure Blob Storage: {FileName}",
+                            fileName
+                        );
 
-                        string blobUrl = $"https://qastorageprobuildaiblob.blob.core.windows.net/probuildaiprojects/{fileName}";
+                        string blobUrl =
+                            $"https://qastorageprobuildaiblob.blob.core.windows.net/probuildaiprojects/{fileName}";
                         uploadedUrls.Add(blobUrl);
                     }
                 }
 
                 if (useSignalR)
                 {
-                    await hubContext!.Clients.Client(connectionId!).SendAsync("UploadComplete", files.Count);
-                    _logger.LogInformation("Sent 'UploadComplete' SignalR message to client: {ConnectionId}", connectionId);
+                    await hubContext!
+                        .Clients.Client(connectionId!)
+                        .SendAsync("UploadComplete", files.Count);
+                    _logger.LogInformation(
+                        "Sent 'UploadComplete' SignalR message to client: {ConnectionId}",
+                        connectionId
+                    );
                 }
 
-                _logger.LogInformation("File upload process complete. Returning {FileCount} URLs.", uploadedUrls.Count);
+                _logger.LogInformation(
+                    "File upload process complete. Returning {FileCount} URLs.",
+                    uploadedUrls.Count
+                );
                 return uploadedUrls;
             }
             catch (Exception ex)
             {
-
                 throw;
             }
         }
-        public async Task<string> UploadFileAsync(string fileName, Stream content, string contentType, int? jobId = null)
+
+        public async Task<string> UploadFileAsync(
+            string fileName,
+            Stream content,
+            string contentType,
+            int? jobId = null
+        )
         {
             string blobName = jobId.HasValue
                 ? $"job_{jobId}/blueprints/{Guid.NewGuid()}_{fileName}"
@@ -154,10 +207,7 @@ namespace ProbuildBackend.Services
 
             var blobHttpHeaders = new BlobHttpHeaders { ContentType = contentType };
 
-            var metadata = new Dictionary<string, string>
-            {
-                { "originalFileName", fileName }
-            };
+            var metadata = new Dictionary<string, string> { { "originalFileName", fileName } };
 
             var uploadOptions = new BlobUploadOptions
             {
@@ -165,12 +215,15 @@ namespace ProbuildBackend.Services
                 Metadata = metadata,
                 TransferOptions = new StorageTransferOptions
                 {
-                    MaximumTransferSize = 4 * 1024 * 1024 // 4MB chunks
-                }
+                    MaximumTransferSize = 4 * 1024 * 1024, // 4MB chunks
+                },
             };
 
             await blobClient.UploadAsync(content, uploadOptions);
-            _logger.LogInformation("Successfully uploaded file to Azure Blob Storage: {BlobName}", blobName);
+            _logger.LogInformation(
+                "Successfully uploaded file to Azure Blob Storage: {BlobName}",
+                blobName
+            );
 
             return blobClient.Uri.ToString();
         }
@@ -184,6 +237,7 @@ namespace ProbuildBackend.Services
             }
             return items;
         }
+
         // New method to get blob properties
         public async Task<BlobProperties> GetBlobProperties(string blobUrl)
         {
@@ -199,17 +253,23 @@ namespace ProbuildBackend.Services
             }
             catch (Exception)
             {
-
                 throw;
             }
         }
-        public async Task<(Stream Content, string ContentType, string OriginalFileName)> GetBlobContentAsync(string blobUrl)
+
+        public async Task<(
+            Stream Content,
+            string ContentType,
+            string OriginalFileName
+        )> GetBlobContentAsync(string blobUrl)
         {
             try
             {
                 // Step 1: Extract the blob name from the URL
                 var uri = new Uri(blobUrl);
-                var blobName = Uri.UnescapeDataString(uri.AbsolutePath.TrimStart('/').Replace($"{_containerName}/", ""));
+                var blobName = Uri.UnescapeDataString(
+                    uri.AbsolutePath.TrimStart('/').Replace($"{_containerName}/", "")
+                );
                 Console.WriteLine($"Fetching blob: {blobName}");
 
                 // Step 2: Get the BlobClient
@@ -219,7 +279,9 @@ namespace ProbuildBackend.Services
                 bool exists = await blobClient.ExistsAsync();
                 if (!exists)
                 {
-                    throw new FileNotFoundException($"Blob '{blobName}' does not exist in container '{_containerName}'.");
+                    throw new FileNotFoundException(
+                        $"Blob '{blobName}' does not exist in container '{_containerName}'."
+                    );
                 }
 
                 // Step 4: Download the blob content
@@ -228,8 +290,11 @@ namespace ProbuildBackend.Services
                 // Step 5: Get metadata to determine the original file name and content type
                 var properties = await blobClient.GetPropertiesAsync();
                 var metadata = properties.Value.Metadata;
-                string originalFileName = metadata.ContainsKey("originalFileName") ? metadata["originalFileName"] : blobName;
-                bool isCompressed = metadata.ContainsKey("compression") && metadata["compression"] == "gzip";
+                string originalFileName = metadata.ContainsKey("originalFileName")
+                    ? metadata["originalFileName"]
+                    : blobName;
+                bool isCompressed =
+                    metadata.ContainsKey("compression") && metadata["compression"] == "gzip";
 
                 // Step 6: Decompress the content if it was compressed
                 Stream contentStream;
@@ -239,7 +304,12 @@ namespace ProbuildBackend.Services
                 {
                     // Decompress the gzip content
                     var decompressedStream = new MemoryStream();
-                    using (var gzipStream = new GZipStream(download.Content, CompressionMode.Decompress))
+                    using (
+                        var gzipStream = new GZipStream(
+                            download.Content,
+                            CompressionMode.Decompress
+                        )
+                    )
                     {
                         await gzipStream.CopyToAsync(decompressedStream);
                     }
@@ -247,7 +317,12 @@ namespace ProbuildBackend.Services
                     contentStream = decompressedStream;
 
                     // Set the content type based on the original file (e.g., PDF)
-                    contentType = originalFileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) ? "application/pdf" : "application/octet-stream";
+                    contentType = originalFileName.EndsWith(
+                        ".pdf",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                        ? "application/pdf"
+                        : "application/octet-stream";
                 }
                 else
                 {
@@ -264,6 +339,7 @@ namespace ProbuildBackend.Services
                 throw;
             }
         }
+
         public BlobClient GetBlobClient(string fileName)
         {
             return _containerClient.GetBlobClient(fileName);
@@ -285,7 +361,9 @@ namespace ProbuildBackend.Services
 
                 if (!blobClient.CanGenerateSasUri)
                 {
-                    _logger.LogError("BlobClient cannot generate SAS URI. Check account permissions.");
+                    _logger.LogError(
+                        "BlobClient cannot generate SAS URI. Check account permissions."
+                    );
                     return blobClient.Uri.ToString(); // Fallback to raw URL
                 }
 
@@ -311,7 +389,9 @@ namespace ProbuildBackend.Services
             }
         }
 
-        public async Task<(byte[] Content, string ContentType)> DownloadBlobAsBytesAsync(string blobUrl)
+        public async Task<(byte[] Content, string ContentType)> DownloadBlobAsBytesAsync(
+            string blobUrl
+        )
         {
             var uri = new Uri(blobUrl);
             string fullPath = Uri.UnescapeDataString(uri.AbsolutePath.TrimStart('/'));
@@ -331,7 +411,11 @@ namespace ProbuildBackend.Services
             Console.WriteLine(blobClient.Uri + " " + blobClient.Name);
             if (!await blobClient.ExistsAsync())
             {
-                _logger.LogError("Blob not found for download at Container: {Container}, Blob: {Blob}", containerName, blobName);
+                _logger.LogError(
+                    "Blob not found for download at Container: {Container}, Blob: {Blob}",
+                    containerName,
+                    blobName
+                );
                 throw new FileNotFoundException("Blob not found for download.", blobName);
             }
 
@@ -341,20 +425,28 @@ namespace ProbuildBackend.Services
             var metadata = properties.Value.Metadata;
 
             // Step 2: Check if the blob is compressed
-            bool isCompressed = metadata.ContainsKey("compression") && metadata["compression"] == "gzip";
+            bool isCompressed =
+                metadata.ContainsKey("compression") && metadata["compression"] == "gzip";
 
             if (isCompressed)
             {
                 // Step 3a: If compressed, decompress the content into a new memory stream
                 using var decompressedStream = new MemoryStream();
-                using (var gzipStream = new GZipStream(download.Content, CompressionMode.Decompress))
+                using (
+                    var gzipStream = new GZipStream(download.Content, CompressionMode.Decompress)
+                )
                 {
                     await gzipStream.CopyToAsync(decompressedStream);
                 }
 
                 // Determine the original content type (e.g., application/pdf)
-                string originalFileName = metadata.ContainsKey("originalFileName") ? metadata["originalFileName"] : blobName;
-                string originalContentType = originalFileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)
+                string originalFileName = metadata.ContainsKey("originalFileName")
+                    ? metadata["originalFileName"]
+                    : blobName;
+                string originalContentType = originalFileName.EndsWith(
+                    ".pdf",
+                    StringComparison.OrdinalIgnoreCase
+                )
                     ? "application/pdf"
                     : "application/octet-stream"; // Fallback
 
@@ -378,15 +470,12 @@ namespace ProbuildBackend.Services
 
             var blobHttpHeaders = new BlobHttpHeaders { ContentType = file.ContentType };
 
-            var metadata = new Dictionary<string, string>
-            {
-                { "originalFileName", file.FileName }
-            };
+            var metadata = new Dictionary<string, string> { { "originalFileName", file.FileName } };
 
             var uploadOptions = new BlobUploadOptions
             {
                 HttpHeaders = blobHttpHeaders,
-                Metadata = metadata
+                Metadata = metadata,
             };
 
             using var stream = file.OpenReadStream();

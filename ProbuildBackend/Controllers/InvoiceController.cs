@@ -15,14 +15,22 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("upload")]
-        public async Task<IActionResult> UploadInvoice(IFormFile file, [FromForm] int jobId, [FromForm] decimal amount)
+        public async Task<IActionResult> UploadInvoice(
+            IFormFile file,
+            [FromForm] int jobId,
+            [FromForm] decimal amount
+        )
         {
             if (file == null || file.Length == 0)
             {
                 return BadRequest("No file uploaded.");
             }
 
-            var uploadsFolderPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "invoices");
+            var uploadsFolderPath = Path.Combine(
+                Directory.GetCurrentDirectory(),
+                "wwwroot",
+                "invoices"
+            );
             if (!Directory.Exists(uploadsFolderPath))
             {
                 Directory.CreateDirectory(uploadsFolderPath);
@@ -44,7 +52,7 @@ namespace ProbuildBackend.Controllers
                 FilePath = $"/invoices/{uniqueFileName}",
                 Status = "PENDING",
                 Amount = amount,
-                UploadedAt = DateTime.UtcNow
+                UploadedAt = DateTime.UtcNow,
             };
 
             _context.Invoices.Add(invoice);

@@ -49,14 +49,19 @@ namespace ProbuildBackend.Models.DTO
 
         [JsonPropertyName("ipAddress")]
         public string? IpAddress { get; set; }
+
         [JsonPropertyName("countryFromIP")]
         public string? CountryFromIP { get; set; }
+
         [JsonPropertyName("regionFromIP")]
         public string? RegionFromIP { get; set; } // changed
+
         [JsonPropertyName("cityFromIP")]
         public string? CityFromIP { get; set; }
+
         [JsonPropertyName("latitudeFromIP")]
         public decimal? LatitudeFromIP { get; set; }
+
         [JsonPropertyName("longitudeFromIP")]
         public decimal? LongitudeFromIP { get; set; }
 

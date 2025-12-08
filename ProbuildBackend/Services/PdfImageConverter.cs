@@ -1,17 +1,17 @@
 ﻿using iText.Kernel.Pdf;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Formats.Png;
-using SixLabors.ImageSharp.Processing;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Options;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
 
 namespace ProbuildBackend.Services
 {
     public class PdfImageConverter : IPdfImageConverter
     {
-        private readonly OcrSettings _settings; 
+        private readonly OcrSettings _settings;
         private readonly ApplicationDbContext _context; // Add database context
 
         public PdfImageConverter(OcrSettings settings, ApplicationDbContext context)
@@ -20,7 +20,10 @@ namespace ProbuildBackend.Services
             _context = context ?? throw new ArgumentNullException(nameof(context));
         }
 
-        public async Task<List<(int PageIndex, byte[] ImageBytes)>> ConvertPdfToImagesAsync(string blobUrl, Stream contentStream)
+        public async Task<List<(int PageIndex, byte[] ImageBytes)>> ConvertPdfToImagesAsync(
+            string blobUrl,
+            Stream contentStream
+        )
         {
             var pageImages = new List<(int, byte[])>();
             try
@@ -51,11 +54,13 @@ namespace ProbuildBackend.Services
                     int maxHeight = _settings.MaxImageHeight;
                     image.Mutate(x =>
                     {
-                        x.Resize(new ResizeOptions
-                        {
-                            Size = new Size(maxWidth, maxHeight),
-                            Mode = ResizeMode.Max
-                        });
+                        x.Resize(
+                            new ResizeOptions
+                            {
+                                Size = new Size(maxWidth, maxHeight),
+                                Mode = ResizeMode.Max,
+                            }
+                        );
                     });
 
                     // Save the image to a memory stream as PNG
@@ -65,7 +70,9 @@ namespace ProbuildBackend.Services
                 }
 
                 if (!pageImages.Any())
-                    throw new InvalidOperationException($"No images were generated from PDF at {blobUrl}.");
+                    throw new InvalidOperationException(
+                        $"No images were generated from PDF at {blobUrl}."
+                    );
 
                 return pageImages;
             }
@@ -76,12 +83,15 @@ namespace ProbuildBackend.Services
                 {
                     Location = "ConvertPdfToImagesAsync",
                     DateCreated = DateTime.UtcNow,
-                    Description = "MESSAGE: " + ex.Message + " STACKTRACE: " + ex.StackTrace
+                    Description = "MESSAGE: " + ex.Message + " STACKTRACE: " + ex.StackTrace,
                 };
                 _context.DocumentProcessingLog.Add(log);
                 await _context.SaveChangesAsync();
 
-                throw new InvalidOperationException($"Failed to convert PDF to images: {blobUrl}", ex);
+                throw new InvalidOperationException(
+                    $"Failed to convert PDF to images: {blobUrl}",
+                    ex
+                );
             }
         }
     }

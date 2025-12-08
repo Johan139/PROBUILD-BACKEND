@@ -4,7 +4,6 @@ namespace ProbuildBackend.Models.DTO
 {
     public class UserAddressDTO
     {
-
         [JsonPropertyName("streetNumber")]
         public string StreetNumber { get; set; }
 
@@ -36,12 +35,14 @@ namespace ProbuildBackend.Models.DTO
         //public Point Location { get; set; }
         [JsonPropertyName("formattedAddress")]
         public string FormattedAddress { get; set; }
+
         [JsonPropertyName("googlePlaceId")]
         public string GooglePlaceId { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
 
         public string AddressType { get; set; }
+
         // [ForeignKey(nameof(User))]
         [JsonPropertyName("userId")]
         public string? UserId { get; set; }

@@ -8,14 +8,22 @@ namespace ProbuildBackend.Services
         private readonly IConfiguration _configuration;
         private readonly SubscriptionService _subscriptionService;
 
-        public PaymentService(ApplicationDbContext context, IConfiguration configuration, SubscriptionService subscriptionService)
+        public PaymentService(
+            ApplicationDbContext context,
+            IConfiguration configuration,
+            SubscriptionService subscriptionService
+        )
         {
             _context = context;
             _configuration = configuration;
             _subscriptionService = subscriptionService;
         }
 
-        public async Task<Charge> ProcessFindersFee(string userId, decimal winningBidAmount, string jobId)
+        public async Task<Charge> ProcessFindersFee(
+            string userId,
+            decimal winningBidAmount,
+            string jobId
+        )
         {
             var user = await _context.Users.FindAsync(userId);
             if (user == null)
@@ -40,7 +48,9 @@ namespace ProbuildBackend.Services
             var feeAmount = winningBidAmount * feePercentage;
             var feeAmountInCents = (long)(feeAmount * 100);
 
-            StripeConfiguration.ApiKey = Environment.GetEnvironmentVariable("StripeAPIKey") ?? _configuration["StripeAPI:StripeKey"];
+            StripeConfiguration.ApiKey =
+                Environment.GetEnvironmentVariable("StripeAPIKey")
+                ?? _configuration["StripeAPI:StripeKey"];
 
             var options = new ChargeCreateOptions
             {

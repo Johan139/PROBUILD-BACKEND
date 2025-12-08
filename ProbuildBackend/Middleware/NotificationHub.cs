@@ -1,12 +1,13 @@
-using Microsoft.AspNetCore.SignalR;
 using System.Collections.Concurrent;
 using System.Security.Claims;
+using Microsoft.AspNetCore.SignalR;
 
 namespace ProbuildBackend.Middleware
 {
     public class NotificationHub : Hub
     {
-        private static readonly ConcurrentDictionary<string, string> UserConnections = new ConcurrentDictionary<string, string>();
+        private static readonly ConcurrentDictionary<string, string> UserConnections =
+            new ConcurrentDictionary<string, string>();
 
         public override Task OnConnectedAsync()
         {

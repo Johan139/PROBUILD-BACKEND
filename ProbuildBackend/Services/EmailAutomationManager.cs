@@ -15,7 +15,8 @@ namespace ProbuildBackend.Services
             ApplicationDbContext db,
             IEmailSender emailService,
             ILogger<EmailAutomationManager> logger,
-            IConfiguration configuration)
+            IConfiguration configuration
+        )
         {
             _db = db;
             _emailService = emailService;
@@ -29,10 +30,12 @@ namespace ProbuildBackend.Services
         public async Task ExecuteAutomationAsync(string userId, int ruleId)
         {
             var user = await _db.Users.FindAsync(userId);
-            if (user == null) return;
+            if (user == null)
+                return;
 
             var rule = await _db.EmailAutomationRules.FindAsync(ruleId);
-            if (rule == null || !rule.IsActive) return;
+            if (rule == null || !rule.IsActive)
+                return;
 
             try
             {
@@ -40,7 +43,12 @@ namespace ProbuildBackend.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to process rule {RuleId} for user {UserId}", ruleId, userId);
+                _logger.LogError(
+                    ex,
+                    "Failed to process rule {RuleId} for user {UserId}",
+                    ruleId,
+                    userId
+                );
             }
         }
 
@@ -88,8 +96,8 @@ namespace ProbuildBackend.Services
         // ---------------------------------------------------------------------
         private async Task<PaymentRecord?> GetUserTrial(UserModel user)
         {
-            return await _db.PaymentRecords
-                .Where(p => p.UserId == user.Id && p.IsTrial == true)
+            return await _db
+                .PaymentRecords.Where(p => p.UserId == user.Id && p.IsTrial == true)
                 .OrderByDescending(p => p.PaidAt)
                 .FirstOrDefaultAsync();
         }
@@ -100,10 +108,8 @@ namespace ProbuildBackend.Services
         private async Task<bool> UserConverted(UserModel user)
         {
             return await _db.PaymentRecords.AnyAsync(p =>
-                p.UserId == user.Id &&
-                p.Status == "Active" &&
-                p.IsTrial == false &&
-                p.Amount != 0M);
+                p.UserId == user.Id && p.Status == "Active" && p.IsTrial == false && p.Amount != 0M
+            );
         }
 
         private async Task<bool> UserExpired(UserModel user)
@@ -131,7 +137,10 @@ namespace ProbuildBackend.Services
         // ---------------------------------------------------------------------
         // 1. Nudge First Upload (12h)
         // ---------------------------------------------------------------------
-        private async Task HandleNudgeFirstUploadAsync(UserModel user, EmailAutomationRuleModel rule)
+        private async Task HandleNudgeFirstUploadAsync(
+            UserModel user,
+            EmailAutomationRuleModel rule
+        )
         {
             bool hasBlueprint = await UserUploadedBlueprint(user);
             bool converted = await UserConverted(user);
@@ -162,11 +171,14 @@ namespace ProbuildBackend.Services
         // 3. Feature Spotlight (≈72h)
         // ACTIVATED = uploaded ≥ 1 blueprint
         // ---------------------------------------------------------------------
-        private async Task HandleFeatureSpotlightUploadAsync(UserModel user, EmailAutomationRuleModel rule)
+        private async Task HandleFeatureSpotlightUploadAsync(
+            UserModel user,
+            EmailAutomationRuleModel rule
+        )
         {
-            bool hasBlueprint = await UserUploadedBlueprint(user);  // ACTIVATED
-            bool engaged = await UserEngaged(user);                 // ENGAGED
-            bool converted = await UserConverted(user);             // CONVERTED
+            bool hasBlueprint = await UserUploadedBlueprint(user); // ACTIVATED
+            bool engaged = await UserEngaged(user); // ENGAGED
+            bool converted = await UserConverted(user); // CONVERTED
             //bool expired = await UserExpired(user);                 // EXPIRED
 
             // Only send if ACTIVATED but NOT ENGAGED, NOT CONVERTED
@@ -179,7 +191,10 @@ namespace ProbuildBackend.Services
         // ---------------------------------------------------------------------
         // 4. Social Proof Mid (Day 5)
         // ---------------------------------------------------------------------
-        private async Task HandleSocialProofMidUploadAsync(UserModel user, EmailAutomationRuleModel rule)
+        private async Task HandleSocialProofMidUploadAsync(
+            UserModel user,
+            EmailAutomationRuleModel rule
+        )
         {
             bool converted = await UserConverted(user);
             bool expired = await UserExpired(user);
@@ -189,6 +204,7 @@ namespace ProbuildBackend.Services
 
             await SendFromTemplate(user, rule);
         }
+
         private async Task HandlePostExpireAsync(UserModel user, EmailAutomationRuleModel rule)
         {
             var trial = await GetUserTrial(user);
@@ -214,11 +230,13 @@ namespace ProbuildBackend.Services
             await SendFromTemplate(user, rule);
         }
 
-
         // ---------------------------------------------------------------------
         // 5. Trial Support (Day 6–7)
         // ---------------------------------------------------------------------
-        private async Task HandleTrialSupportUploadAsync(UserModel user, EmailAutomationRuleModel rule)
+        private async Task HandleTrialSupportUploadAsync(
+            UserModel user,
+            EmailAutomationRuleModel rule
+        )
         {
             bool converted = await UserConverted(user);
             bool expired = await UserExpired(user);
@@ -232,7 +250,10 @@ namespace ProbuildBackend.Services
         // ---------------------------------------------------------------------
         // 6. Trial Ending (~Day 7 @ 18:00)
         // ---------------------------------------------------------------------
-        private async Task HandleTrial_EndingUploadAsync(UserModel user, EmailAutomationRuleModel rule)
+        private async Task HandleTrial_EndingUploadAsync(
+            UserModel user,
+            EmailAutomationRuleModel rule
+        )
         {
             var trial = await GetUserTrial(user);
             if (trial == null)
@@ -245,8 +266,8 @@ namespace ProbuildBackend.Services
                 return;
 
             bool endsSoon =
-                (trial.ValidUntil - DateTime.UtcNow) <= TimeSpan.FromHours(12) &&
-                (trial.ValidUntil - DateTime.UtcNow) >= TimeSpan.Zero;
+                (trial.ValidUntil - DateTime.UtcNow) <= TimeSpan.FromHours(12)
+                && (trial.ValidUntil - DateTime.UtcNow) >= TimeSpan.Zero;
 
             if (!endsSoon)
                 return;
@@ -259,27 +280,34 @@ namespace ProbuildBackend.Services
         // ---------------------------------------------------------------------
         private async Task SendFromTemplate(UserModel user, EmailAutomationRuleModel rule)
         {
-            var template = await _db.EmailTemplates
-                .FirstOrDefaultAsync(t => t.TemplateId == rule.TemplateId);
+            var template = await _db.EmailTemplates.FirstOrDefaultAsync(t =>
+                t.TemplateId == rule.TemplateId
+            );
 
             if (template == null)
             {
-                _logger.LogWarning("Template {TemplateId} not found for rule {RuleName}",
-                    rule.TemplateId, rule.RuleName);
+                _logger.LogWarning(
+                    "Template {TemplateId} not found for rule {RuleName}",
+                    rule.TemplateId,
+                    rule.RuleName
+                );
                 return;
             }
 
-            template.Body = template.Body
-            .Replace("{{Header}}", template.HeaderHtml ?? "")
-            .Replace("{{Footer}}", template.FooterHtml ?? "")
-            .Replace("{{first_name}}", $"{user.FirstName} {user.LastName}".Trim())
-            .Replace("{{cta_url}}", BuildCallbackUrl(rule.CtaUrl))
-            .Replace("{{book_link}}", rule.BookLink)
-            .Replace("{{upgrade_url}}", BuildCallbackUrl(rule.UpgradeUrl));
+            template.Body = template
+                .Body.Replace("{{Header}}", template.HeaderHtml ?? "")
+                .Replace("{{Footer}}", template.FooterHtml ?? "")
+                .Replace("{{first_name}}", $"{user.FirstName} {user.LastName}".Trim())
+                .Replace("{{cta_url}}", BuildCallbackUrl(rule.CtaUrl))
+                .Replace("{{book_link}}", rule.BookLink)
+                .Replace("{{upgrade_url}}", BuildCallbackUrl(rule.UpgradeUrl));
             await _emailService.SendEmailAsync(template, user.Email);
 
-            _logger.LogInformation("Sent automation email '{RuleName}' to {Email}",
-                rule.RuleName, user.Email);
+            _logger.LogInformation(
+                "Sent automation email '{RuleName}' to {Email}",
+                rule.RuleName,
+                user.Email
+            );
         }
 
         // ---------------------------------------------------------------------
@@ -287,9 +315,10 @@ namespace ProbuildBackend.Services
         // ---------------------------------------------------------------------
         private string BuildCallbackUrl(string path)
         {
-            var baseUrl = Environment.GetEnvironmentVariable("FRONTEND_URL")
-                          ?? _configuration["FrontEnd:FRONTEND_URL"]
-                          ?? "https://app.probuildai.com";
+            var baseUrl =
+                Environment.GetEnvironmentVariable("FRONTEND_URL")
+                ?? _configuration["FrontEnd:FRONTEND_URL"]
+                ?? "https://app.probuildai.com";
 
             return $"{baseUrl.TrimEnd('/')}{path}";
         }

@@ -1,7 +1,6 @@
-﻿using Elastic.Apm.Api;
-using NetTopologySuite.Geometries;
-using System.ComponentModel.DataAnnotations.Schema;
+﻿using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
+using NetTopologySuite.Geometries;
 
 namespace ProbuildBackend.Models
 {
@@ -20,6 +19,7 @@ namespace ProbuildBackend.Models
 
         public decimal? Latitude { get; set; }
         public decimal? Longitude { get; set; }
+
         [JsonIgnore]
         public Point? Location { get; set; }
         public string? FormattedAddress { get; set; }

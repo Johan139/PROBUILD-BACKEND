@@ -11,14 +11,13 @@ namespace ProbuildBackend.Services
         public EmailTemplateService(ApplicationDbContext context)
         {
             _context = context;
-
         }
 
         public async Task<EmailTemplate> GetTemplateAsync(string templateName)
         {
-            return await _context.EmailTemplates
-                .FirstOrDefaultAsync(t => t.TemplateName == templateName && t.IsActive);
-
+            return await _context.EmailTemplates.FirstOrDefaultAsync(t =>
+                t.TemplateName == templateName && t.IsActive
+            );
         }
     }
 }

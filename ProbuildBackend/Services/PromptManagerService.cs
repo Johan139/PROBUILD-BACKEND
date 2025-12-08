@@ -1,6 +1,6 @@
+using System.Collections.Concurrent;
 using Azure.Storage.Blobs;
 using ProbuildBackend.Interface;
-using System.Collections.Concurrent;
 
 public class PromptManagerService : IPromptManagerService
 {
@@ -14,8 +14,8 @@ public class PromptManagerService : IPromptManagerService
         var connectionString = configuration.GetConnectionString("AzureBlobConnection");
         var containerName = configuration["PromptBlobContainerName"];
 #else
-     var connectionString = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY");
-       var containerName = Environment.GetEnvironmentVariable("PromptBlobContainerName");
+        var connectionString = Environment.GetEnvironmentVariable("AZURE_BLOB_KEY");
+        var containerName = Environment.GetEnvironmentVariable("PromptBlobContainerName");
 #endif
 
         _blobContainerClient = new BlobContainerClient(connectionString, containerName);
@@ -44,7 +44,10 @@ public class PromptManagerService : IPromptManagerService
             // System-level prompts are in the root
             fullBlobName = fileName;
         }
-        _logger.LogInformation("Attempting to get prompt with full blob name: {FullBlobName}", fullBlobName);
+        _logger.LogInformation(
+            "Attempting to get prompt with full blob name: {FullBlobName}",
+            fullBlobName
+        );
 
         if (_promptCache.TryGetValue(fullBlobName, out var cachedPrompt))
         {
@@ -52,18 +55,29 @@ public class PromptManagerService : IPromptManagerService
             return cachedPrompt;
         }
 
-        _logger.LogInformation("Prompt not found in cache, fetching from Azure Blob Storage: {FullBlobName}", fullBlobName);
+        _logger.LogInformation(
+            "Prompt not found in cache, fetching from Azure Blob Storage: {FullBlobName}",
+            fullBlobName
+        );
         var blobClient = _blobContainerClient.GetBlobClient(fullBlobName);
         if (!await blobClient.ExistsAsync())
         {
-            _logger.LogError("Prompt '{FullBlobName}' not found in Azure Blob Storage.", fullBlobName);
-            throw new FileNotFoundException($"Prompt '{fullBlobName}' not found in Azure Blob Storage.");
+            _logger.LogError(
+                "Prompt '{FullBlobName}' not found in Azure Blob Storage.",
+                fullBlobName
+            );
+            throw new FileNotFoundException(
+                $"Prompt '{fullBlobName}' not found in Azure Blob Storage."
+            );
         }
 
         var response = await blobClient.DownloadContentAsync();
         var promptText = response.Value.Content.ToString();
         _promptCache.TryAdd(fullBlobName, promptText);
-        _logger.LogInformation("Successfully fetched and cached prompt: {FullBlobName}", fullBlobName);
+        _logger.LogInformation(
+            "Successfully fetched and cached prompt: {FullBlobName}",
+            fullBlobName
+        );
         return promptText;
     }
 }

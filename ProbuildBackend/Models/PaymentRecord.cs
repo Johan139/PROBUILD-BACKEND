@@ -9,7 +9,7 @@
         public string Status { get; set; }
         public decimal Amount { get; set; }
         public DateTime PaidAt { get; set; }
-        public DateTime ValidUntil { get; set; } 
+        public DateTime ValidUntil { get; set; }
 
         public bool? IsTrial { get; set; }
         public string? SubscriptionID { get; set; }
