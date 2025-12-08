@@ -127,7 +127,7 @@ namespace ProbuildBackend.Controllers
                 var stripeEvent = EventUtility.ConstructEvent(
                     json,
                      Request.Headers["Stripe-Signature"],
-                     "whsec_xnUl3fiux20f6bLmSaqKE6PvXL0mcTMM"
+                     "whsec_OetiguhPH7yDMdRJ05ZkImok0m0TkYAn"
                 );
 
                 string userId;
