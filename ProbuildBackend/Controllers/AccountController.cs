@@ -4,9 +4,12 @@ using System.Security.Cryptography;
 using System.Text;
 using Google.Apis.Auth;
 using Hangfire;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Newtonsoft.Json;
@@ -124,28 +127,26 @@ namespace ProbuildBackend.Controllers
                     OperatingSystem = model.OperatingSystem,
                 };
 
-                _context.UserMetaData.Add(userMetaData);
-
                 // Add address (can be done before save)
-                var address = new UserAddressModel
-                {
-                    StreetNumber = model.StreetNumber,
-                    StreetName = model.StreetName,
-                    City = model.City,
-                    State = model.State,
-                    PostalCode = model.PostalCode,
-                    Country = model.Country,
-                    Latitude = model.Latitude,
-                    Longitude = model.Longitude,
-                    FormattedAddress = model.FormattedAddress,
-                    GooglePlaceId = model.GooglePlaceId,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow,
-                    UserId = user.Id,
-                    CountryCode = model.CountryCode,
-                    AddressType = model.AddressType,
-                };
-                _context.UserAddress.Add(address);
+                //var address = new UserAddressModel
+                //{
+                //    StreetNumber = model.StreetNumber,
+                //    StreetName = model.StreetName,
+                //    City = model.City,
+                //    State = model.State,
+                //    PostalCode = model.PostalCode,
+                //    Country = model.Country,
+                //    Latitude = model.Latitude,
+                //    Longitude = model.Longitude,
+                //    FormattedAddress = model.FormattedAddress,
+                //    GooglePlaceId = model.GooglePlaceId,
+                //    CreatedAt = DateTime.UtcNow,
+                //    UpdatedAt = DateTime.UtcNow,
+                //    UserId = user.Id,
+                //    CountryCode = model.CountryCode,
+                //    AddressType = model.AddressType,
+                //};
+                //_context.UserAddress.Add(address);
                 // Only save agreement if user was created successfully
                 var userAgree = new UserTermsAgreementModel
                 {
@@ -882,47 +883,57 @@ namespace ProbuildBackend.Controllers
         [HttpGet("invitation/{token}")]
         public async Task<IActionResult> GetInvitation(string token)
         {
+            // STEP 1 — Validate that the token exists BEFORE decoding it
+            var teamMember = await _context.TeamMembers
+                .FirstOrDefaultAsync(tm =>
+                    tm.InvitationToken == token &&
+                    tm.TokenExpiration > DateTime.UtcNow);
+
+            if (teamMember == null)
+                return BadRequest("Invalid or expired invitation token.");
+
+            // STEP 2 — Decode AFTER confirming it belongs to a valid invitation
             var protector = _dataProtectionProvider.CreateProtector("TeamMemberInvitation");
-            string unprotectedToken;
+
             try
             {
-                unprotectedToken = protector.Unprotect(token);
+                var decodedBytes = WebEncoders.Base64UrlDecode(token);
+                var protectedValue = Encoding.UTF8.GetString(decodedBytes);
+                var email = protector.Unprotect(protectedValue);
+
+                // Optional: Safety check that decoded email = teamMember.Email
+                if (!string.Equals(email, teamMember.Email, StringComparison.OrdinalIgnoreCase))
+                    return BadRequest("Token email mismatch.");
             }
-            catch (Exception)
+            catch
             {
                 return BadRequest("Invalid invitation token.");
             }
 
-            var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(tm =>
-                tm.InvitationToken == token && tm.TokenExpiration > DateTime.UtcNow
-            );
-
-            if (teamMember == null)
+            return Ok(new
             {
-                return BadRequest("Invalid or expired invitation token.");
-            }
-
-            return Ok(
-                new
-                {
-                    teamMember.FirstName,
-                    teamMember.LastName,
-                    teamMember.Email,
-                    teamMember.Role,
-                }
-            );
+                teamMember.FirstName,
+                teamMember.LastName,
+                teamMember.Email,
+                teamMember.Role
+            });
         }
+
+
 
         [HttpPost("register/team-member")]
         public async Task<IActionResult> RegisterInvited([FromBody] InvitedRegistrationDto dto)
         {
             var protector = _dataProtectionProvider.CreateProtector("TeamMemberInvitation");
-            string unprotectedToken;
+
+            string decoded, email;
             try
             {
-                unprotectedToken = protector.Unprotect(dto.Token);
+                var decodedBytes = WebEncoders.Base64UrlDecode(dto.Token);
+                decoded = Encoding.UTF8.GetString(decodedBytes);
+                email = protector.Unprotect(decoded);
             }
-            catch (Exception)
+            catch
             {
                 return BadRequest("Invalid invitation token.");
             }
@@ -932,9 +943,7 @@ namespace ProbuildBackend.Controllers
             );
 
             if (teamMember == null)
-            {
                 return BadRequest("Invalid or expired invitation token.");
-            }
 
             var hasher = new PasswordHasher<TeamMember>();
             teamMember.PasswordHash = hasher.HashPassword(teamMember, dto.Password);
