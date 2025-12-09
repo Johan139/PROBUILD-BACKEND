@@ -1,4 +1,6 @@
-﻿namespace ProbuildBackend.Models
+﻿using System.ComponentModel.DataAnnotations;
+
+namespace ProbuildBackend.Models
 {
     public class JobDocumentModel
     {
@@ -11,5 +13,8 @@
         public DateTime UploadedAt { get; set; }
 
         public long Size { get; set; }
+
+        [MaxLength(50)]
+        public string? Type { get; set; }
     }
 }

@@ -55,6 +55,7 @@ namespace ProbuildBackend.Models
         public ICollection<JobDocumentModel>? Documents { get; set; } 
         public ICollection<NotificationModel>? Notifications { get; set; }
         public ICollection<JobTradeBudget>? TradeBudgets { get; set; }
+        public ICollection<JobPermitModel>? Permits { get; set; }
         public long? JobAddressId { get; set; }
 
         [ForeignKey("JobAddressId")]
