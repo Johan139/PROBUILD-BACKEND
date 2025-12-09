@@ -8,6 +8,8 @@ using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Services;
+using System.IO.Compression;
+using System.Security.Claims;
 
 namespace ProbuildBackend.Controllers
 {
@@ -122,6 +124,27 @@ namespace ProbuildBackend.Controllers
             {
                 throw;
             }
+        }
+        [HttpGet("GetUserAddresses/{userid}")]
+        public async Task<IActionResult> GetUserAddress(string userid)
+        {
+
+            if (string.IsNullOrEmpty(userid))
+            {
+                return Unauthorized();
+            }
+
+            var userAddresses = await _context.UserAddress
+            .Where(a => a.UserId == userid && a.Deleted != true && !string.IsNullOrEmpty(a.StreetName))
+            .ToListAsync();
+
+            if (userAddresses == null || userAddresses.Count == 0)
+            {
+                return Ok(new List<UserAddressModel>()); // return empty list, not 404
+            }
+
+            return Ok(userAddresses);
+
         }
 
         [HttpGet("GetProfile/{id}")]
@@ -541,7 +564,6 @@ namespace ProbuildBackend.Controllers
 
             try
             {
-                _context.UserAddress.Add(address);
                 await _context.SaveChangesAsync();
                 return NoContent();
             }

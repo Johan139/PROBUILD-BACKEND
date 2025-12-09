@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace ProbuildBackend.Models
 {
@@ -10,9 +11,17 @@ namespace ProbuildBackend.Models
         public string? Task { get; set; }
         public int Duration { get; set; }
         public int JobId { get; set; }
+
+        // Prevent circular loops
+        [JsonIgnore]
         public JobModel? Job { get; set; }
+
         public string? UserId { get; set; }
+
+        // Prevent circular loops
+        [JsonIgnore]
         public UserModel? User { get; set; }
+
         public decimal Amount { get; set; }
         public int BiddingRound { get; set; }
         public bool IsFinalist { get; set; }
