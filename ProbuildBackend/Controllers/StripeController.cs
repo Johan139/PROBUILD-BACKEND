@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using ProbuildBackend.Interface;
+using Newtonsoft.Json.Linq;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Services;
@@ -69,11 +70,12 @@ namespace ProbuildBackend.Controllers
                 stripePriceId = stripeModel.StripeProductIdAnually;
             }
             var metadata = new Dictionary<string, string>
-            {
-                { "userId", request.UserId },
-                { "package", request.PackageName },
-                { "amount", request.Amount.ToString() },
-            };
+{
+    { "userId", request.UserId },
+    { "package", request.PackageName },
+    { "amount", request.Amount.ToString() },
+    { "dbTrialRecordId", request.SubscriptionId } // <-- add this
+};
             if (!string.IsNullOrWhiteSpace(teamMemberUserId))
             {
                 metadata["assignedUser"] = teamMemberUserId;
@@ -92,8 +94,8 @@ namespace ProbuildBackend.Controllers
                     Metadata = new Dictionary<string, string>(metadata),
                 },
 
-                SuccessUrl = $"https://app.probuildai.com/payment-success?source={request.Source}",
-                CancelUrl = "https://app.probuildai.com/payment-cancel",
+                SuccessUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["FrontEnd:FRONTEND_URL"] + $"/payment-success?source={request.Source}",
+                CancelUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["FrontEnd:FRONTEND_URL"] + "/payment-cancel",
                 Customer = GetOrCreateCustomer(request.UserId), // Ensure this returns a valid Customer ID
                 AutomaticTax = new SessionAutomaticTaxOptions { Enabled = false },
             };
@@ -134,8 +136,8 @@ namespace ProbuildBackend.Controllers
             {
                 var stripeEvent = EventUtility.ConstructEvent(
                     json,
-                    Request.Headers["Stripe-Signature"],
-                    "whsec_xnUl3fiux20f6bLmSaqKE6PvXL0mcTMM"
+                     Request.Headers["Stripe-Signature"],
+                      Environment.GetEnvironmentVariable("StripeWebHookKey") ?? _configuration["StripeAPI:StripeWebHookKey"]
                 );
 
                 string userId;
@@ -224,6 +226,11 @@ namespace ProbuildBackend.Controllers
                                 ? b
                                 : null;
 
+
+                        var trialRecordId = chosenLine?.Metadata != null
+                                                    && chosenLine.Metadata.TryGetValue("dbTrialRecordId", out var dbTrialId)
+                                                        ? dbTrialId
+                                                        : null;
                         // After: var invoice = (JObject)root["data"]?["object"];
                         string invoiceNumber = invoices.Number; // fallback to "in_..." if null
 
@@ -313,16 +320,25 @@ namespace ProbuildBackend.Controllers
                             PaymentRecordId = existingRecord[0].Id;
                         }
 
-                        // Always insert into PaymentRecordsHistory for both new subscription and renewal
-                        await SavePaymentRecordHistory(
-                            PaymentRecordId,
-                            PaidAt,
-                            invoiceNumber,
-                            subscriptionAmount,
-                            subscriptionValidDate,
-                            subscriptionId,
-                            subscriptionPackageName
-                        );
+                            // Always insert into PaymentRecordsHistory for both new subscription and renewal
+                            await SavePaymentRecordHistory(PaymentRecordId, PaidAt, invoiceNumber, subscriptionAmount, subscriptionValidDate, subscriptionId, subscriptionPackageName);
+
+                        if (!string.IsNullOrEmpty(trialRecordId))
+                        {
+                            var trial = await _context.PaymentRecords
+                                .Where(x => x.SubscriptionID.ToString() == trialRecordId && x.Status == "Active")
+                                .FirstOrDefaultAsync();
+
+                            if (trial != null)
+                            {
+                                trial.Status = "Cancelled";
+                                trial.Cancelled = true;
+                                trial.CancelledDate = DateTime.UtcNow;
+
+                                _context.PaymentRecords.Update(trial);
+                                await _context.SaveChangesAsync();
+                            }
+                        }
                         break;
 
                     default:
@@ -349,80 +365,131 @@ namespace ProbuildBackend.Controllers
             [FromBody] SubscriptionUpgradeDTO payload
         )
         {
-            if (
-                string.IsNullOrWhiteSpace(payload.subscriptionId)
-                || string.IsNullOrWhiteSpace(payload.packageName)
-            )
-                return BadRequest("subscriptionId and packageName are required.");
-
-            var teamMemberUserId = (
-                from tm in _context.TeamMembers
-                join u in _context.Users on tm.Email equals u.Email
-                where tm.Id == payload.AssignedUser
-                select u.Id
-            ).SingleOrDefault();
-
-            StripeConfiguration.ApiKey =
-                Environment.GetEnvironmentVariable("StripeAPIKey")
-                ?? _configuration["StripeAPI:StripeKey"];
-
-            // Resolve a **PRICE** id for the package (not product id!)
-            var stripeModel = GetPriceIdForPackage(payload.packageName);
-            if (string.IsNullOrEmpty(stripeModel.StripeProductId))
-                return BadRequest("No active price found for the package.");
-
-            // Use a local SubscriptionService
-            var subs = new Stripe.SubscriptionService();
-
-            // Load subscription and the item to switch
-            var sub = await subs.GetAsync(payload.subscriptionId);
-            if (sub.Items?.Data?.Count == 0)
-                return BadRequest("No subscription items found.");
-            var itemId = sub.Items.Data[0].Id;
-            var metadata = new Dictionary<string, string>
+            try
             {
-                { "userId", payload.userId },
-                { "package", payload.packageName },
-                { "amount", stripeModel.Amount.ToString() },
-            };
-            if (!string.IsNullOrWhiteSpace(teamMemberUserId))
-            {
-                metadata["assignedUser"] = teamMemberUserId;
-            }
-            // Option A: change price now, keep renewal, create prorations, don't charge now
-            var updated = await subs.UpdateAsync(
-                payload.subscriptionId,
-                new SubscriptionUpdateOptions
+                string Amount = string.Empty;
+                string stripePriceId = string.Empty;
+                if (string.IsNullOrWhiteSpace(payload.subscriptionId) || string.IsNullOrWhiteSpace(payload.packageName))
+                    return BadRequest("subscriptionId and packageName are required.");
+
+                var teamMemberUserId =
+                    (from tm in _context.TeamMembers
+                     join u in _context.Users on tm.Email equals u.Email
+                     where tm.Id == payload.AssignedUser
+                     select u.Id).SingleOrDefault();
+
+                StripeConfiguration.ApiKey =
+                    Environment.GetEnvironmentVariable("StripeAPIKey")
+                    ?? _configuration["StripeAPI:StripeKey"];
+
+                // Resolve PRICE (not product)
+
+                StripeModel stripeModel = GetPriceIdForPackage(payload.packageName); // Implement this to map package to Price ID
+
+                if (string.IsNullOrEmpty(stripeModel.StripeProductId))
+                {
+                    return BadRequest("Invalid PackageName.");
+                }
+
+                if (payload.BillingCycle.ToLower() == "monthly")
+                {
+                    stripePriceId = stripeModel.StripeProductId;
+                    Amount = stripeModel.Amount.ToString();
+                }
+                else
+                {
+                    stripePriceId = stripeModel.StripeProductIdAnually;
+                    Amount = stripeModel.AnnualAmount.ToString();
+                }
+                if (string.IsNullOrEmpty(stripeModel.StripeProductId))
+                    return BadRequest("No active price found for the package.");
+
+                var subs = new Stripe.SubscriptionService();
+
+                // Load subscription
+                var sub = await subs.GetAsync(payload.subscriptionId);
+                if (sub.Items?.Data?.Count == 0)
+                    return BadRequest("No subscription items found.");
+
+                // Subscription item ID (required to change price)
+                var itemId = sub.Items.Data[0].Id;
+
+                // Build metadata
+                var metadata = new Dictionary<string, string>
+        {
+            { "userId", payload.userId },
+            { "package", payload.packageName },
+            { "amount", Amount }
+        };
+
+                if (!string.IsNullOrWhiteSpace(teamMemberUserId))
+                    metadata["assignedUser"] = teamMemberUserId;
+
+                // Detect current interval (month/year)
+                var currentInterval = sub.Items.Data[0].Price.Recurring.Interval;
+
+                // Detect new interval
+                var priceService = new PriceService();
+                var targetPrice = await priceService.GetAsync(stripePriceId);
+                var newInterval = targetPrice.Recurring.Interval;
+
+                // Billing cycle rule:
+                // Stripe allows Unchanged ONLY when interval stays the same
+                SubscriptionBillingCycleAnchor? anchor = null;
+
+                if (currentInterval == newInterval)
+                {
+                    anchor = SubscriptionBillingCycleAnchor.Unchanged;
+                }
+                else
+                {
+                    anchor = null; // Stripe will reset cycle (required for monthly ↔ yearly changes)
+                }
+
+                // Perform subscription update
+                var updated = await subs.UpdateAsync(payload.subscriptionId, new SubscriptionUpdateOptions
                 {
                     Items = new List<SubscriptionItemOptions>
-                    {
-                        new SubscriptionItemOptions
-                        {
-                            Id = itemId,
-                            Price = stripeModel.StripeProductId,
-                        },
-                    },
-                    ProrationBehavior = "create_prorations",
-                    BillingCycleAnchor = Stripe.SubscriptionBillingCycleAnchor.Now, // safer across Stripe.NET versions
-
-                    Metadata = new Dictionary<string, string>(metadata),
-                }
-            );
-
-            var paymentRecord = _context
-                .PaymentRecords.Where(x => x.SubscriptionID == payload.subscriptionId)
-                .FirstOrDefault();
-            if (paymentRecord != null)
             {
-                paymentRecord.Package = payload.packageName;
-                paymentRecord.Amount = stripeModel.Amount;
+                new SubscriptionItemOptions
+                {
+                    Id = itemId,
+                    Price = stripePriceId
+                }
+            },
+                    ProrationBehavior = "create_prorations",
+                    BillingCycleAnchor = anchor,
+                    Metadata = metadata
+                });
+
+                // Update your DB
+                var paymentRecord = _context.PaymentRecords
+                    .Where(x => x.SubscriptionID == payload.subscriptionId)
+                    .FirstOrDefault();
+
+                if (paymentRecord != null)
+                {
+                    paymentRecord.Package = payload.packageName;
+                    paymentRecord.Amount = Convert.ToDecimal(Amount);
+
+                    _context.PaymentRecords.Attach(paymentRecord);
+                    _context.Entry(paymentRecord).Property(u => u.Package).IsModified = true;
+                    _context.Entry(paymentRecord).Property(u => u.Amount).IsModified = true;
+                    _context.SaveChanges();
+                }
+
+                return Ok(new
+                {
+                    status = "ok",
+                    subscriptionId = updated.Id
+                });
             }
-            _context.PaymentRecords.Attach(paymentRecord);
-            _context.Entry(paymentRecord).Property(u => u.Package).IsModified = true;
-            _context.Entry(paymentRecord).Property(u => u.Amount).IsModified = true;
-            _context.SaveChanges();
-            return Ok(new { status = "ok", subscriptionId = updated.Id });
+            catch (Exception ex)
+            {
+                throw;
+            }
         }
+
 
         // Shared method to save payment record
         private async Task<PaymentRecord> SavePaymentRecord(
@@ -628,9 +695,10 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                StripeConfiguration.ApiKey =
-                    Environment.GetEnvironmentVariable("StripeAPIKey")
-                    ?? _configuration["StripeAPI:StripeKey"];
+
+                string productPriceId = string.Empty;
+            StripeConfiguration.ApiKey = Environment.GetEnvironmentVariable("StripeAPIKey")
+                                          ?? _configuration["StripeAPI:StripeKey"];
 
                 // 1) Resolve the target Price ID from the selected package value
                 //    (Your method must return a PRICE id like "price_...", not a product id)
@@ -638,18 +706,26 @@ namespace ProbuildBackend.Controllers
                 if (string.IsNullOrWhiteSpace(target?.StripeProductId))
                     return BadRequest("Unknown package/price mapping.");
 
-                // 2) Load the subscription to infer customer + existing item
-                var subSvc = new Stripe.SubscriptionService();
-                var subscription = await subSvc.GetAsync(
-                    req.SubscriptionId,
-                    new SubscriptionGetOptions
-                    {
-                        // expand if you need product info to choose which line to replace
-                        Expand = new List<string> { "items.data.price.product" },
-                    }
-                );
-                if (subscription == null)
-                    return NotFound("Subscription not found.");
+
+            if(req.BillingCycle == "yearly")
+                {
+                    productPriceId = target.StripeProductIdAnually;
+                }
+            else
+                {
+                    productPriceId = target.StripeProductId;
+                }
+                    // 2) Load the subscription to infer customer + existing item
+                    var subSvc = new Stripe.SubscriptionService();
+            var subscription = await subSvc.GetAsync(
+                req.SubscriptionId,
+                new SubscriptionGetOptions
+                {
+                    // expand if you need product info to choose which line to replace
+                    Expand = new List<string> { "items.data.price.product" }
+                }
+            );
+            if (subscription == null) return NotFound("Subscription not found.");
 
                 var customerId = subscription.CustomerId;
                 // Pick the primary item; adapt if you have multiple items per sub
@@ -664,30 +740,27 @@ namespace ProbuildBackend.Controllers
                     .FromUnixTimeSeconds(prorationUnix)
                     .UtcDateTime;
 
-                // 4) Build invoice preview with proration
-                var invoiceSvc = new InvoiceService();
-                var preview = await invoiceSvc.CreatePreviewAsync(
-                    new InvoiceCreatePreviewOptions
-                    {
-                        Customer = customerId,
-                        Subscription = req.SubscriptionId,
-                        SubscriptionDetails = new InvoiceSubscriptionDetailsOptions
-                        {
-                            ProrationBehavior = "create_prorations",
-                            ProrationDate = prorationInstant,
-                            BillingCycleAnchor =
-                                InvoiceSubscriptionDetailsBillingCycleAnchor.Unchanged,
-                            Items = new List<InvoiceSubscriptionDetailsItemOptions>
-                            {
-                                new()
-                                {
-                                    Id = existingItem.Id, // replace current item
-                                    Price = target.StripeProductId, // with new PRICE id
-                                },
-                            },
-                        },
-                    }
-                );
+            // 4) Build invoice preview with proration
+            var invoiceSvc = new InvoiceService();
+            var preview = await invoiceSvc.CreatePreviewAsync(new InvoiceCreatePreviewOptions
+            {
+                Customer = customerId,
+                Subscription = req.SubscriptionId,
+                SubscriptionDetails = new InvoiceSubscriptionDetailsOptions
+                {
+                    ProrationBehavior = "create_prorations",
+                    ProrationDate = prorationInstant,
+                    BillingCycleAnchor = InvoiceSubscriptionDetailsBillingCycleAnchor.Unchanged,
+                    Items = new List<InvoiceSubscriptionDetailsItemOptions>
+            {
+                new()
+                {
+                    Id = existingItem.Id,                   // replace current item
+                    Price = productPriceId          // with new PRICE id
+                }
+            }
+                }
+            });
 
                 // 5) Map proration lines
                 var lines = preview
@@ -748,7 +821,177 @@ namespace ProbuildBackend.Controllers
                 return StatusCode(500, $"Error processing finders fee: {ex.Message}");
             }
         }
+        [HttpGet("user-subscriptions/{userId}")]
+        public async Task<IActionResult> GetUserStripeSubscriptions(string userId)
+        {
+            try
+            {
+                // Normalize user id
+                var normUserId = (userId ?? "").Trim().ToLower();
+
+                // Get user's email for AssignedUser email matching
+                var viewerEmail = await _context.Users.AsNoTracking()
+                    .Where(u => (u.Id ?? "").ToLower() == normUserId)
+                    .Select(u => u.Email)
+                    .FirstOrDefaultAsync();
+
+                var normEmail = (viewerEmail ?? "").Trim().ToLower();
+
+                // Load ALL payment records (active + inactive)
+                var records = await _context.PaymentRecords.AsNoTracking()
+                    .Where(pr =>
+                        ((pr.UserId ?? "").ToLower().Trim() == normUserId) ||     // payer
+                        ((pr.AssignedUser ?? "").ToLower().Trim() == normUserId) || // assigned by user id
+                        (normEmail != "" && ((pr.AssignedUser ?? "").ToLower().Trim() == normEmail)) // assigned by email
+                    )
+                    .ToListAsync();
+
+                if (records.Count == 0)
+                    return Ok(new List<object>());
+
+                // Prepare Stripe
+                StripeConfiguration.ApiKey =
+                    Environment.GetEnvironmentVariable("StripeAPIKey")
+                    ?? _configuration["StripeAPI:StripeKey"];
+
+                var stripe = new Stripe.SubscriptionService();
+                var result = new List<object>();
+
+                foreach (var rec in records)
+                {
+                    bool isStripeSub =
+                        rec.SubscriptionID != null &&
+                        rec.SubscriptionID.StartsWith("sub_");
+
+                    //
+                    //  NON-STRIPE OR INACTIVE: return DB info only
+                    //
+                    if (!isStripeSub)
+                    {
+                        long? validUntilUnix =
+                            rec.ValidUntil == DateTime.MinValue
+                                ? (long?)null
+                                : new DateTimeOffset(rec.ValidUntil).ToUnixTimeSeconds();
+
+
+                        result.Add(new
+                        {
+                            subscriptionId = rec.SubscriptionID,
+                            package = rec.Package,
+                            amount = rec.Amount,
+                            status = rec.Status,  // Active / Cancelled / Inactive (as stored)
+                            cancel_at_period_end = false,
+                            current_period_end = validUntilUnix,
+                            validUntil = validUntilUnix,
+                            assignedUser = rec.AssignedUser
+                        });
+
+                        continue; // ⛔ Skip Stripe API call
+                    }
+
+                    //
+                    //  STRIPE SUBSCRIPTION → fetch LIVE data
+                    //
+                    var sub = await stripe.GetAsync(rec.SubscriptionID, new SubscriptionGetOptions
+                    {
+                        Expand = new List<string>
+    {
+        "latest_invoice",
+        "latest_invoice.lines",
+        "plan",
+        "items",
+        "items.data",
+        "items.data.plan"
     }
+                    });
+
+                    Console.WriteLine(sub.ToJson());
+
+                    // Get billing period end from Stripe invoice line
+                    dynamic raw = Newtonsoft.Json.Linq.JObject.Parse(sub.ToJson());
+                    long? periodEndUnix = (long?)raw["items"]?["data"]?[0]?["current_period_end"];
+
+                    result.Add(new
+                    {
+                        subscriptionId = rec.SubscriptionID,
+                        package = rec.Package,
+                        amount = rec.Amount,
+                        status = sub.Status,
+                        cancel_at_period_end = sub.CancelAtPeriodEnd,
+                        current_period_end = periodEndUnix,
+                        validUntil = periodEndUnix,
+                        assignedUser = rec.AssignedUser
+                    });
+                }
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                // TODO: log error
+                return StatusCode(500, "Failed to load subscriptions.");
+            }
+        }
+
+        [HttpPost("undo-cancellation/{subscriptionId}")]
+        public async Task<IActionResult> UndoCancellation(string subscriptionId)
+        {
+            if (string.IsNullOrWhiteSpace(subscriptionId))
+                return BadRequest("SubscriptionId is required.");
+
+            try
+            {
+                StripeConfiguration.ApiKey =
+                    Environment.GetEnvironmentVariable("StripeAPIKey")
+                    ?? _configuration["StripeAPI:StripeKey"];
+
+                var service = new Stripe.SubscriptionService();
+
+                var options = new SubscriptionUpdateOptions
+                {
+                    CancelAtPeriodEnd = false
+                };
+
+                var updated = await service.UpdateAsync(subscriptionId, options);
+
+                // --- Update your DB ---
+                var subscription = await _context.PaymentRecords
+                    .Where(s => s.SubscriptionID == subscriptionId)
+                    .FirstOrDefaultAsync();
+
+                if (subscription != null)
+                {
+                    subscription.Cancelled = false;
+                    subscription.Status = "Active";
+                    subscription.CancelledDate = null;
+
+                    _context.PaymentRecords.Attach(subscription);
+                    _context.Entry(subscription).Property(x => x.Cancelled).IsModified = true;
+                    _context.Entry(subscription).Property(x => x.Status).IsModified = true;
+                    _context.Entry(subscription).Property(x => x.CancelledDate).IsModified = true;
+                    await _context.SaveChangesAsync();
+                }
+
+                return Ok(new
+                {
+                    message = "Subscription cancellation undone.",
+                    subscriptionId = updated.Id,
+                    cancelAtPeriodEnd = updated.CancelAtPeriodEnd
+                });
+            }
+            catch (StripeException ex)
+            {
+                return StatusCode(500, new { message = $"Stripe error: {ex.Message}" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = $"Unexpected error: {ex.Message}" });
+            }
+        }
+
+    }
+
+
 
     public class PaymentIntentRequest
     {
