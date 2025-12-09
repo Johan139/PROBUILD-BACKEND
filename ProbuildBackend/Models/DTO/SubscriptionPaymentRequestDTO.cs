@@ -9,5 +9,7 @@
         public string AssignedUser { get; set; }
 
         public string BillingCycle { get; set; }
+
+        public string SubscriptionId { get; set; }
     }
 }
