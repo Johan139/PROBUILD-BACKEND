@@ -1,4 +1,4 @@
-﻿using System.IO.Compression;
+﻿using Elastic.Apm.Api;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
@@ -8,6 +8,7 @@ using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Services;
+using System.IO.Compression;
 using System.IO.Compression;
 using System.Security.Claims;
 
@@ -57,7 +58,7 @@ namespace ProbuildBackend.Controllers
         public async Task<IActionResult> GetUserDocuments(string UserId)
         {
             var documents = await _context
-                .ProfileDocuments.Where(doc => doc.UserId == UserId)
+                .ProfileDocuments.Where(doc => doc.UserId == UserId && (doc.Deleted == false || doc.Deleted == null))
                 .ToListAsync();
 
             if (documents == null || !documents.Any())
@@ -164,8 +165,7 @@ namespace ProbuildBackend.Controllers
                     return NotFound("No user found with the specified id.");
 
                 user.UserAddresses = _context
-                    .UserAddress.Where(p =>
-                        p.UserId == id && (p.Deleted == false || p.Deleted == null)
+                    .UserAddress.Where(a => a.UserId == id && a.Deleted != true && !string.IsNullOrEmpty(a.StreetName)
                     )
                     .ToList();
                 return Ok(user);
@@ -200,17 +200,25 @@ namespace ProbuildBackend.Controllers
                 user.CompanyRegNo = model.CompanyRegNo;
                 user.VatNo = model.VatNo;
                 user.UserType = model.UserType;
-                user.ConstructionType = model.ConstructionType;
+                user.ConstructionType = model.ConstructionType != null
+    ? string.Join(",", model.ConstructionType)
+    : null;
                 user.NrEmployees = model.NrEmployees;
                 user.YearsOfOperation = model.YearsOfOperation;
                 user.CertificationStatus = model.CertificationStatus;
                 user.CertificationDocumentPath = model.CertificationDocumentPath;
                 user.Availability = model.Availability;
                 user.Trade = model.Trade;
-                user.ProductsOffered = model.ProductsOffered;
+                user.ProductsOffered = model.ProductsOffered != null
+    ? string.Join(",", model.ProductsOffered)
+    : null;
                 user.SupplierType = model.SupplierType;
-                user.JobPreferences = model.JobPreferences;
-                user.DeliveryArea = model.DeliveryArea;
+                user.JobPreferences = model.JobPreferences != null
+    ? string.Join(",", model.JobPreferences)
+    : null;
+                user.DeliveryArea = model.DeliveryArea != null
+    ? string.Join(",", model.DeliveryArea)
+    : null;
                 user.DeliveryTime = model.DeliveryTime;
                 user.CountryNumberCode = model.CountryNumberCode;
                 //We need to move away from the below. It will cause confusion between the new address model and old.
@@ -234,38 +242,38 @@ namespace ProbuildBackend.Controllers
                 }
 
                 // Add address (can be done before save)
-                var address = new UserAddressModel
-                {
-                    StreetNumber = model.StreetNumber,
-                    StreetName = model.StreetName,
-                    City = model.City,
-                    State = model.State,
-                    PostalCode = model.PostalCode,
-                    Country = model.Country,
-                    Latitude = model.Latitude,
-                    Longitude = model.Longitude,
-                    FormattedAddress = model.FormattedAddress,
-                    GooglePlaceId = model.GooglePlaceId,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow,
-                    UserId = user.Id,
-                };
-                _context.UserAddress.Add(address);
+                //var address = new UserAddressModel
+                //{
+                //    StreetNumber = model.StreetNumber,
+                //    StreetName = model.StreetName,
+                //    City = model.City,
+                //    State = model.State,
+                //    PostalCode = model.PostalCode,
+                //    Country = model.Country,
+                //    Latitude = model.Latitude,
+                //    Longitude = model.Longitude,
+                //    FormattedAddress = model.FormattedAddress,
+                //    GooglePlaceId = model.GooglePlaceId,
+                //    CreatedAt = DateTime.UtcNow,
+                //    UpdatedAt = DateTime.UtcNow,
+                //    UserId = user.Id,
+                //};
+                //_context.UserAddress.Add(address);
 
-                // Update documents
-                if (!string.IsNullOrEmpty(model.SessionId))
-                {
-                    var documents = await _context
-                        .ProfileDocuments.Where(doc =>
-                            doc.sessionId == model.SessionId && string.IsNullOrEmpty(doc.UserId)
-                        )
-                        .ToListAsync();
+                // Update documents -- Comment out- Lets just save the document when they upload it. 
+                //if (!string.IsNullOrEmpty(model.SessionId))
+                //{
+                //    var documents = await _context
+                //        .ProfileDocuments.Where(doc =>
+                //            doc.sessionId == model.SessionId && string.IsNullOrEmpty(doc.UserId)
+                //        )
+                //        .ToListAsync();
 
-                    foreach (var doc in documents)
-                    {
-                        doc.UserId = model.Id;
-                    }
-                }
+                //    foreach (var doc in documents)
+                //    {
+                //        doc.UserId = model.Id;
+                //    }
+                //}
 
                 // Now commit all changes once
                 await _context.SaveChangesAsync();
@@ -279,9 +287,9 @@ namespace ProbuildBackend.Controllers
             }
         }
 
-        [HttpPost("UploadImage")]
+        [HttpPost("UploadImage/{userId}")]
         [RequestSizeLimit(200 * 1024 * 1024)]
-        public async Task<IActionResult> UploadImage([FromForm] UploadDocumentDTO jobRequest)
+        public async Task<IActionResult> UploadImage([FromForm] UploadDocumentDTO jobRequest, string userId)
         {
             try
             {
@@ -336,7 +344,7 @@ namespace ProbuildBackend.Controllers
 
                     var Document = new ProfileDocuments
                     {
-                        UserId = "",
+                        UserId = userId,
                         FileName = blobFileName,
                         BlobUrl = url,
                         sessionId = jobRequest.sessionId,
@@ -596,5 +604,22 @@ namespace ProbuildBackend.Controllers
 
             return Ok(types);
         }
+
+        [HttpDelete("DeleteDocument/{id}")]
+        public async Task<IActionResult> DeleteDocument(int id)
+        {
+            var doc = await _context.ProfileDocuments.FindAsync(id);
+            if (doc == null)
+                return NotFound();
+
+            // 🔥 Soft Delete instead of removing record
+            doc.Deleted = true;
+            doc.DeletedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Document soft deleted" });
+        }
+
     }
 }
