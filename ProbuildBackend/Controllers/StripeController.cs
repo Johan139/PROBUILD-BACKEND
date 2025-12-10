@@ -826,10 +826,9 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                // Normalize user id
                 var normUserId = (userId ?? "").Trim().ToLower();
 
-                // Get user's email for AssignedUser email matching
+                // Get user's email
                 var viewerEmail = await _context.Users.AsNoTracking()
                     .Where(u => (u.Id ?? "").ToLower() == normUserId)
                     .Select(u => u.Email)
@@ -837,19 +836,18 @@ namespace ProbuildBackend.Controllers
 
                 var normEmail = (viewerEmail ?? "").Trim().ToLower();
 
-                // Load ALL payment records (active + inactive)
+                // Load ALL payment records
                 var records = await _context.PaymentRecords.AsNoTracking()
                     .Where(pr =>
-                        ((pr.UserId ?? "").ToLower().Trim() == normUserId) ||     // payer
-                        ((pr.AssignedUser ?? "").ToLower().Trim() == normUserId) || // assigned by user id
-                        (normEmail != "" && ((pr.AssignedUser ?? "").ToLower().Trim() == normEmail)) // assigned by email
+                        ((pr.UserId ?? "").ToLower().Trim() == normUserId) ||
+                        ((pr.AssignedUser ?? "").ToLower().Trim() == normUserId) ||
+                        (normEmail != "" && ((pr.AssignedUser ?? "").ToLower().Trim() == normEmail))
                     )
                     .ToListAsync();
 
                 if (records.Count == 0)
                     return Ok(new List<object>());
 
-                // Prepare Stripe
                 StripeConfiguration.ApiKey =
                     Environment.GetEnvironmentVariable("StripeAPIKey")
                     ?? _configuration["StripeAPI:StripeKey"];
@@ -859,12 +857,11 @@ namespace ProbuildBackend.Controllers
 
                 foreach (var rec in records)
                 {
-                    bool isStripeSub =
-                        rec.SubscriptionID != null &&
-                        rec.SubscriptionID.StartsWith("sub_");
+                    bool isStripeSub = rec.SubscriptionID != null &&
+                                       rec.SubscriptionID.StartsWith("sub_");
 
                     //
-                    //  NON-STRIPE OR INACTIVE: return DB info only
+                    // NON-STRIPE OR MANUAL RECORD → return DB info only
                     //
                     if (!isStripeSub)
                     {
@@ -873,44 +870,86 @@ namespace ProbuildBackend.Controllers
                                 ? (long?)null
                                 : new DateTimeOffset(rec.ValidUntil).ToUnixTimeSeconds();
 
-
                         result.Add(new
                         {
                             subscriptionId = rec.SubscriptionID,
                             package = rec.Package,
                             amount = rec.Amount,
-                            status = rec.Status,  // Active / Cancelled / Inactive (as stored)
+                            status = rec.Status,
                             cancel_at_period_end = false,
                             current_period_end = validUntilUnix,
                             validUntil = validUntilUnix,
                             assignedUser = rec.AssignedUser
                         });
 
-                        continue; // ⛔ Skip Stripe API call
+                        continue;
                     }
 
                     //
-                    //  STRIPE SUBSCRIPTION → fetch LIVE data
+                    // STRIPE SUB – SAFE FETCH
                     //
-                    var sub = await stripe.GetAsync(rec.SubscriptionID, new SubscriptionGetOptions
+                    Subscription sub = null!;
+                    long? periodEndUnix = null;
+
+                    try
                     {
-                        Expand = new List<string>
-    {
-        "latest_invoice",
-        "latest_invoice.lines",
-        "plan",
-        "items",
-        "items.data",
-        "items.data.plan"
-    }
-                    });
+                        sub = await stripe.GetAsync(
+                            rec.SubscriptionID,
+                            new SubscriptionGetOptions
+                            {
+                                Expand = new List<string>
+                                {
+                            "latest_invoice",
+                            "latest_invoice.lines",
+                            "items",
+                            "items.data"
+                                }
+                            }
+                        );
 
-                    Console.WriteLine(sub.ToJson());
+                        dynamic raw = Newtonsoft.Json.Linq.JObject.Parse(sub.ToJson());
+                        periodEndUnix = (long?)raw["items"]?["data"]?[0]?["current_period_end"];
+                    }
+                    catch (StripeException ex)
+                    {
+                        // 🔥 STRIPE SAYS SUB DOES NOT EXIST / WAS DELETED / INVALID
+                        result.Add(new
+                        {
+                            subscriptionId = rec.SubscriptionID,
+                            package = rec.Package,
+                            amount = rec.Amount,
+                            status = "not_found_on_stripe",
+                            cancel_at_period_end = false,
+                            current_period_end = (long?)null,
+                            validUntil = (long?)null,
+                            assignedUser = rec.AssignedUser,
+                            message = $"Stripe error: {ex.Message}"
+                        });
 
-                    // Get billing period end from Stripe invoice line
-                    dynamic raw = Newtonsoft.Json.Linq.JObject.Parse(sub.ToJson());
-                    long? periodEndUnix = (long?)raw["items"]?["data"]?[0]?["current_period_end"];
+                        continue; // do NOT break the loop
+                    }
+                    catch (Exception ex)
+                    {
+                        // 🔥 Other unexpected error – still do NOT break entire endpoint
+                        result.Add(new
+                        {
+                            subscriptionId = rec.SubscriptionID,
+                            package = rec.Package,
+                            amount = rec.Amount,
+                            status = "error_fetching_from_stripe",
+                            cancel_at_period_end = false,
+                            current_period_end = (long?)null,
+                            validUntil = (long?)null,
+                            assignedUser = rec.AssignedUser,
+                            message = ex.Message
+                        });
 
+                        continue;
+                    }
+
+                    //
+                    // SUCCESSFUL STRIPE FETCH
+                    //
                     result.Add(new
                     {
                         subscriptionId = rec.SubscriptionID,
@@ -926,12 +965,12 @@ namespace ProbuildBackend.Controllers
 
                 return Ok(result);
             }
-            catch (Exception ex)
+            catch
             {
-                // TODO: log error
                 return StatusCode(500, "Failed to load subscriptions.");
             }
         }
+
 
         [HttpPost("undo-cancellation/{subscriptionId}")]
         public async Task<IActionResult> UndoCancellation(string subscriptionId)
