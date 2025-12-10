@@ -68,6 +68,7 @@ namespace ProbuildBackend.Controllers
             {
                 var jobs = await _context
                     .Jobs.Where(j => j.BiddingType == "PUBLIC" && j.Status == "BIDDING")
+                    .Include(j => j.TradeBudgets)
                     .Join(
                         _context.JobAddresses,
                         j => j.Id,
@@ -118,6 +119,7 @@ namespace ProbuildBackend.Controllers
                             Longitude = item.Address.Longitude.ToString(),
                             GooglePlaceId = item.Address.GooglePlaceId,
                             Trades = item.Job.RequiredSubcontractorTypes,
+                            TradeBudgets = item.Job.TradeBudgets?.ToList(),
                             PotentialStartDate = potentialStartDate,
                             PotentialEndDate = potentialEndDate,
                             DurationInDays = durationInDays,
@@ -150,7 +152,9 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var job = await _context.Jobs.FindAsync(id);
+                var job = await _context
+                    .Jobs.Include(j => j.TradeBudgets)
+                    .FirstOrDefaultAsync(j => j.Id == id);
 
                 if (job == null)
                 {
@@ -208,6 +212,7 @@ namespace ProbuildBackend.Controllers
                     Stories = job.Stories,
                     BuildingSize = job.BuildingSize,
                     Trades = job.RequiredSubcontractorTypes,
+                    TradeBudgets = job.TradeBudgets?.ToList(),
                     CreatedAt = job.CreatedAt,
                     BiddingStartDate = job.BiddingStartDate,
                     Address = address?.FormattedAddress,
@@ -520,6 +525,7 @@ namespace ProbuildBackend.Controllers
                 {
                     var job = new JobModel
                     {
+                        TradeBudgets = jobRequest.TradeBudgets,
                         ProjectName = jobRequest.ProjectName,
                         JobType = jobRequest.JobType ?? "Pending AI Analysis",
                         Qty = jobRequest.Qty,
@@ -1025,6 +1031,19 @@ namespace ProbuildBackend.Controllers
             {
                 existingJob.BiddingType = jobDto.BiddingType;
                 existingJob.RequiredSubcontractorTypes = jobDto.Trades;
+
+                if (jobDto.TradeBudgets != null)
+                {
+                    var existingBudgets = _context.JobTradeBudgets.Where(b => b.JobId == id);
+                    _context.JobTradeBudgets.RemoveRange(existingBudgets);
+
+                    foreach (var budget in jobDto.TradeBudgets)
+                    {
+                        budget.JobId = id;
+                        _context.JobTradeBudgets.Add(budget);
+                    }
+                }
+
                 if (jobDto.BiddingType == "PUBLIC" || jobDto.BiddingType == "PRIVATE")
                 {
                     existingJob.BiddingStartDate = DateTime.UtcNow;

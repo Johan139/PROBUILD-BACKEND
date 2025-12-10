@@ -55,6 +55,7 @@
         public IFormFile? UserContextFile { get; set; }
         public bool GenerateDetailsWithAi { get; set; }
         public List<string>? Trades { get; set; }
+        public List<JobTradeBudget>? TradeBudgets { get; set; }
         public DateTime PotentialStartDate { get; set; }
         public DateTime PotentialEndDate { get; set; }
         public int DurationInDays { get; set; }

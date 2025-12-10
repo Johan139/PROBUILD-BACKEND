@@ -64,6 +64,8 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<StatesModel> States { get; set; }
     public DbSet<CountryNumberCodesModel> CountryNumberCodes { get; set; }
     public DbSet<BudgetLineItem> BudgetLineItems { get; set; }
+    public DbSet<JobTradeBudget> JobTradeBudgets { get; set; }
+    public DbSet<JobPermitModel> JobPermits { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -176,6 +178,20 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .HasMany(j => j.Documents)
             .WithOne()
             .HasForeignKey(d => d.JobId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder
+            .Entity<JobModel>()
+            .HasMany(j => j.Permits)
+            .WithOne()
+            .HasForeignKey(p => p.JobId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder
+            .Entity<JobModel>()
+            .HasMany(j => j.Permits)
+            .WithOne()
+            .HasForeignKey(p => p.JobId)
             .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<JobModel>().HasOne(j => j.User).WithMany().HasForeignKey(j => j.UserId);
