@@ -9,8 +9,8 @@ namespace ProbuildBackend.Models.DTO
     public class StartConversationDto
     {
         public string InitialMessage { get; set; }
-        public List<string> PromptKeys { get; set; }
-        public List<string> BlueprintUrls { get; set; }
+        public List<string>? PromptKeys { get; set; }
+        public List<string>? BlueprintUrls { get; set; }
         public string UserType { get; set; }
     }
 
