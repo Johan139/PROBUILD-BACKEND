@@ -276,6 +276,26 @@ namespace ProbuildBackend.Controllers
                             );
                             PaymentRecordId = SavedPayment.Id;
 
+                            // Always insert into PaymentRecordsHistory for both new subscription and renewal
+                            await SavePaymentRecordHistory(PaymentRecordId, PaidAt, invoiceNumber, subscriptionAmount, subscriptionValidDate, subscriptionId, subscriptionPackageName);
+
+                            if (!string.IsNullOrEmpty(trialRecordId))
+                            {
+                                var trial = await _context.PaymentRecords
+                                    .Where(x => x.SubscriptionID.ToString() == trialRecordId && x.Status == "Active")
+                                    .FirstOrDefaultAsync();
+
+                                if (trial != null)
+                                {
+                                    trial.Status = "Cancelled";
+                                    trial.Cancelled = true;
+                                    trial.CancelledDate = DateTime.UtcNow;
+
+                                    _context.PaymentRecords.Update(trial);
+                                    await _context.SaveChangesAsync();
+                                }
+                            }
+
                             try
                             {
                                 // Fetch user
@@ -299,7 +319,7 @@ namespace ProbuildBackend.Controllers
                                             )
                                             .Replace(
                                                 "{{setup_url}}",
-                                                "https://app.probuildai.com/pro-setup"
+                                                "https://app.probuildai.com/dashboard"
                                             ); // CLICK TARGET
 
                                         // Send
@@ -320,25 +340,7 @@ namespace ProbuildBackend.Controllers
                             PaymentRecordId = existingRecord[0].Id;
                         }
 
-                            // Always insert into PaymentRecordsHistory for both new subscription and renewal
-                            await SavePaymentRecordHistory(PaymentRecordId, PaidAt, invoiceNumber, subscriptionAmount, subscriptionValidDate, subscriptionId, subscriptionPackageName);
 
-                        if (!string.IsNullOrEmpty(trialRecordId))
-                        {
-                            var trial = await _context.PaymentRecords
-                                .Where(x => x.SubscriptionID.ToString() == trialRecordId && x.Status == "Active")
-                                .FirstOrDefaultAsync();
-
-                            if (trial != null)
-                            {
-                                trial.Status = "Cancelled";
-                                trial.Cancelled = true;
-                                trial.CancelledDate = DateTime.UtcNow;
-
-                                _context.PaymentRecords.Update(trial);
-                                await _context.SaveChangesAsync();
-                            }
-                        }
                         break;
 
                     default:
