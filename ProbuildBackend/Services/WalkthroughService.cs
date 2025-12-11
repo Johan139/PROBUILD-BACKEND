@@ -8,13 +8,13 @@ namespace ProbuildBackend.Services
     public class WalkthroughService : IWalkthroughService
     {
         private readonly ApplicationDbContext _context;
-        private readonly GeminiAiService _aiService;
-        private readonly PromptManagerService _promptManager;
+        private readonly IAiService _aiService;
+        private readonly IPromptManagerService _promptManager;
 
         public WalkthroughService(
             ApplicationDbContext context,
-            GeminiAiService aiService,
-            PromptManagerService promptManager
+            IAiService aiService,
+            IPromptManagerService promptManager
         )
         {
             _context = context;

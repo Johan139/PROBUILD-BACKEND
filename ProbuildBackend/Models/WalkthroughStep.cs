@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace ProbuildBackend.Models
 {
     public class WalkthroughStep
@@ -12,6 +14,8 @@ namespace ProbuildBackend.Models
         public bool IsComplete { get; set; }
         public DateTime Timestamp { get; set; }
         public string ConversationId { get; set; }
+
+        [JsonIgnore]
         public virtual WalkthroughSession Session { get; set; }
     }
 }
