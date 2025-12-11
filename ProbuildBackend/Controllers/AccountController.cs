@@ -87,17 +87,25 @@ namespace ProbuildBackend.Controllers
                     CompanyRegNo = model.CompanyRegNo,
                     VatNo = model.VatNo,
                     UserType = model.UserType,
-                    ConstructionType = model.ConstructionType,
+                    ConstructionType = model.ConstructionType != null
+    ? string.Join(",", model.ConstructionType)
+    : null,
                     NrEmployees = model.NrEmployees,
                     YearsOfOperation = model.YearsOfOperation,
                     CertificationStatus = model.CertificationStatus,
                     CertificationDocumentPath = model.CertificationDocumentPath,
                     Availability = model.Availability,
                     Trade = model.Trade,
-                    ProductsOffered = model.ProductsOffered,
+                    ProductsOffered = model.ProductsOffered != null
+    ? string.Join(",", model.ProductsOffered)
+    : null,
                     SupplierType = model.SupplierType,
-                    JobPreferences = model.JobPreferences,
-                    DeliveryArea = model.DeliveryArea,
+                    JobPreferences = model.JobPreferences != null
+    ? string.Join(",", model.JobPreferences)
+    : null,
+                    DeliveryArea = model.DeliveryArea != null
+    ? string.Join(",", model.DeliveryArea)
+    : null,
                     DeliveryTime = model.DeliveryTime,
                     //We need to move away from the below. It will cause confusion between the new address model and old.
                     //Country = countryId.Id.ToString();
@@ -1134,7 +1142,10 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var countries = await _context.CountryNumberCodes.ToListAsync();
+                var countries = await _context.CountryNumberCodes
+                    .OrderBy(c => c.CountryCode == "US" ? 0 : 1)  // US at the top
+                    .ThenBy(c => c.CountryCode)                   // Then alphabetically
+                    .ToListAsync();
 
                 if (countries == null || !countries.Any())
                 {
@@ -1143,10 +1154,11 @@ namespace ProbuildBackend.Controllers
 
                 return Ok(countries);
             }
-            catch (Exception ex)
+            catch
             {
                 throw;
             }
+
         }
     }
 }

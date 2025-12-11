@@ -830,20 +830,21 @@ namespace ProbuildBackend.Controllers
             {
                 var normUserId = (userId ?? "").Trim().ToLower();
 
-                // Get user's email
+                // Pre-load user email
                 var viewerEmail = await _context.Users.AsNoTracking()
-                    .Where(u => (u.Id ?? "").ToLower() == normUserId)
+                    .Where(u => u.Id.ToLower() == normUserId)
                     .Select(u => u.Email)
                     .FirstOrDefaultAsync();
 
                 var normEmail = (viewerEmail ?? "").Trim().ToLower();
 
-                // Load ALL payment records
-                var records = await _context.PaymentRecords.AsNoTracking()
+                // Pre-normalize columns BEFORE query (EF can inline these)
+                var records = await _context.PaymentRecords
+                    .AsNoTracking()
                     .Where(pr =>
-                        ((pr.UserId ?? "").ToLower().Trim() == normUserId) ||
-                        ((pr.AssignedUser ?? "").ToLower().Trim() == normUserId) ||
-                        (normEmail != "" && ((pr.AssignedUser ?? "").ToLower().Trim() == normEmail))
+                        pr.UserId.ToLower() == normUserId ||
+                        pr.AssignedUser.ToLower() == normUserId ||
+                        (normEmail != "" && pr.AssignedUser.ToLower() == normEmail)
                     )
                     .ToListAsync();
 
@@ -855,67 +856,67 @@ namespace ProbuildBackend.Controllers
                     ?? _configuration["StripeAPI:StripeKey"];
 
                 var stripe = new Stripe.SubscriptionService();
-                var result = new List<object>();
 
-                foreach (var rec in records)
+                // -----------------------------
+                // PARALLEL FETCH STRIPE RECORDS
+                // -----------------------------
+
+                var tasks = records.Select(async rec =>
                 {
-                    bool isStripeSub = rec.SubscriptionID != null &&
-                                       rec.SubscriptionID.StartsWith("sub_");
+                    bool isStripe = !string.IsNullOrWhiteSpace(rec.SubscriptionID) &&
+                                    rec.SubscriptionID.StartsWith("sub_");
 
-                    //
-                    // NON-STRIPE OR MANUAL RECORD → return DB info only
-                    //
-                    if (!isStripeSub)
+                    if (!isStripe)
                     {
-                        long? validUntilUnix =
-                            rec.ValidUntil == DateTime.MinValue
-                                ? (long?)null
-                                : new DateTimeOffset(rec.ValidUntil).ToUnixTimeSeconds();
+                        long? validUnix = rec.ValidUntil == DateTime.MinValue
+                            ? null
+                            : new DateTimeOffset(rec.ValidUntil).ToUnixTimeSeconds();
 
-                        result.Add(new
+                        return (object)new
                         {
                             subscriptionId = rec.SubscriptionID,
                             package = rec.Package,
                             amount = rec.Amount,
                             status = rec.Status,
                             cancel_at_period_end = false,
-                            current_period_end = validUntilUnix,
-                            validUntil = validUntilUnix,
+                            current_period_end = validUnix,
+                            validUntil = validUnix,
                             assignedUser = rec.AssignedUser
-                        });
-
-                        continue;
+                        };
                     }
-
-                    //
-                    // STRIPE SUB – SAFE FETCH
-                    //
-                    Subscription sub = null!;
-                    long? periodEndUnix = null;
 
                     try
                     {
-                        sub = await stripe.GetAsync(
+                        var sub = await stripe.GetAsync(
                             rec.SubscriptionID,
                             new SubscriptionGetOptions
                             {
-                                Expand = new List<string>
-                                {
-                            "latest_invoice",
-                            "latest_invoice.lines",
-                            "items",
-                            "items.data"
-                                }
+                                Expand = new List<string> { "items", "items.data" }
                             }
                         );
 
-                        dynamic raw = Newtonsoft.Json.Linq.JObject.Parse(sub.ToJson());
-                        periodEndUnix = (long?)raw["items"]?["data"]?[0]?["current_period_end"];
+                        var item = sub.Items?.Data?.FirstOrDefault();
+                        DateTime? dt = item?.CurrentPeriodEnd;
+
+                        long? nextEnd = dt.HasValue
+                            ? new DateTimeOffset(dt.Value).ToUnixTimeSeconds()
+                            : (long?)null;
+
+                        return (object)new
+                        {
+                            subscriptionId = rec.SubscriptionID,
+                            package = rec.Package,
+                            amount = rec.Amount,
+                            status = sub.Status,
+                            cancel_at_period_end = sub.CancelAtPeriodEnd,
+                            current_period_end = nextEnd,
+                            validUntil = nextEnd,
+                            assignedUser = rec.AssignedUser
+                        };
                     }
                     catch (StripeException ex)
                     {
-                        // 🔥 STRIPE SAYS SUB DOES NOT EXIST / WAS DELETED / INVALID
-                        result.Add(new
+                        return (object)new
                         {
                             subscriptionId = rec.SubscriptionID,
                             package = rec.Package,
@@ -925,53 +926,26 @@ namespace ProbuildBackend.Controllers
                             current_period_end = (long?)null,
                             validUntil = (long?)null,
                             assignedUser = rec.AssignedUser,
-                            message = $"Stripe error: {ex.Message}"
-                        });
-
-                        continue; // do NOT break the loop
-                    }
-                    catch (Exception ex)
-                    {
-                        // 🔥 Other unexpected error – still do NOT break entire endpoint
-                        result.Add(new
-                        {
-                            subscriptionId = rec.SubscriptionID,
-                            package = rec.Package,
-                            amount = rec.Amount,
-                            status = "error_fetching_from_stripe",
-                            cancel_at_period_end = false,
-                            current_period_end = (long?)null,
-                            validUntil = (long?)null,
-                            assignedUser = rec.AssignedUser,
                             message = ex.Message
-                        });
-
-                        continue;
+                        };
                     }
+                });
 
-                    //
-                    // SUCCESSFUL STRIPE FETCH
-                    //
-                    result.Add(new
-                    {
-                        subscriptionId = rec.SubscriptionID,
-                        package = rec.Package,
-                        amount = rec.Amount,
-                        status = sub.Status,
-                        cancel_at_period_end = sub.CancelAtPeriodEnd,
-                        current_period_end = periodEndUnix,
-                        validUntil = periodEndUnix,
-                        assignedUser = rec.AssignedUser
-                    });
-                }
+                // 🔥 This is REQUIRED for type inference correctness
+                var taskList = tasks.ToList();
 
-                return Ok(result);
+                // Run in parallel
+                var finalResults = await Task.WhenAll(taskList);
+
+
+                return Ok(finalResults);
             }
             catch
             {
                 return StatusCode(500, "Failed to load subscriptions.");
             }
         }
+
 
 
         [HttpPost("undo-cancellation/{subscriptionId}")]

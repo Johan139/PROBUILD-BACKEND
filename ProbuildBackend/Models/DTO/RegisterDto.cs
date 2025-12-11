@@ -14,7 +14,7 @@ namespace ProbuildBackend.Models.DTO
         public string? CompanyName { get; set; }
         public string? CompanyRegNo { get; set; }
         public string? VatNo { get; set; }
-        public string? ConstructionType { get; set; }
+        public List<string>? ConstructionType { get; set; }
         public string? NrEmployees { get; set; }
         public string? YearsOfOperation { get; set; }
         public string? CertificationStatus { get; set; }
@@ -22,9 +22,9 @@ namespace ProbuildBackend.Models.DTO
         public string? Availability { get; set; }
         public string? Trade { get; set; }
         public string? SupplierType { get; set; }
-        public string? ProductsOffered { get; set; }
-        public string? JobPreferences { get; set; }
-        public string? DeliveryArea { get; set; }
+        public List<string>? ProductsOffered { get; set; }
+        public List<string>? JobPreferences { get; set; }
+        public List<string>? DeliveryArea { get; set; }
         public string? DeliveryTime { get; set; }
         public string? Country { get; set; }
         public string? State { get; set; }
