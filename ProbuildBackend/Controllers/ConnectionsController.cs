@@ -39,8 +39,11 @@ namespace Probuild.Controllers
             }
 
             var existingConnection = await _context.Connections.FirstOrDefaultAsync(c =>
-                (c.RequesterId == requesterId && c.ReceiverId == request.ReceiverId)
-                || (c.RequesterId == request.ReceiverId && c.ReceiverId == requesterId)
+                (
+                    (c.RequesterId == requesterId && c.ReceiverId == request.ReceiverId)
+                    || (c.RequesterId == request.ReceiverId && c.ReceiverId == requesterId)
+                )
+                && c.Status != "DECLINED"
             );
 
             if (existingConnection != null)
