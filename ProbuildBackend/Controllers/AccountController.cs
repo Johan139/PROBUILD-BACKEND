@@ -155,14 +155,17 @@ namespace ProbuildBackend.Controllers
                 //    AddressType = model.AddressType,
                 //};
                 //_context.UserAddress.Add(address);
-                // Only save agreement if user was created successfully
-                var userAgree = new UserTermsAgreementModel
-                {
-                    UserId = user.Id,
-                    DateAgreed = DateTime.UtcNow,
-                };
 
-                _context.UserTermsAgreement.Add(userAgree);
+
+                // Only save agreement if user was created successfully
+                //THEY WANTED TO REMOVE THIS. SO ITS NOW REMOVED.
+                //var userAgree = new UserTermsAgreementModel
+                //{
+                //    UserId = user.Id,
+                //    DateAgreed = DateTime.UtcNow,
+                //};
+
+                //_context.UserTermsAgreement.Add(userAgree);
                 await _context.SaveChangesAsync();
 
                 var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
