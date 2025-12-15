@@ -453,7 +453,7 @@ namespace ProbuildBackend.Controllers
                     );
                 }
                 await _logLoginInformationService.LogLoginAsync(
-                    Guid.Parse(user.Id),
+                    Guid.Parse(user == null ? Guid.Empty.ToString(): user.Id),
                     HttpContext.Connection.RemoteIpAddress?.ToString(),
                     Request.Headers["User-Agent"].ToString(),
                     false,
@@ -464,7 +464,7 @@ namespace ProbuildBackend.Controllers
             catch (Exception ex)
             {
                 await _logLoginInformationService.LogLoginAsync(
-                    Guid.Parse(user.Id),
+                        Guid.Parse(user == null ? Guid.Empty.ToString() : user.Id),
                     HttpContext.Connection.RemoteIpAddress?.ToString(),
                     Request.Headers["User-Agent"].ToString(),
                     false,
