@@ -1,10 +1,11 @@
-using System.Text.Json;
+using Elastic.Apm.Api;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using NetTopologySuite.Geometries;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
+using System.Text.Json;
 
 namespace ProbuildBackend.Services
 {
@@ -136,27 +137,24 @@ namespace ProbuildBackend.Services
             //string templatePath = Path.Combine(Directory.GetCurrentDirectory(), "..", "PROBUILD-BACKEND", "ProbuildBackend", "EmailTemplates", "NewJobNotification.html");
             //string emailTemplate = await File.ReadAllTextAsync(templatePath);
 
-            var JobNotificationEmail = await _emailTemplate.GetTemplateAsync(
-                "NewJobNotificationEmail"
-            );
+            var baseTemplate = await _emailTemplate.GetTemplateAsync("NewJobNotificationEmail");
 
             foreach (var user in filteredUsers)
             {
-                JobNotificationEmail.Body = JobNotificationEmail
-                    .Body.Replace("{{UserName}}", user.FirstName + " " + user.LastName)
-                    .Replace("{{JobTitle}}", job.ProjectName)
-                    .Replace("{{JobLocation}}", job.Address)
-                    .Replace(
-                        "{{JobDescription}}",
-                        "A new job is available that matches your skills."
-                    ) // TODO:Could in future introduce detailed description in JobModel
-                    .Replace("{{JobDetailsLink}}", $"https://app.probuildai.com/jobs/{job.Id}")
-                    .Replace(
-                        "{{UnsubscribeLink}}",
-                        $"https://app.probuildai.com/subscription/unsubscribe?email={user.Email}"
-                    );
+                var email = new EmailTemplate
+                {
+                    Subject = baseTemplate.Subject,
+                    Body = baseTemplate.Body
+        .Replace("{{UserName}}", user.FirstName + " " + user.LastName)
+        .Replace("{{JobTitle}}", job.ProjectName)
+        .Replace("{{JobLocation}}", job.Address)
+        .Replace("{{JobDescription}}", "A new job is available that matches your skills.")
+        .Replace("{{JobDetailsLink}}", $"https://app.probuildai.com/jobs/{job.Id}")
+        .Replace("{{UnsubscribeLink}}",
+            $"https://app.probuildai.com/subscription/unsubscribe?email={user.Email}")
+                };
 
-                await _emailSender.SendEmailAsync(JobNotificationEmail, user.Email);
+                await _emailSender.SendEmailAsync(email, user.Email);
 
                 var notification = new NotificationModel
                 {
@@ -182,8 +180,10 @@ namespace ProbuildBackend.Services
                     && !existingUserEmails.Contains(externalUser.email)
                 )
                 {
-                    JobNotificationEmail.Body = JobNotificationEmail
-                        .Body.Replace("{{UserName}}", externalUser.name)
+                    var email = new EmailTemplate
+                    {
+                        Subject = baseTemplate.Subject,
+                        Body = baseTemplate.Body.Replace("{{UserName}}", externalUser.name)
                         .Replace("{{JobTitle}}", job.ProjectName)
                         .Replace("{{JobLocation}}", job.Address)
                         .Replace(
@@ -197,9 +197,11 @@ namespace ProbuildBackend.Services
                         .Replace(
                             "{{UnsubscribeLink}}",
                             $"https://app.probuildai.com/subscription/unsubscribe?email={externalUser.email}"
-                        );
+                        )
+                    };
+                  
 
-                    await _emailSender.SendEmailAsync(JobNotificationEmail, externalUser.email);
+                    await _emailSender.SendEmailAsync(email, externalUser.email);
 
                     externalUser.last_job_notification = DateTime.UtcNow;
                     externalUser.total_notifications_sent =

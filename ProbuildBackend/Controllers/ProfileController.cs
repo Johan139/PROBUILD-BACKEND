@@ -226,7 +226,7 @@ namespace ProbuildBackend.Controllers
                 //user.State = stateId.Id.ToString();
                 //user.City = model.City;
                 user.SubscriptionPackage = model.SubscriptionPackage;
-
+                await _context.SaveChangesAsync();
                 if (oldSubscription != model.SubscriptionPackage)
                 {
                     var upgradeEmail = await _emailTemplate.GetTemplateAsync("ProWelcomeSetup");
@@ -276,7 +276,7 @@ namespace ProbuildBackend.Controllers
                 //}
 
                 // Now commit all changes once
-                await _context.SaveChangesAsync();
+
 
                 Console.WriteLine($"Profile ({user.Id}) updated successfully.");
                 return Ok(new { message = "Profile updated successfully." });
