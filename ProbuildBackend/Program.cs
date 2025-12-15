@@ -361,9 +361,10 @@ if (elasticEnabled)
     app.UseAllElasticApm(builder.Configuration);
 }
 
-app.UseWebSockets();
+
 app.UseRouting();
 app.UseCors("AllowAngularApp"); // Apply the named CORS policy after health endpoint
+app.UseWebSockets();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
