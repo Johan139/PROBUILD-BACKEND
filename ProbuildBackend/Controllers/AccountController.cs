@@ -1181,5 +1181,21 @@ namespace ProbuildBackend.Controllers
             }
 
         }
+
+        [HttpGet("email-exists")]
+        public async Task<IActionResult> EmailExists([FromQuery] string email)
+        {
+            if (string.IsNullOrWhiteSpace(email))
+                return Ok(false);
+
+            var normalized = email.Trim().ToUpperInvariant();
+
+            var exists = await _context.Users
+                .AsNoTracking()
+                .AnyAsync(u => u.NormalizedEmail == normalized);
+
+            return Ok(exists);
+        }
+
     }
 }
