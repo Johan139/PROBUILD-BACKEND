@@ -190,8 +190,11 @@ namespace ProbuildBackend.Controllers
                 var frontendUrl =
                     Environment.GetEnvironmentVariable("FRONTEND_URL")
                     ?? _configuration["FrontEnd:FRONTEND_URL"];
+                var backendUrl = Environment.GetEnvironmentVariable("Backend_URL")
+                    ?? _configuration["FrontEnd:Backend"];
                 var callbackUrl =
-                    $"{frontendUrl}/confirm-email/?userId={user.Id}&code={Uri.EscapeDataString(code)}";
+                $"{backendUrl}/api/Account/confirmemail" +
+                $"?userId={user.Id}&code={Uri.EscapeDataString(code)}";
 
                 var EmailConfirmation = await _emailTemplate.GetTemplateAsync(
                     "ConfirmAccountEmail"
@@ -253,8 +256,11 @@ namespace ProbuildBackend.Controllers
             var frontendUrl =
                 Environment.GetEnvironmentVariable("FRONTEND_URL")
                 ?? _configuration["FrontEnd:FRONTEND_URL"];
+            var backendUrl = Environment.GetEnvironmentVariable("Backend_URL")
+                 ?? _configuration["FrontEnd:Backend"];
             var callbackUrl =
-                $"{frontendUrl}/confirm-email/?userId={user.Id}&code={Uri.EscapeDataString(code)}";
+            $"{backendUrl}/api/Account/confirmemail" +
+            $"?userId={user.Id}&code={Uri.EscapeDataString(code)}";
 
             var EmailConfirmation = await _emailTemplate.GetTemplateAsync("ConfirmAccountEmail");
             EmailConfirmation.Body = EmailConfirmation
@@ -389,6 +395,9 @@ namespace ProbuildBackend.Controllers
         [HttpGet("confirmemail")]
         public async Task<IActionResult> ConfirmEmail(string userId, string code)
         {
+            var frontendUrl =
+    Environment.GetEnvironmentVariable("FRONTEND_URL")
+    ?? _configuration["FrontEnd:FRONTEND_URL"];
             if (userId == null || code == null)
             {
                 return BadRequest("Invalid email confirmation request.");
@@ -403,11 +412,11 @@ namespace ProbuildBackend.Controllers
             var result = await _userManager.ConfirmEmailAsync(user, code);
             if (result.Succeeded)
             {
-                return Ok(new { message = "Email confirmed successfully." });
+                return Redirect($"{frontendUrl}/login?confirmed=true");
             }
             else
             {
-                return BadRequest(result.Errors);
+                return Redirect($"{frontendUrl}/login?confirmed=false");
             }
         }
 
