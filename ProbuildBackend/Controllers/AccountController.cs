@@ -1,15 +1,8 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
-using Google.Apis.Auth;
-using Hangfire;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.WebUtilities;
+using Hangfire;
+using Microsoft.AspNetCore.DataProtection;
+using Google.Apis.Auth;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Newtonsoft.Json;
@@ -17,7 +10,13 @@ using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Services;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.AspNetCore.WebUtilities;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
+
 
 namespace ProbuildBackend.Controllers
 {
@@ -156,7 +155,26 @@ namespace ProbuildBackend.Controllers
                 //};
                 //_context.UserAddress.Add(address);
 
-
+                // Add address (can be done before save)
+                //var address = new UserAddressModel
+                //{
+                //    StreetNumber = model.StreetNumber,
+                //    StreetName = model.StreetName,
+                //    City = model.City,
+                //    State = model.State,
+                //    PostalCode = model.PostalCode,
+                //    Country = model.Country,
+                //    Latitude = model.Latitude,
+                //    Longitude = model.Longitude,
+                //    FormattedAddress = model.FormattedAddress,
+                //    GooglePlaceId = model.GooglePlaceId,
+                //    CreatedAt = DateTime.UtcNow,
+                //    UpdatedAt = DateTime.UtcNow,
+                //    UserId = user.Id,
+                //    CountryCode = model.CountryCode,
+                //    AddressType = model.AddressType,
+                //};
+                //_context.UserAddress.Add(address);
                 // Only save agreement if user was created successfully
                 //THEY WANTED TO REMOVE THIS. SO ITS NOW REMOVED.
                 //var userAgree = new UserTermsAgreementModel

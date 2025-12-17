@@ -59,6 +59,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<Portfolio> Portfolios { get; set; }
     public DbSet<BidAnalysis> BidAnalyses { get; set; }
     public DbSet<Invitation> Invitations { get; set; }
+
     public DbSet<AddressTypeModel> AddressType { get; set; }
     public DbSet<CountriesModel> Countries { get; set; }
     public DbSet<StatesModel> States { get; set; }
