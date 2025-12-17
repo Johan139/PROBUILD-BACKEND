@@ -1,6 +1,6 @@
-﻿using Microsoft.AspNetCore.Identity.UI.Services;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using ProbuildBackend.Models;
+using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 
 namespace ProbuildBackend.Controllers
 {
@@ -16,9 +16,15 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("send-subscription-confirmation")]
-        public async Task<IActionResult> SendSubscriptionConfirmation([FromBody] SubscriptionModel data)
+        public async Task<IActionResult> SendSubscriptionConfirmation(
+            [FromBody] SubscriptionModel data
+        )
         {
-            var templatePath = Path.Combine(Directory.GetCurrentDirectory(), "Templates", "subscription-confirmation.html");
+            var templatePath = Path.Combine(
+                Directory.GetCurrentDirectory(),
+                "Templates",
+                "subscription-confirmation.html"
+            );
             var templateContent = await System.IO.File.ReadAllTextAsync(templatePath);
 
             // Replace placeholders with actual values
@@ -38,7 +44,7 @@ namespace ProbuildBackend.Controllers
                 .Replace("{{total_charged}}", data.TotalCharged)
                 .Replace("{{payment_method}}", data.PaymentMethod);
 
-            await _emailService.SendEmailAsync(data.ContactEmail, "Your ProBuild AI Subscription Confirmation", html);
+            // await _emailService.SendEmailAsync(data.ContactEmail, "Your ProBuild AI Subscription Confirmation", html);
 
             return Ok();
         }

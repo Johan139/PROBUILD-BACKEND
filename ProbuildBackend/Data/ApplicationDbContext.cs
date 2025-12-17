@@ -5,16 +5,16 @@ using ProbuildBackend.Models;
 public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
 {
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
-        : base(options)
-    {
-    }
+        : base(options) { }
 
     public DbSet<DataProtectionKey> DataProtectionKeys { get; set; }
     public DbSet<Invoice> Invoices { get; set; }
     public DbSet<UserModel> Users { get; set; }
     public DbSet<ClientDetailsModel> ClientDetails { get; set; }
     public DbSet<ProjectModel> Projects { get; set; }
+    public DbSet<EmailAutomationRuleModel> EmailAutomationRules { get; set; }
     public DbSet<JobModel> Jobs { get; set; }
+    public DbSet<EmailTemplate> EmailTemplates { get; set; }
     public DbSet<JobsTermsAgreement> JobsTermsAgreement { get; set; }
     public DbSet<BidModel> Bids { get; set; }
     public DbSet<NotificationModel> Notifications { get; set; }
@@ -36,6 +36,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<DocumentProcessingResult> DocumentProcessingResults { get; set; }
     public DbSet<AddressModel> JobAddresses { get; set; }
     public DbSet<JobDocumentModel> JobDocuments { get; set; }
+    public DbSet<BlueprintAnalysis> BlueprintAnalyses { get; set; }
     public DbSet<LogosModel> Logos { get; set; }
     public DbSet<Quote> Quotes { get; set; }
     public DbSet<QuoteRow> QuoteRows { get; set; }
@@ -46,7 +47,9 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<TeamMemberPermission> TeamMemberPermissions { get; set; }
     public DbSet<Conversation> Conversations { get; set; }
     public DbSet<ConversationPrompt> ConversationPrompts { get; set; }
-
+    public DbSet<UserLoginAudit> UserLoginAudit { get; set; }
+    public DbSet<WalkthroughSession> WalkthroughSessions { get; set; }
+    public DbSet<WalkthroughStep> WalkthroughSteps { get; set; }
     public DbSet<Connection> Connections { get; set; }
     public DbSet<Rating> Ratings { get; set; }
     public DbSet<Contract> Contracts { get; set; }
@@ -60,110 +63,139 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<AddressTypeModel> AddressType { get; set; }
     public DbSet<CountriesModel> Countries { get; set; }
     public DbSet<StatesModel> States { get; set; }
-
     public DbSet<CountryNumberCodesModel> CountryNumberCodes { get; set; }
+    public DbSet<BudgetLineItem> BudgetLineItems { get; set; }
+    public DbSet<JobTradeBudget> JobTradeBudgets { get; set; }
+    public DbSet<JobPermitModel> JobPermits { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
-      {
+    {
         modelBuilder.Entity<NotificationView>().HasNoKey().ToView("vw_Notifications");
 
-        modelBuilder.Entity<ProjectModel>()
+        modelBuilder
+            .Entity<ProjectModel>()
             .HasOne(p => p.Foreman)
             .WithMany()
             .HasForeignKey(p => p.ForemanId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        modelBuilder.Entity<ProjectModel>()
+        modelBuilder
+            .Entity<ProjectModel>()
             .HasOne(p => p.Contractor)
             .WithMany()
             .HasForeignKey(p => p.ContractorId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        modelBuilder.Entity<ProjectModel>()
+        modelBuilder
+            .Entity<ProjectModel>()
             .HasOne(p => p.SubContractorWallStructure)
             .WithMany()
             .HasForeignKey(p => p.SubContractorWallStructureId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        modelBuilder.Entity<ProjectModel>()
+        modelBuilder
+            .Entity<ProjectModel>()
             .HasOne(p => p.SubContractorWallInsulation)
             .WithMany()
             .HasForeignKey(p => p.SubContractorWallInsulationId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        modelBuilder.Entity<ProjectModel>()
+        modelBuilder
+            .Entity<ProjectModel>()
             .HasOne(p => p.SubContractorRoofStructure)
             .WithMany()
             .HasForeignKey(p => p.SubContractorRoofStructureId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        modelBuilder.Entity<ProjectModel>()
+        modelBuilder
+            .Entity<ProjectModel>()
             .HasOne(p => p.SubContractorRoofType)
             .WithMany()
             .HasForeignKey(p => p.SubContractorRoofTypeId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        modelBuilder.Entity<ProjectModel>()
+        modelBuilder
+            .Entity<ProjectModel>()
             .HasOne(p => p.SubContractorRoofInsulation)
             .WithMany()
             .HasForeignKey(p => p.SubContractorRoofInsulationId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        modelBuilder.Entity<ProjectModel>()
+        modelBuilder
+            .Entity<ProjectModel>()
             .HasOne(p => p.SubContractorFoundation)
             .WithMany()
             .HasForeignKey(p => p.SubContractorFoundationId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        modelBuilder.Entity<ProjectModel>()
+        modelBuilder
+            .Entity<ProjectModel>()
             .HasOne(p => p.SubContractorFinishes)
             .WithMany()
             .HasForeignKey(p => p.SubContractorFinishesId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        modelBuilder.Entity<ProjectModel>()
+        modelBuilder
+            .Entity<ProjectModel>()
             .HasOne(p => p.SubContractorElectricalSupplyNeeds)
             .WithMany()
             .HasForeignKey(p => p.SubContractorElectricalSupplyNeedsId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        modelBuilder.Entity<BidModel>()
+        modelBuilder
+            .Entity<BidModel>()
             .HasOne(b => b.Job)
             .WithMany(p => p.Bids)
             .HasForeignKey(b => b.JobId);
 
-        modelBuilder.Entity<BidModel>()
+        modelBuilder
+            .Entity<BidModel>()
             .HasOne(b => b.User)
             .WithMany(u => u.Bids)
             .HasForeignKey(b => b.UserId);
 
-        modelBuilder.Entity<NotificationModel>()
+        modelBuilder
+            .Entity<NotificationModel>()
             .HasOne(n => n.Job)
             .WithMany(j => j.Notifications)
             .HasForeignKey(n => n.JobId);
 
         // Keep the existing UserId relationship
-        modelBuilder.Entity<NotificationModel>()
+        modelBuilder
+            .Entity<NotificationModel>()
             .HasOne(n => n.User)
             .WithMany(u => u.Notifications)
             .HasForeignKey(n => n.UserId);
 
-        modelBuilder.Entity<NotificationModel>()
+        modelBuilder
+            .Entity<NotificationModel>()
             .HasOne(n => n.Sender)
-            .WithMany()  // No collection needed on the User side for sent notifications
+            .WithMany() // No collection needed on the User side for sent notifications
             .HasForeignKey(n => n.SenderId)
-            .OnDelete(DeleteBehavior.Restrict);  // Prevent cascade delete conflicts
+            .OnDelete(DeleteBehavior.Restrict); // Prevent cascade delete conflicts
 
-        modelBuilder.Entity<JobModel>()
-                    .HasMany(j => j.Documents)
-                    .WithOne()
-                    .HasForeignKey(d => d.JobId)
-                    .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder
+            .Entity<JobModel>()
+            .HasMany(j => j.Documents)
+            .WithOne()
+            .HasForeignKey(d => d.JobId)
+            .OnDelete(DeleteBehavior.Cascade);
 
-        modelBuilder.Entity<JobModel>()
-            .HasOne(j => j.User)
-            .WithMany()
-            .HasForeignKey(j => j.UserId);
+        modelBuilder
+            .Entity<JobModel>()
+            .HasMany(j => j.Permits)
+            .WithOne()
+            .HasForeignKey(p => p.JobId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder
+            .Entity<JobModel>()
+            .HasMany(j => j.Permits)
+            .WithOne()
+            .HasForeignKey(p => p.JobId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<JobModel>().HasOne(j => j.User).WithMany().HasForeignKey(j => j.UserId);
 
         modelBuilder.Entity<AddressModel>(entity =>
         {
@@ -180,12 +212,24 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             entity.Property(e => e.Country).HasColumnName("country");
             entity.Property(e => e.Latitude).HasColumnName("latitude");
             entity.Property(e => e.Longitude).HasColumnName("longitude");
-            entity.Property(e => e.FormattedAddress).HasColumnName("formatted_address").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.GooglePlaceId).HasColumnName("google_place_id").HasMaxLength(100).IsRequired(false);
+            entity
+                .Property(e => e.FormattedAddress)
+                .HasColumnName("formatted_address")
+                .HasMaxLength(255)
+                .IsRequired(false);
+            entity
+                .Property(e => e.GooglePlaceId)
+                .HasColumnName("google_place_id")
+                .HasMaxLength(100)
+                .IsRequired(false);
             entity.Property(e => e.CreatedAt).HasColumnName("created_at");
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
             entity.Property(e => e.JobId).HasColumnName("JobId").IsRequired();
-            entity.Property(e => e.Location).HasComputedColumnSql("CASE WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN geography::Point(latitude, longitude, 4326) ELSE NULL END");
+            entity
+                .Property(e => e.Location)
+                .HasComputedColumnSql(
+                    "CASE WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN geography::Point(latitude, longitude, 4326) ELSE NULL END"
+                );
         });
         modelBuilder.Entity<UserAddressModel>(entity =>
         {
@@ -203,73 +247,89 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             entity.Property(e => e.CountryCode).HasColumnName("country_code");
             entity.Property(e => e.Latitude).HasColumnName("latitude");
             entity.Property(e => e.Longitude).HasColumnName("longitude");
-            entity.Property(e => e.FormattedAddress).HasColumnName("formatted_address").HasMaxLength(255).IsRequired(false);
-            entity.Property(e => e.GooglePlaceId).HasColumnName("google_place_id").HasMaxLength(100).IsRequired(false);
+            entity
+                .Property(e => e.FormattedAddress)
+                .HasColumnName("formatted_address")
+                .HasMaxLength(255)
+                .IsRequired(false);
+            entity
+                .Property(e => e.GooglePlaceId)
+                .HasColumnName("google_place_id")
+                .HasMaxLength(100)
+                .IsRequired(false);
             entity.Property(e => e.CreatedAt).HasColumnName("created_at");
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
             entity.Property(e => e.UserId).HasColumnName("UserId").IsRequired();
-            entity.Property(e => e.Location).HasComputedColumnSql("CASE WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN geography::Point(latitude, longitude, 4326) ELSE NULL END");
+            entity
+                .Property(e => e.Location)
+                .HasComputedColumnSql(
+                    "CASE WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN geography::Point(latitude, longitude, 4326) ELSE NULL END"
+                );
         });
 
-        modelBuilder.Entity<JobAssignmentModel>()
-            .HasKey(ja => new { ja.UserId, ja.JobId });
+        modelBuilder.Entity<JobAssignmentModel>().HasKey(ja => new { ja.UserId, ja.JobId });
 
-        modelBuilder.Entity<JobAssignmentModel>()
+        modelBuilder
+            .Entity<JobAssignmentModel>()
             .HasOne(ja => ja.Job)
             .WithMany()
             .HasForeignKey(ja => ja.JobId)
             .IsRequired();
 
-        modelBuilder.Entity<JobAssignmentModel>()
-            .Property(ja => ja.JobRole)
-            .HasMaxLength(450);
+        modelBuilder.Entity<JobAssignmentModel>().Property(ja => ja.JobRole).HasMaxLength(450);
 
-        modelBuilder.Entity<Quote>()
+        modelBuilder
+            .Entity<Quote>()
             .HasMany(q => q.ExtraCosts)
             .WithOne(ec => ec.Quote)
             .HasForeignKey(ec => ec.QuoteId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        modelBuilder.Entity<Quote>()
-           .HasOne(q => q.Logo)
-           .WithMany()
-           .HasForeignKey(q => q.LogoId)
-           .OnDelete(DeleteBehavior.SetNull);
+        modelBuilder
+            .Entity<Quote>()
+            .HasOne(q => q.Logo)
+            .WithMany()
+            .HasForeignKey(q => q.LogoId)
+            .OnDelete(DeleteBehavior.SetNull);
 
-        modelBuilder.Entity<TeamMember>()
-            .HasIndex(t => new { t.InviterId, t.Email })
-            .IsUnique();
+        modelBuilder.Entity<TeamMember>().HasIndex(t => new { t.InviterId, t.Email }).IsUnique();
 
-        modelBuilder.Entity<TeamMemberPermission>()
-           .HasKey(tp => new { tp.TeamMemberId, tp.PermissionId });
+        modelBuilder
+            .Entity<TeamMemberPermission>()
+            .HasKey(tp => new { tp.TeamMemberId, tp.PermissionId });
 
-        modelBuilder.Entity<TeamMemberPermission>()
-           .HasOne(tp => tp.TeamMember)
-           .WithMany(t => t.TeamMemberPermissions)
-           .HasForeignKey(tp => tp.TeamMemberId);
+        modelBuilder
+            .Entity<TeamMemberPermission>()
+            .HasOne(tp => tp.TeamMember)
+            .WithMany(t => t.TeamMemberPermissions)
+            .HasForeignKey(tp => tp.TeamMemberId);
 
-        modelBuilder.Entity<TeamMemberPermission>()
-           .HasOne(tp => tp.Permission)
-           .WithMany(p => p.TeamMemberPermissions)
-           .HasForeignKey(tp => tp.PermissionId);
+        modelBuilder
+            .Entity<TeamMemberPermission>()
+            .HasOne(tp => tp.Permission)
+            .WithMany(p => p.TeamMemberPermissions)
+            .HasForeignKey(tp => tp.PermissionId);
 
-        modelBuilder.Entity<PaymentRecordHistoryModel>()
+        modelBuilder
+            .Entity<PaymentRecordHistoryModel>()
             .HasKey(tp => new { tp.PaymentRecordHistoryId });
 
-        modelBuilder.Entity<Conversation>()
+        modelBuilder
+            .Entity<Conversation>()
             .HasMany<JobDocumentModel>()
             .WithOne()
             .HasForeignKey(d => d.ConversationId);
 
-        modelBuilder.Entity<Conversation>()
+        modelBuilder
+            .Entity<Conversation>()
             .HasMany(c => c.PromptKeys)
             .WithOne(cp => cp.Conversation)
             .HasForeignKey(cp => cp.ConversationId);
 
-        modelBuilder.Entity<ConversationPrompt>()
-            .ToTable("ConversationPrompts");
+        modelBuilder.Entity<ConversationPrompt>().ToTable("ConversationPrompts");
 
-        modelBuilder.Entity<Invitation>()
+        modelBuilder
+            .Entity<Invitation>()
             .HasOne(i => i.Inviter)
             .WithMany(u => u.SentInvitations)
             .HasForeignKey(i => i.InviterId)

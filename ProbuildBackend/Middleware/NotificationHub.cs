@@ -1,12 +1,13 @@
-using Microsoft.AspNetCore.SignalR;
 using System.Collections.Concurrent;
 using System.Security.Claims;
+using Microsoft.AspNetCore.SignalR;
 
 namespace ProbuildBackend.Middleware
 {
     public class NotificationHub : Hub
     {
-        private static readonly ConcurrentDictionary<string, string> UserConnections = new ConcurrentDictionary<string, string>();
+        private static readonly ConcurrentDictionary<string, string> UserConnections =
+            new ConcurrentDictionary<string, string>();
 
         public override Task OnConnectedAsync()
         {
@@ -18,7 +19,7 @@ namespace ProbuildBackend.Middleware
             return base.OnConnectedAsync();
         }
 
-        public override Task OnDisconnectedAsync(System.Exception exception)
+        public override Task OnDisconnectedAsync(Exception exception)
         {
             var userId = Context.User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!string.IsNullOrEmpty(userId))

@@ -1,21 +1,21 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using System.Globalization;
+using System.IO.Compression;
+using System.Security.Claims;
+using Hangfire;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Helpers;
+using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Services;
-using System.IO.Compression;
-using System.Globalization;
-using Hangfire;
-using Microsoft.AspNetCore.Identity.UI.Services;
 using BomWithCosts = ProbuildBackend.Models.BomWithCosts;
-using ProbuildBackend.Interface;
-using System.Linq;
- 
- namespace ProbuildBackend.Controllers
- {
+using IEmailSender = ProbuildBackend.Interface.IEmailSender;
+
+namespace ProbuildBackend.Controllers
+{
     [Route("api/[controller]")]
     [ApiController]
     public class JobsController : ControllerBase
@@ -56,7 +56,7 @@ using System.Linq;
         }
 
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Models.JobModel>>> GetJobs()
+        public async Task<ActionResult<IEnumerable<JobModel>>> GetJobs()
         {
             return await _context.Jobs.ToListAsync();
         }
@@ -64,70 +64,97 @@ using System.Linq;
         [HttpGet("public")]
         public async Task<ActionResult<IEnumerable<JobDto>>> GetPublicJobs()
         {
-            var jobs = await _context.Jobs
-                .Where(j => j.BiddingType == "PUBLIC" && j.Status == "BIDDING")
-                .Join(_context.JobAddresses,
-                    j => j.Id,
-                    a => a.JobId,
-                    (j, a) => new { Job = j, Address = a })
-                .ToListAsync();
-
-            var jobDtos = new List<JobDto>();
-
-            foreach (var item in jobs)
+            try
             {
-                var subtasks = await _context.JobSubtasks
-                    .Where(s => s.JobId == item.Job.Id && !s.Deleted)
+                var jobs = await _context
+                    .Jobs.Where(j => j.BiddingType == "PUBLIC" && j.Status == "BIDDING")
+                    .Include(j => j.TradeBudgets)
+                    .Join(
+                        _context.JobAddresses,
+                        j => j.Id,
+                        a => a.JobId,
+                        (j, a) => new { Job = j, Address = a }
+                    )
                     .ToListAsync();
 
-                var potentialStartDate = subtasks.Any() ? subtasks.Min(s => s.StartDate) : DateTime.MinValue;
-                var potentialEndDate = subtasks.Any() ? subtasks.Max(s => s.EndDate) : DateTime.MinValue;
-                var durationInDays = subtasks.Any() ? (potentialEndDate - potentialStartDate).Days : 0;
-                var numberOfBids = await _context.Bids.CountAsync(b => b.JobId == item.Job.Id);
-                var user = await _context.Users.FindAsync(item.Job.UserId);
-                var ratings = await _context.Ratings.Where(r => r.RatedUserId == item.Job.UserId).ToListAsync();
-                double clientRating = ratings.Any() ? ratings.Average(r => r.RatingValue) : 0;
+                var jobDtos = new List<JobDto>();
 
-                jobDtos.Add(new JobDto
+                foreach (var item in jobs)
                 {
-                    JobId = item.Job.Id,
-                    ProjectName = item.Job.ProjectName,
-                    JobType = item.Job.JobType,
-                    Status = item.Job.Status,
-                    Address = item.Address.FormattedAddress,
-                    StreetNumber = item.Address.StreetNumber,
-                    StreetName = item.Address.StreetName,
-                    City = item.Address.City,
-                    State = item.Address.State,
-                    PostalCode = item.Address.PostalCode,
-                    Country = item.Address.Country,
-                    Latitude = item.Address.Latitude.ToString(),
-                    Longitude = item.Address.Longitude.ToString(),
-                    GooglePlaceId = item.Address.GooglePlaceId,
-                    Trades = item.Job.RequiredSubcontractorTypes,
-                    PotentialStartDate = potentialStartDate,
-                    PotentialEndDate = potentialEndDate,
-                    DurationInDays = durationInDays,
-                    Subtasks = subtasks,
-                    NumberOfBids = numberOfBids,
-                    ClientName = $"{user.FirstName} {user.LastName}",
-                    ClientCompanyName = user.CompanyName,
-                    ClientRating = clientRating,
-                    CreatedAt = item.Job.CreatedAt,
-                    BiddingStartDate = item.Job.BiddingStartDate
-                });
+                    var subtasks = await _context
+                        .JobSubtasks.Where(s => s.JobId == item.Job.Id && !s.Deleted)
+                        .ToListAsync();
+
+                    var potentialStartDate = subtasks.Any()
+                        ? subtasks.Min(s => s.StartDate)
+                        : DateTime.MinValue;
+                    var potentialEndDate = subtasks.Any()
+                        ? subtasks.Max(s => s.EndDate)
+                        : DateTime.MinValue;
+                    var durationInDays = subtasks.Any()
+                        ? (potentialEndDate - potentialStartDate).Days
+                        : 0;
+                    var numberOfBids = await _context.Bids.CountAsync(b => b.JobId == item.Job.Id);
+                    var user = await _context.Users.FindAsync(item.Job.UserId);
+                    var ratings = await _context
+                        .Ratings.Where(r => r.RatedUserId == item.Job.UserId)
+                        .ToListAsync();
+                    double clientRating = ratings.Any() ? ratings.Average(r => r.RatingValue) : 0;
+
+                    jobDtos.Add(
+                        new JobDto
+                        {
+                            JobId = item.Job.Id,
+                            ProjectName = item.Job.ProjectName,
+                            JobType = item.Job.JobType,
+                            Status = item.Job.Status,
+                            Address = item.Address.FormattedAddress,
+                            StreetNumber = item.Address.StreetNumber,
+                            StreetName = item.Address.StreetName,
+                            City = item.Address.City,
+                            State = item.Address.State,
+                            PostalCode = item.Address.PostalCode,
+                            Country = item.Address.Country,
+                            Latitude = item.Address.Latitude.ToString(),
+                            Longitude = item.Address.Longitude.ToString(),
+                            GooglePlaceId = item.Address.GooglePlaceId,
+                            Trades = item.Job.RequiredSubcontractorTypes,
+                            TradeBudgets = item.Job.TradeBudgets?.ToList(),
+                            PotentialStartDate = potentialStartDate,
+                            PotentialEndDate = potentialEndDate,
+                            DurationInDays = durationInDays,
+                            Subtasks = subtasks,
+                            NumberOfBids = numberOfBids,
+                            ClientName = $"{user.FirstName} {user.LastName}",
+                            ClientCompanyName = user.CompanyName,
+                            ClientRating = clientRating,
+                            CreatedAt = item.Job.CreatedAt,
+                            BiddingStartDate = item.Job.BiddingStartDate,
+                            ThumbnailUrl = !string.IsNullOrEmpty(item.Job.ThumbnailUrl)
+                                ? _azureBlobservice.GenerateTemporaryPublicUrl(
+                                    item.Job.ThumbnailUrl
+                                )
+                                : null,
+                        }
+                    );
+                }
+
+                return Ok(jobDtos);
             }
-
-            return Ok(jobDtos);
+            catch (Exception ex)
+            {
+                throw;
+            }
         }
-
 
         [HttpGet("Id/{id}")]
         public async Task<ActionResult<JobDto>> GetJob(int id)
         {
             try
             {
-                var job = await _context.Jobs.FindAsync(id);
+                var job = await _context
+                    .Jobs.Include(j => j.TradeBudgets)
+                    .FirstOrDefaultAsync(j => j.Id == id);
 
                 if (job == null)
                 {
@@ -137,16 +164,24 @@ using System.Linq;
                 var address = await _context.JobAddresses.FirstOrDefaultAsync(a => a.JobId == id);
 
                 var user = await _context.Users.FindAsync(job.UserId);
-                var ratings = await _context.Ratings.Where(r => r.RatedUserId == job.UserId).ToListAsync();
+                var ratings = await _context
+                    .Ratings.Where(r => r.RatedUserId == job.UserId)
+                    .ToListAsync();
                 double clientRating = ratings.Any() ? ratings.Average(r => r.RatingValue) : 0;
 
-                var subtasks = await _context.JobSubtasks
-                    .Where(s => s.JobId == job.Id && !s.Deleted)
+                var subtasks = await _context
+                    .JobSubtasks.Where(s => s.JobId == job.Id && !s.Deleted)
                     .ToListAsync();
 
-                var potentialStartDate = subtasks.Any() ? subtasks.Min(s => s.StartDate) : DateTime.MinValue;
-                var potentialEndDate = subtasks.Any() ? subtasks.Max(s => s.EndDate) : DateTime.MinValue;
-                var durationInDays = subtasks.Any() ? (potentialEndDate - potentialStartDate).Days : 0;
+                var potentialStartDate = subtasks.Any()
+                    ? subtasks.Min(s => s.StartDate)
+                    : DateTime.MinValue;
+                var potentialEndDate = subtasks.Any()
+                    ? subtasks.Max(s => s.EndDate)
+                    : DateTime.MinValue;
+                var durationInDays = subtasks.Any()
+                    ? (potentialEndDate - potentialStartDate).Days
+                    : 0;
 
                 var jobDto = new JobDto
                 {
@@ -177,6 +212,7 @@ using System.Linq;
                     Stories = job.Stories,
                     BuildingSize = job.BuildingSize,
                     Trades = job.RequiredSubcontractorTypes,
+                    TradeBudgets = job.TradeBudgets?.ToList(),
                     CreatedAt = job.CreatedAt,
                     BiddingStartDate = job.BiddingStartDate,
                     Address = address?.FormattedAddress,
@@ -196,7 +232,10 @@ using System.Linq;
                     PotentialEndDate = potentialEndDate,
                     DurationInDays = durationInDays,
                     Blueprint = null,
-                    TemporaryFileUrls = null
+                    TemporaryFileUrls = null,
+                    ThumbnailUrl = !string.IsNullOrEmpty(job.ThumbnailUrl)
+                        ? _azureBlobservice.GenerateTemporaryPublicUrl(job.ThumbnailUrl)
+                        : null,
                 };
 
                 return Ok(jobDto);
@@ -212,8 +251,8 @@ using System.Linq;
         {
             try
             {
-                var document = await _context.JobDocuments.FirstOrDefaultAsync(
-                    doc => doc.Id == documentId
+                var document = await _context.JobDocuments.FirstOrDefaultAsync(doc =>
+                    doc.Id == documentId
                 );
 
                 if (document == null)
@@ -234,7 +273,9 @@ using System.Linq;
                         await gzipStream.CopyToAsync(decompressedStream);
                     }
                     decompressedStream.Position = 0;
-                    string decompressedContentType = FileHelpers.GetContentTypeFromFileName(originalFileName);
+                    string decompressedContentType = FileHelpers.GetContentTypeFromFileName(
+                        originalFileName
+                    );
                     return File(decompressedStream, decompressedContentType, originalFileName);
                 }
 
@@ -255,7 +296,9 @@ using System.Linq;
         {
             try
             {
-                var document = await _context.JobDocuments.FirstOrDefaultAsync(doc => doc.BlobUrl == request.DocumentUrl);
+                var document = await _context.JobDocuments.FirstOrDefaultAsync(doc =>
+                    doc.BlobUrl == request.DocumentUrl
+                );
 
                 if (document == null)
                 {
@@ -298,7 +341,9 @@ using System.Linq;
                     decompressedStream.Position = 0;
 
                     // ⛏ Infer the correct type from file extension (e.g., .pdf)
-                    string inferredContentType = FileHelpers.GetContentTypeFromFileName(originalFileName);
+                    string inferredContentType = FileHelpers.GetContentTypeFromFileName(
+                        originalFileName
+                    );
 
                     return File(decompressedStream, inferredContentType, originalFileName);
                 }
@@ -315,7 +360,6 @@ using System.Linq;
                 return StatusCode(500, $"An error occurred while fetching the blob: {ex.Message}");
             }
         }
-
 
         [HttpGet("documents/{id}")]
         public async Task<ActionResult<IEnumerable<object>>> GetJobDocuments(int id)
@@ -334,7 +378,13 @@ using System.Linq;
                 {
                     var properties = await _azureBlobservice.GetBlobContentAsync(doc.BlobUrl);
                     documentDetails.Add(
-                        new { doc.Id, doc.JobId, doc.FileName, Size = properties.Content.Length }
+                        new
+                        {
+                            doc.Id,
+                            doc.JobId,
+                            doc.FileName,
+                            Size = properties.Content.Length,
+                        }
                     );
                 }
                 catch (Exception ex)
@@ -342,7 +392,15 @@ using System.Linq;
                     Console.WriteLine(
                         $"Error fetching properties for blob {doc.BlobUrl}: {ex.Message}"
                     );
-                    documentDetails.Add(new { doc.Id, doc.JobId, doc.FileName, Size = 0L });
+                    documentDetails.Add(
+                        new
+                        {
+                            doc.Id,
+                            doc.JobId,
+                            doc.FileName,
+                            Size = 0L,
+                        }
+                    );
                 }
             }
 
@@ -356,8 +414,8 @@ using System.Linq;
         {
             try
             {
-                var results = await _context.DocumentProcessingResults
-                    .Where(r => r.JobId == jobId)
+                var results = await _context
+                    .DocumentProcessingResults.Where(r => r.JobId == jobId)
                     .ToListAsync();
 
                 if (results == null || !results.Any())
@@ -387,8 +445,8 @@ using System.Linq;
                     return NotFound($"Job with ID {jobId} not found.");
                 }
 
-                var documents = await _context.JobDocuments
-                    .Where(doc => doc.JobId == jobId)
+                var documents = await _context
+                    .JobDocuments.Where(doc => doc.JobId == jobId)
                     .ToListAsync();
 
                 if (documents == null || !documents.Any())
@@ -396,8 +454,8 @@ using System.Linq;
                     return NotFound($"No documents found for JobId {jobId}.");
                 }
 
-                var processingResults = await _context.DocumentProcessingResults
-                    .Where(r => r.JobId == jobId)
+                var processingResults = await _context
+                    .DocumentProcessingResults.Where(r => r.JobId == jobId)
                     .ToListAsync();
 
                 bool isProcessingComplete = documents.Count == processingResults.Count;
@@ -408,7 +466,7 @@ using System.Linq;
                         new
                         {
                             IsProcessingComplete = false,
-                            Message = "AI is still processing the documents."
+                            Message = "AI is still processing the documents.",
                         }
                     );
                 }
@@ -431,7 +489,7 @@ using System.Linq;
                         new
                         {
                             IsProcessingComplete = false,
-                            Message = "AI processing is incomplete or in an unexpected state."
+                            Message = "AI processing is incomplete or in an unexpected state.",
                         }
                     );
                 }
@@ -445,172 +503,232 @@ using System.Linq;
             }
         }
 
-
         [HttpPost]
         [RequestSizeLimit(200 * 1024 * 1024)]
         public async Task<IActionResult> PostJob([FromForm] JobDto jobRequest)
         {
+            if (jobRequest == null)
+            {
+                return BadRequest("Job request cannot be null.");
+            }
+
+            if (string.IsNullOrWhiteSpace(jobRequest.ProjectName))
+            {
+                return BadRequest("Project name is required.");
+            }
+
             var strategy = _context.Database.CreateExecutionStrategy();
-            return await strategy.ExecuteAsync(
-                async () =>
+            return await strategy.ExecuteAsync(async () =>
+            {
+                using var transaction = await _context.Database.BeginTransactionAsync();
+                try
                 {
-                    using var transaction = await _context.Database.BeginTransactionAsync();
-                    try
+                    var job = new JobModel
                     {
-                        var job = new JobModel
-                        {
-                            ProjectName = jobRequest.ProjectName,
-                            JobType = jobRequest.JobType,
-                            Qty = jobRequest.Qty,
-                            DesiredStartDate = jobRequest.DesiredStartDate,
-                            WallStructure = jobRequest.WallStructure,
-                            WallStructureSubtask = jobRequest.WallStructureSubtask,
-                            WallInsulation = jobRequest.WallInsulation,
-                            WallInsulationSubtask = jobRequest.WallInsulationSubtask,
-                            RoofStructure = jobRequest.RoofStructure,
-                            RoofStructureSubtask = jobRequest.RoofStructureSubtask,
-                            RoofTypeSubtask = jobRequest.RoofTypeSubtask,
-                            RoofInsulation = jobRequest.RoofInsulation,
-                            Foundation = jobRequest.Foundation,
-                            FoundationSubtask = jobRequest.FoundationSubtask,
-                            Finishes = jobRequest.Finishes,
-                            FinishesSubtask = jobRequest.FinishesSubtask,
-                            ElectricalSupplyNeeds = jobRequest.ElectricalSupplyNeeds,
-                            ElectricalSupplyNeedsSubtask = jobRequest.ElectricalSupplyNeedsSubtask,
-                            Stories = jobRequest.Stories,
-                            BuildingSize = jobRequest.BuildingSize,
-                            OperatingArea = jobRequest.OperatingArea,
-                            UserId = jobRequest.UserId,
-                            Status = jobRequest.Status,
-                            BiddingType = "NOT_BIDDING",
-                            CreatedAt = DateTime.UtcNow
-                        };
+                        TradeBudgets = jobRequest.TradeBudgets,
+                        ProjectName = jobRequest.ProjectName,
+                        JobType = jobRequest.JobType ?? "Pending AI Analysis",
+                        Qty = jobRequest.Qty,
+                        DesiredStartDate = jobRequest.DesiredStartDate,
+                        WallStructure = jobRequest.WallStructure ?? "Pending AI Analysis",
+                        WallStructureSubtask = jobRequest.WallStructureSubtask,
+                        WallInsulation = jobRequest.WallInsulation ?? "Pending AI Analysis",
+                        WallInsulationSubtask = jobRequest.WallInsulationSubtask,
+                        RoofStructure = jobRequest.RoofStructure ?? "Pending AI Analysis",
+                        RoofStructureSubtask = jobRequest.RoofStructureSubtask,
+                        RoofTypeSubtask = jobRequest.RoofTypeSubtask,
+                        RoofInsulation = jobRequest.RoofInsulation ?? "Pending AI Analysis",
+                        Foundation = jobRequest.Foundation ?? "Pending AI Analysis",
+                        FoundationSubtask = jobRequest.FoundationSubtask,
+                        Finishes = jobRequest.Finishes ?? "Pending AI Analysis",
+                        FinishesSubtask = jobRequest.FinishesSubtask,
+                        ElectricalSupplyNeeds =
+                            jobRequest.ElectricalSupplyNeeds ?? "Pending AI Analysis",
+                        ElectricalSupplyNeedsSubtask = jobRequest.ElectricalSupplyNeedsSubtask,
+                        Stories = jobRequest.Stories,
+                        BuildingSize = jobRequest.BuildingSize,
+                        OperatingArea = jobRequest.OperatingArea ?? "Pending AI Analysis",
+                        UserId = jobRequest.UserId,
+                        Status = jobRequest.Status,
+                        BiddingType = "NOT_BIDDING",
+                        CreatedAt = DateTime.UtcNow,
+                    };
 
-                        if (jobRequest.UserContextFile != null)
-                        {
-                            var userContextFileUrl = (await _azureBlobservice.UploadFiles(new List<IFormFile> { jobRequest.UserContextFile }, null, null)).FirstOrDefault();
-                        }
-
-                        _context.Jobs.Add(job);
-                        await _context.SaveChangesAsync();
-
-                        var clientModel = new ClientDetailsModel()
-                        {
-                            FirstName = jobRequest.FirstName,
-                            LastName = jobRequest.LastName,
-                            Email = jobRequest.Email,
-                            CompanyName = jobRequest.CompanyName,
-                            Phone = jobRequest.Phone,
-                            Position = jobRequest.Position,
-                            CreatedAt = DateTime.Now,
-                            JobId = job.Id
-                        };
-
-                        _context.ClientDetails.Add(clientModel);
-                        await _context.SaveChangesAsync();
-
-                        if (!string.IsNullOrEmpty(jobRequest.Address))
-                        {
-                            decimal lat = Math.Round(
-                                Convert.ToDecimal(
-                                    jobRequest.Latitude,
-                                    CultureInfo.InvariantCulture
-                                ),
-                                6
-                            );
-                            decimal lon = Math.Round(
-                                Convert.ToDecimal(
-                                    jobRequest.Longitude,
-                                    CultureInfo.InvariantCulture
-                                ),
-                                6
-                            );
-                            var address = new AddressModel
-                            {
-                                FormattedAddress = jobRequest.Address,
-                                StreetNumber = jobRequest.StreetNumber,
-                                StreetName = jobRequest.StreetName,
-                                City = jobRequest.City,
-                                State = jobRequest.State,
-                                PostalCode = jobRequest.PostalCode,
-                                Country = jobRequest.Country,
-                                Latitude = lat,
-                                Longitude = lon,
-                                GooglePlaceId = jobRequest.GooglePlaceId,
-                                CreatedAt = DateTime.UtcNow,
-                                UpdatedAt = DateTime.UtcNow,
-                                JobId = job.Id
-                            };
-
-                            _context.JobAddresses.Add(address);
-                            await _context.SaveChangesAsync();
-                        }
-
-                        List<string> documentUrls = new List<string>();
-                        if (!string.IsNullOrEmpty(jobRequest.SessionId))
-                        {
-                            var documents = await _context.JobDocuments
-                                .Where(
-                                    doc =>
-                                        doc.SessionId == jobRequest.SessionId && doc.JobId == null
-                                )
-                                .ToListAsync();
-
-                            foreach (var doc in documents)
-                            {
-                                doc.JobId = job.Id;
-                                documentUrls.Add(doc.BlobUrl);
-                            }
-                            await _context.SaveChangesAsync();
-                        }
-
-                        await transaction.CommitAsync();
-
-                        if (documentUrls.Any())
-                        {
-                            string connectionId = _httpContextAccessor.HttpContext?.Connection.Id ?? string.Empty;
-
-                            if (jobRequest.AnalysisType == "Comprehensive")
-                            {
-                                var userContextFileUrl = "";
-                                if (jobRequest.UserContextFile != null)
-                                {
-                                    userContextFileUrl = (await _azureBlobservice.UploadFiles(new List<IFormFile> { jobRequest.UserContextFile }, null, null)).FirstOrDefault();
-                                }
-                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessDocumentsForJobAsync(job.Id, documentUrls, connectionId, jobRequest.GenerateDetailsWithAi, jobRequest.UserContextText, userContextFileUrl));
-                            }
-                            else if (jobRequest.AnalysisType == "Selected")
-                            {
-                                var userContextFileUrl = "";
-                                if (jobRequest.UserContextFile != null)
-                                {
-                                    userContextFileUrl = (await _azureBlobservice.UploadFiles(new List<IFormFile> { jobRequest.UserContextFile }, null, null)).FirstOrDefault();
-                                }
-                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessSelectedAnalysisForJobAsync(job.Id, documentUrls, jobRequest.PromptKeys, connectionId, jobRequest.GenerateDetailsWithAi, jobRequest.UserContextText, userContextFileUrl));
-                            }
-                            else if (jobRequest.AnalysisType == "Renovation")
-                            {
-                                var userContextFileUrl = "";
-                                if (jobRequest.UserContextFile != null)
-                                {
-                                    userContextFileUrl = (await _azureBlobservice.UploadFiles(new List<IFormFile> { jobRequest.UserContextFile }, null, null)).FirstOrDefault();
-                                }
-                                BackgroundJob.Enqueue(() => _documentProcessorService.ProcessRenovationAnalysisForJobAsync(job.Id, documentUrls, connectionId, jobRequest.GenerateDetailsWithAi, jobRequest.UserContextText, userContextFileUrl));
-                            }
-                        }
-
-                        return Ok(jobRequest);
+                    if (jobRequest.UserContextFile != null)
+                    {
+                        var userContextFileUrl = (
+                            await _azureBlobservice.UploadFiles(
+                                new List<IFormFile> { jobRequest.UserContextFile },
+                                null,
+                                null
+                            )
+                        ).FirstOrDefault();
                     }
-                    catch (Exception ex)
+
+                    _context.Jobs.Add(job);
+                    await _context.SaveChangesAsync();
+
+                    var clientModel = new ClientDetailsModel()
                     {
-                        await transaction.RollbackAsync();
-                        return StatusCode(
-                            500,
-                            new { error = "Failed to create job", details = ex.Message }
+                        FirstName = jobRequest.FirstName,
+                        LastName = jobRequest.LastName,
+                        Email = jobRequest.Email,
+                        CompanyName = jobRequest.CompanyName,
+                        Phone = jobRequest.Phone,
+                        Position = jobRequest.Position,
+                        CreatedAt = DateTime.Now,
+                        JobId = job.Id,
+                    };
+
+                    _context.ClientDetails.Add(clientModel);
+                    await _context.SaveChangesAsync();
+
+                    if (!string.IsNullOrEmpty(jobRequest.Address))
+                    {
+                        decimal lat = Math.Round(
+                            Convert.ToDecimal(jobRequest.Latitude, CultureInfo.InvariantCulture),
+                            6
                         );
+                        decimal lon = Math.Round(
+                            Convert.ToDecimal(jobRequest.Longitude, CultureInfo.InvariantCulture),
+                            6
+                        );
+                        var address = new AddressModel
+                        {
+                            FormattedAddress = jobRequest.Address,
+                            StreetNumber = jobRequest.StreetNumber,
+                            StreetName = jobRequest.StreetName,
+                            City = jobRequest.City,
+                            State = jobRequest.State,
+                            PostalCode = jobRequest.PostalCode,
+                            Country = jobRequest.Country,
+                            Latitude = lat,
+                            Longitude = lon,
+                            GooglePlaceId = jobRequest.GooglePlaceId,
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow,
+                            JobId = job.Id,
+                        };
+
+                        _context.JobAddresses.Add(address);
+                        await _context.SaveChangesAsync();
                     }
+
+                    List<string> documentUrls = new List<string>();
+                    if (!string.IsNullOrEmpty(jobRequest.SessionId))
+                    {
+                        var documents = await _context
+                            .JobDocuments.Where(doc =>
+                                doc.SessionId == jobRequest.SessionId && doc.JobId == null
+                            )
+                            .ToListAsync();
+
+                        foreach (var doc in documents)
+                        {
+                            doc.JobId = job.Id;
+                            documentUrls.Add(doc.BlobUrl);
+                        }
+                        await _context.SaveChangesAsync();
+                    }
+
+                    await transaction.CommitAsync();
+
+                    if (documentUrls.Any())
+                    {
+                        string connectionId =
+                            jobRequest.ConnectionId
+                            ?? _httpContextAccessor.HttpContext?.Connection.Id
+                            ?? string.Empty;
+
+                        if (jobRequest.AnalysisType == "Comprehensive")
+                        {
+                            var userContextFileUrl = "";
+                            if (jobRequest.UserContextFile != null)
+                            {
+                                userContextFileUrl = (
+                                    await _azureBlobservice.UploadFiles(
+                                        new List<IFormFile> { jobRequest.UserContextFile },
+                                        null,
+                                        null
+                                    )
+                                ).FirstOrDefault();
+                            }
+                            BackgroundJob.Enqueue(() =>
+                                _documentProcessorService.ProcessDocumentsForJobAsync(
+                                    job.Id,
+                                    documentUrls,
+                                    connectionId,
+                                    jobRequest.GenerateDetailsWithAi,
+                                    jobRequest.UserContextText,
+                                    userContextFileUrl,
+                                    jobRequest.BudgetLevel
+                                )
+                            );
+                        }
+                        else if (jobRequest.AnalysisType == "Selected")
+                        {
+                            var userContextFileUrl = "";
+                            if (jobRequest.UserContextFile != null)
+                            {
+                                userContextFileUrl = (
+                                    await _azureBlobservice.UploadFiles(
+                                        new List<IFormFile> { jobRequest.UserContextFile },
+                                        null,
+                                        null
+                                    )
+                                ).FirstOrDefault();
+                            }
+                            BackgroundJob.Enqueue(() =>
+                                _documentProcessorService.ProcessSelectedAnalysisForJobAsync(
+                                    job.Id,
+                                    documentUrls,
+                                    jobRequest.PromptKeys,
+                                    connectionId,
+                                    jobRequest.GenerateDetailsWithAi,
+                                    jobRequest.UserContextText,
+                                    userContextFileUrl,
+                                    jobRequest.BudgetLevel
+                                )
+                            );
+                        }
+                        else if (jobRequest.AnalysisType == "Renovation")
+                        {
+                            var userContextFileUrl = "";
+                            if (jobRequest.UserContextFile != null)
+                            {
+                                userContextFileUrl = (
+                                    await _azureBlobservice.UploadFiles(
+                                        new List<IFormFile> { jobRequest.UserContextFile },
+                                        null,
+                                        null
+                                    )
+                                ).FirstOrDefault();
+                            }
+                            BackgroundJob.Enqueue(() =>
+                                _documentProcessorService.ProcessRenovationAnalysisForJobAsync(
+                                    job.Id,
+                                    documentUrls,
+                                    connectionId,
+                                    jobRequest.GenerateDetailsWithAi,
+                                    jobRequest.UserContextText,
+                                    userContextFileUrl,
+                                    jobRequest.BudgetLevel
+                                )
+                            );
+                        }
+                    }
+
+                    return Ok(jobRequest);
                 }
-            );
+                catch (Exception ex)
+                {
+                    await transaction.RollbackAsync();
+                    return StatusCode(
+                        500,
+                        new { error = "Failed to create job", details = ex.Message }
+                    );
+                }
+            });
         }
 
         [HttpPost("UploadImage")]
@@ -675,7 +793,7 @@ using System.Linq;
                         FileName = blobFileName,
                         BlobUrl = url,
                         SessionId = jobRequest.sessionId,
-                        UploadedAt = DateTime.Now
+                        UploadedAt = DateTime.Now,
                     };
                     _context.JobDocuments.Add(jobDocument);
                 }
@@ -690,7 +808,7 @@ using System.Linq;
                     FileUrls = uploadedFileUrls,
                     FileNames = jobRequest.Blueprint.Select(f => f.FileName).ToList(),
                     Message = $"Successfully uploaded {jobRequest.Blueprint.Count} file(s)",
-                    BillOfMaterials = bomResults
+                    BillOfMaterials = bomResults,
                 };
 
                 return Ok(response);
@@ -703,7 +821,7 @@ using System.Linq;
                 );
             }
         }
- 
+
         [HttpPost("UploadQuote")]
         [RequestSizeLimit(200 * 1024 * 1024)]
         public async Task<IActionResult> UploadQuote([FromForm] UploadQuoteDto jobRequest)
@@ -719,7 +837,9 @@ using System.Linq;
 
             if (!allowedExtensions.Contains(extension))
             {
-                return BadRequest(new { error = "Invalid file type. Only PDF files are allowed for quotes." });
+                return BadRequest(
+                    new { error = "Invalid file type. Only PDF files are allowed for quotes." }
+                );
             }
 
             var uploadedFileUrls = await _azureBlobservice.UploadFiles(
@@ -737,7 +857,7 @@ using System.Linq;
                     FileName = Path.GetFileName(new Uri(fileUrl).LocalPath),
                     BlobUrl = fileUrl,
                     SessionId = jobRequest.sessionId,
-                    UploadedAt = DateTime.Now
+                    UploadedAt = DateTime.Now,
                 };
                 _context.JobDocuments.Add(jobDocument);
                 await _context.SaveChangesAsync();
@@ -749,12 +869,12 @@ using System.Linq;
                 Status = "Uploaded",
                 FileUrls = uploadedFileUrls,
                 FileNames = jobRequest.Quote.Select(f => f.FileName).ToList(),
-                Message = $"Successfully uploaded {jobRequest.Quote.Count} quote(s)"
+                Message = $"Successfully uploaded {jobRequest.Quote.Count} quote(s)",
             };
 
             return Ok(response);
         }
- 
+
         [HttpPost("subtask")]
         public async Task<IActionResult> SaveSubtasks([FromBody] SaveSubtasksRequest subtasks)
         {
@@ -795,7 +915,7 @@ using System.Linq;
                     {
                         UserId = subtasks.UserId,
                         DateAgreed = DateTime.UtcNow,
-                        JobId = jobID
+                        JobId = jobID,
                     };
                     _context.JobsTermsAgreement.Add(acceptance);
                 }
@@ -806,8 +926,8 @@ using System.Linq;
                 var job = await _context.Jobs.FindAsync(jobID);
                 if (job != null)
                 {
-                    var assignments = await _context.JobAssignments
-                        .Where(a => a.JobId == jobID)
+                    var assignments = await _context
+                        .JobAssignments.Where(a => a.JobId == jobID)
                         .ToListAsync();
 
                     var userIds = assignments.Select(a => a.UserId).ToList();
@@ -820,7 +940,7 @@ using System.Linq;
                         Recipients = userIds,
                         Timestamp = DateTime.UtcNow,
                         JobId = job.Id,
-                        SenderId = subtasks.UserId
+                        SenderId = subtasks.UserId,
                     };
 
                     _context.Notifications.Add(notification);
@@ -839,13 +959,14 @@ using System.Linq;
                 throw;
             }
         }
+
         [HttpGet("subtasks/{jobId}")]
         public async Task<IActionResult> GetSubtasksForJob(int jobId)
         {
             try
             {
-                var subtasks = await _context.JobSubtasks
-                    .Where(st => st.JobId == jobId && st.Deleted == false)
+                var subtasks = await _context
+                    .JobSubtasks.Where(st => st.JobId == jobId && st.Deleted == false)
                     .ToListAsync();
 
                 if (!subtasks.Any())
@@ -862,15 +983,25 @@ using System.Linq;
         [HttpPost("{id}")]
         public async Task<IActionResult> PutJob(int id, [FromBody] JobDto jobDto)
         {
+            if (jobDto == null)
+            {
+                return BadRequest("Job data cannot be null.");
+            }
+
             if (id != jobDto.JobId)
             {
-                return BadRequest();
+                return BadRequest("Job ID in URL does not match job ID in body.");
+            }
+
+            if (string.IsNullOrWhiteSpace(jobDto.ProjectName))
+            {
+                return BadRequest("Project name cannot be empty.");
             }
 
             var existingJob = await _context.Jobs.FindAsync(id);
             if (existingJob == null)
             {
-                return NotFound();
+                return NotFound($"Job with ID {id} not found.");
             }
 
             existingJob.ProjectName = jobDto.ProjectName;
@@ -900,6 +1031,19 @@ using System.Linq;
             {
                 existingJob.BiddingType = jobDto.BiddingType;
                 existingJob.RequiredSubcontractorTypes = jobDto.Trades;
+
+                if (jobDto.TradeBudgets != null)
+                {
+                    var existingBudgets = _context.JobTradeBudgets.Where(b => b.JobId == id);
+                    _context.JobTradeBudgets.RemoveRange(existingBudgets);
+
+                    foreach (var budget in jobDto.TradeBudgets)
+                    {
+                        budget.JobId = id;
+                        _context.JobTradeBudgets.Add(budget);
+                    }
+                }
+
                 if (jobDto.BiddingType == "PUBLIC" || jobDto.BiddingType == "PRIVATE")
                 {
                     existingJob.BiddingStartDate = DateTime.UtcNow;
@@ -934,7 +1078,11 @@ using System.Linq;
             var job = await _context.Jobs.FindAsync(jobId);
             if (job == null)
             {
-                return NotFound("Job not found.");
+                return NotFound($"Job with ID {jobId} not found.");
+            }
+            if (addressDto == null)
+            {
+                return BadRequest("Address data cannot be null.");
             }
 
             var address = await _context.JobAddresses.FirstOrDefaultAsync(a => a.JobId == jobId);
@@ -949,8 +1097,8 @@ using System.Linq;
             address.State = addressDto.State;
             address.PostalCode = addressDto.PostalCode;
             address.Country = addressDto.Country;
-            address.Latitude = (decimal)addressDto.Latitude;
-            address.Longitude = (decimal)addressDto.Longitude;
+            address.Latitude = addressDto.Latitude;
+            address.Longitude = addressDto.Longitude;
             address.FormattedAddress = addressDto.FormattedAddress;
             address.GooglePlaceId = addressDto.GooglePlaceId;
             address.UpdatedAt = DateTime.UtcNow;
@@ -986,12 +1134,12 @@ using System.Linq;
         }
 
         [HttpGet("userId/{userId}")]
-        public async Task<ActionResult<IEnumerable<Models.JobModel>>> GetJobsByUserId(string userId)
+        public async Task<ActionResult<IEnumerable<JobModel>>> GetJobsByUserId(string userId)
         {
             try
             {
-                var jobs = await _context.Jobs
-                    .Where(job => job.UserId == userId && job.Status != "ARCHIVED")
+                var jobs = await _context
+                    .Jobs.Where(job => job.UserId == userId && job.Status != "ARCHIVED")
                     .ToListAsync();
 
                 if (jobs == null || !jobs.Any())
@@ -1010,17 +1158,132 @@ using System.Linq;
         [HttpGet("assigned/{userId}")]
         public async Task<ActionResult<IEnumerable<JobModel>>> GetAssignedJobs(string userId)
         {
-            var jobs = await _context.JobAssignments
-                .Where(ja => ja.UserId == userId)
+            var jobs = await _context
+                .JobAssignments.Where(ja => ja.UserId == userId)
                 .Join(_context.Jobs, ja => ja.JobId, j => j.Id, (ja, j) => j)
                 .ToListAsync();
 
             return Ok(jobs);
         }
 
+        [HttpGet("user-dashboard/{userId}")]
+        public async Task<ActionResult<IEnumerable<DashboardProjectDto>>> GetUserDashboard(
+            string userId
+        )
+        {
+            try
+            {
+                // 1. Get IDs of jobs the user is assigned to
+                var assignedJobIds = await _context
+                    .JobAssignments.Where(ja => ja.UserId == userId)
+                    .Select(ja => ja.JobId)
+                    .Distinct()
+                    .ToListAsync();
 
+                // 2. Fetch all relevant jobs (Owned OR Assigned) and NOT Archived
+                var jobs = await _context
+                    .Jobs.Where(j =>
+                        (j.UserId == userId || assignedJobIds.Contains(j.Id))
+                        && j.Status != "ARCHIVED"
+                    )
+                    .Include(j => j.JobAddress)
+                    .ToListAsync();
 
+                if (jobs == null || !jobs.Any())
+                {
+                    return Ok(new List<DashboardProjectDto>());
+                }
 
+                var jobIds = jobs.Select(j => j.Id).ToList();
+
+                // 3. Fetch Subtasks for all these jobs to calculate progress
+                var allSubtasks = await _context
+                    .JobSubtasks.Where(st => jobIds.Contains(st.JobId) && !st.Deleted)
+                    .Select(st => new
+                    {
+                        st.JobId,
+                        st.Status,
+                        st.Days,
+                    })
+                    .ToListAsync();
+
+                // 4. Fetch JobAssignments count for all these jobs (Team Size)
+                var teamCounts = await _context
+                    .JobAssignments.Where(ja => jobIds.Contains(ja.JobId))
+                    .GroupBy(ja => ja.JobId)
+                    .Select(g => new { JobId = g.Key, Count = g.Count() })
+                    .ToDictionaryAsync(x => x.JobId, x => x.Count);
+
+                // 5. Fetch Owner Details
+                var ownerIds = jobs.Select(j => j.UserId).Distinct().ToList();
+                var owners = await _context
+                    .Users.Where(u => ownerIds.Contains(u.Id))
+                    .Select(u => new
+                    {
+                        u.Id,
+                        FullName = $"{u.FirstName} {u.LastName}",
+                        u.CompanyName,
+                    })
+                    .ToDictionaryAsync(u => u.Id);
+
+                var dashboardProjects = new List<DashboardProjectDto>();
+
+                foreach (var job in jobs)
+                {
+                    // Calculate Progress
+                    var jobSubtasks = allSubtasks.Where(st => st.JobId == job.Id).ToList();
+                    var totalDays = jobSubtasks.Sum(st => st.Days);
+                    var completedDays = jobSubtasks
+                        .Where(st => st.Status?.ToLower() == "completed")
+                        .Sum(st => st.Days);
+
+                    var progress =
+                        totalDays > 0
+                            ? (int)Math.Round((double)completedDays / totalDays * 100)
+                            : 0;
+
+                    // Get Team Size
+                    var teamSize = teamCounts.ContainsKey(job.Id) ? teamCounts[job.Id] : 0;
+
+                    // Get Client Name
+                    var clientName = "";
+                    if (owners.ContainsKey(job.UserId))
+                    {
+                        var owner = owners[job.UserId];
+                        clientName = !string.IsNullOrEmpty(owner.CompanyName)
+                            ? owner.CompanyName
+                            : owner.FullName;
+                    }
+
+                    // Generate Thumbnail URL
+                    var thumbnailUrl = !string.IsNullOrEmpty(job.ThumbnailUrl)
+                        ? _azureBlobservice.GenerateTemporaryPublicUrl(job.ThumbnailUrl)
+                        : null;
+
+                    dashboardProjects.Add(
+                        new DashboardProjectDto
+                        {
+                            JobId = job.Id,
+                            ProjectName = job.ProjectName,
+                            Address = job.Address ?? (job.JobAddress?.FormattedAddress),
+                            Status = job.Status,
+                            ThumbnailUrl = thumbnailUrl,
+                            Progress = progress,
+                            Team = teamSize,
+                            ClientName = clientName,
+                            CreatedAt = job.CreatedAt,
+                        }
+                    );
+                }
+
+                return Ok(dashboardProjects);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in GetUserDashboard: {ex.Message}");
+                return StatusCode(500, "Internal server error fetching dashboard projects.");
+            }
+        }
 
         [HttpPut("{jobId}/archive")]
         public async Task<IActionResult> ArchiveJob(int jobId)
@@ -1032,8 +1295,8 @@ using System.Linq;
                 return NotFound();
             }
 
-            var subtasks = await _context.JobSubtasks
-                .Where(st => st.JobId == jobId && !st.Deleted)
+            var subtasks = await _context
+                .JobSubtasks.Where(st => st.JobId == jobId && !st.Deleted)
                 .ToListAsync();
 
             var completedCount = subtasks.Count(st => st.Status == "Completed");
@@ -1041,12 +1304,75 @@ using System.Linq;
             var progress =
                 totalCount > 0 ? (int)Math.Round((double)completedCount / totalCount * 100) : 0;
 
-            if (progress < 100)
+            if (job.Status != "DRAFT" && job.Status != "FAILED" && progress < 100)
             {
-                return BadRequest("Job progress must be 100% to archive.");
+                return BadRequest(
+                    "Project must be in draft or failed status, or have 100% progress to be archived."
+                );
             }
 
             job.Status = "ARCHIVED";
+            job.ArchivedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            // Send Notification
+            var assignments = await _context
+                .JobAssignments.Where(a => a.JobId == jobId)
+                .ToListAsync();
+
+            var recipientIds = assignments.Select(a => a.UserId).ToList();
+            if (!recipientIds.Contains(job.UserId))
+            {
+                recipientIds.Add(job.UserId);
+            }
+
+            // Also notify the current user (archiver) if not already in list
+            var currentUserId = _httpContextAccessor.HttpContext?.User.FindFirstValue("UserId");
+            if (!string.IsNullOrEmpty(currentUserId) && !recipientIds.Contains(currentUserId))
+            {
+                recipientIds.Add(currentUserId);
+            }
+
+            var notification = new NotificationModel
+            {
+                Message = $"Project '{job.ProjectName}' has been archived.",
+                JobId = job.Id,
+                SenderId = currentUserId ?? job.UserId,
+                Timestamp = DateTime.UtcNow,
+                Recipients = recipientIds,
+            };
+
+            _context.Notifications.Add(notification);
+            await _context.SaveChangesAsync();
+
+            await _webSocketManager.BroadcastMessageAsync(
+                notification.Message,
+                notification.Recipients
+            );
+
+            return NoContent();
+        }
+
+        [HttpPut("{jobId}/unarchive")]
+        public async Task<IActionResult> UnarchiveJob(int jobId)
+        {
+            var job = await _context.Jobs.FindAsync(jobId);
+
+            if (job == null)
+            {
+                return NotFound();
+            }
+
+            if (job.Status != "ARCHIVED")
+            {
+                return BadRequest("Job is not archived.");
+            }
+
+            // Restore to DRAFT by default, or maybe check progress?
+            // For now, setting to DRAFT allows the user to re-evaluate.
+            job.Status = "DRAFT";
+            job.ArchivedAt = null;
+
             await _context.SaveChangesAsync();
 
             return NoContent();
@@ -1055,19 +1381,17 @@ using System.Linq;
         [HttpGet("archived")]
         public async Task<ActionResult<IEnumerable<JobDto>>> GetArchivedJobs()
         {
-            var jobs = await _context.Jobs
-                .Where(j => j.Status == "ARCHIVED")
-                .Select(
-                    j =>
-                        new JobDto
-                        {
-                            JobId = j.Id,
-                            ProjectName = j.ProjectName,
-                            JobType = j.JobType,
-                            Status = j.Status,
-                            // Note: CompletionDate is not in the JobModel, so it's omitted.
-                        }
-                )
+            var jobs = await _context
+                .Jobs.Where(j => j.Status == "ARCHIVED")
+                .Select(j => new JobDto
+                {
+                    JobId = j.Id,
+                    ProjectName = j.ProjectName,
+                    JobType = j.JobType,
+                    Status = j.Status,
+                    ArchivedAt = j.ArchivedAt,
+                    // Note: CompletionDate is not in the JobModel, so it's omitted.
+                })
                 .ToListAsync();
 
             return Ok(jobs);
@@ -1082,8 +1406,8 @@ using System.Linq;
 
             foreach (var job in jobs)
             {
-                var subtasks = await _context.JobSubtasks
-                    .Where(st => st.JobId == job.Id && !st.Deleted)
+                var subtasks = await _context
+                    .JobSubtasks.Where(st => st.JobId == job.Id && !st.Deleted)
                     .ToListAsync();
 
                 var completedCount = subtasks.Count(st => st.Status == "Completed");
@@ -1107,7 +1431,10 @@ using System.Linq;
         }
 
         [HttpPut("{jobId}/status")]
-        public async Task<IActionResult> UpdateJobStatus(int jobId, [FromBody] UpdateStatusRequest request)
+        public async Task<IActionResult> UpdateJobStatus(
+            int jobId,
+            [FromBody] UpdateStatusRequest request
+        )
         {
             var job = await _context.Jobs.FindAsync(jobId);
 
@@ -1122,7 +1449,6 @@ using System.Linq;
             return Ok();
         }
 
-
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteJob(int id)
         {
@@ -1132,6 +1458,55 @@ using System.Linq;
                 return NotFound();
             }
 
+            // Gather recipients for notification before deletion
+            var assignments = await _context.JobAssignments.Where(a => a.JobId == id).ToListAsync();
+
+            var recipientIds = assignments.Select(a => a.UserId).ToList();
+            if (!recipientIds.Contains(job.UserId))
+            {
+                recipientIds.Add(job.UserId);
+            }
+
+            var currentUserId = _httpContextAccessor.HttpContext?.User.FindFirstValue("UserId");
+            if (!string.IsNullOrEmpty(currentUserId) && !recipientIds.Contains(currentUserId))
+            {
+                recipientIds.Add(currentUserId);
+            }
+
+            // Send SignalR notification only (cannot save to DB as job is being deleted)
+            await _webSocketManager.BroadcastMessageAsync(
+                $"Project '{job.ProjectName}' has been permanently deleted.",
+                recipientIds
+            );
+
+            // Manually delete related entities to ensure clean cleanup
+            var processingResults = await _context
+                .DocumentProcessingResults.Where(x => x.JobId == id)
+                .ToListAsync();
+            _context.DocumentProcessingResults.RemoveRange(processingResults);
+
+            var jobAddresses = await _context.JobAddresses.Where(x => x.JobId == id).ToListAsync();
+            _context.JobAddresses.RemoveRange(jobAddresses);
+
+            _context.JobAssignments.RemoveRange(assignments); // Use the list we already fetched
+
+            var jobDocuments = await _context.JobDocuments.Where(x => x.JobId == id).ToListAsync();
+            _context.JobDocuments.RemoveRange(jobDocuments);
+
+            var termsAgreements = await _context
+                .JobsTermsAgreement.Where(x => x.JobId == id)
+                .ToListAsync();
+            _context.JobsTermsAgreement.RemoveRange(termsAgreements);
+
+            var jobSubtasks = await _context.JobSubtasks.Where(x => x.JobId == id).ToListAsync();
+            _context.JobSubtasks.RemoveRange(jobSubtasks);
+
+            var notifications = await _context
+                .Notifications.Where(x => x.JobId == id)
+                .ToListAsync();
+            _context.Notifications.RemoveRange(notifications);
+
+            // Finally delete the job
             _context.Jobs.Remove(job);
             await _context.SaveChangesAsync();
 
@@ -1195,8 +1570,8 @@ using System.Linq;
                 return NotFound($"Subtask with ID {request.SubtaskId} not found.");
             }
 
-            var assignments = await _context.JobAssignments
-                .Where(a => a.JobId == request.JobId)
+            var assignments = await _context
+                .JobAssignments.Where(a => a.JobId == request.JobId)
                 .ToListAsync();
 
             if (assignments.Any())
@@ -1213,7 +1588,7 @@ using System.Linq;
                         UserId = null, // Set to null as Recipients is the source of truth
                         SenderId = request.SenderId,
                         Timestamp = DateTime.UtcNow,
-                        Recipients = recipientIds
+                        Recipients = recipientIds,
                     };
 
                     _context.Notifications.Add(notification);
@@ -1224,12 +1599,11 @@ using System.Linq;
             return Ok();
         }
 
-
         [HttpGet("bidded/{userId}")]
         public async Task<ActionResult<IEnumerable<BidModel>>> GetBiddedJobs(string userId)
         {
-            var bids = await _context.Bids
-                .Where(b => b.UserId == userId)
+            var bids = await _context
+                .Bids.Where(b => b.UserId == userId)
                 .Include(b => b.Job)
                 .ToListAsync();
 
@@ -1249,6 +1623,160 @@ using System.Linq;
         public class UpdateStatusRequest
         {
             public string Status { get; set; }
+        }
+
+        [HttpPut("{jobId}/details")]
+        public async Task<IActionResult> UpdateJobDetails(
+            int jobId,
+            [FromBody] FinalizeJobRequestDto request
+        )
+        {
+            var job = await _context.Jobs.FindAsync(jobId);
+            if (job == null)
+                return NotFound();
+
+            // Update Project Name from user input
+            job.ProjectName = request.ProjectName;
+
+            // Create or update Address
+            var address = await _context.JobAddresses.FirstOrDefaultAsync(a => a.JobId == jobId);
+            if (address == null)
+            {
+                address = new AddressModel { JobId = jobId, CreatedAt = DateTime.UtcNow };
+                _context.JobAddresses.Add(address);
+            }
+
+            address.FormattedAddress = request.Address.FormattedAddress;
+            address.StreetNumber = request.Address.StreetNumber;
+            address.StreetName = request.Address.StreetName;
+            address.City = request.Address.City;
+            address.State = request.Address.State;
+            address.PostalCode = request.Address.PostalCode;
+            address.Country = request.Address.Country;
+            address.Latitude = request.Address.Latitude;
+            address.Longitude = request.Address.Longitude;
+            address.GooglePlaceId = request.Address.GooglePlaceId;
+            address.UpdatedAt = DateTime.UtcNow;
+
+            // Create Client Details
+            var clientDetails = new ClientDetailsModel
+            {
+                JobId = jobId,
+                FirstName = request.Client.FirstName,
+                LastName = request.Client.LastName,
+                Email = request.Client.Email,
+                Phone = request.Client.Phone,
+                CompanyName = request.Client.CompanyName,
+                Position = request.Client.Position,
+                CreatedAt = DateTime.UtcNow,
+            };
+            _context.ClientDetails.Add(clientDetails);
+
+            // Finalise job status
+            job.Status = "NEW";
+
+            await _context.SaveChangesAsync();
+            return NoContent();
+        }
+
+        [HttpPost("{jobId}/thumbnail")]
+        public async Task<IActionResult> UploadThumbnail(int jobId, [FromForm] IFormFile file)
+        {
+            var job = await _context.Jobs.FindAsync(jobId);
+            if (job == null)
+            {
+                return NotFound("Job not found.");
+            }
+
+            if (file == null || file.Length == 0)
+            {
+                return BadRequest("Invalid file.");
+            }
+
+            try
+            {
+                var folder = $"jobs/{jobId}/thumbnails";
+                var thumbnailUrl = await _azureBlobservice.UploadImageAsync(file, folder);
+
+                if (thumbnailUrl != null)
+                {
+                    job.ThumbnailUrl = thumbnailUrl;
+                    await _context.SaveChangesAsync();
+                }
+
+                return Ok(new { thumbnailUrl });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(
+                    500,
+                    $"An error occurred while uploading the thumbnail: {ex.Message}"
+                );
+            }
+        }
+
+        [HttpGet("{jobId}/client-details")]
+        public async Task<ActionResult<ClientDetailsModel>> GetClientDetails(int jobId)
+        {
+            var clientDetails = await _context.ClientDetails.FirstOrDefaultAsync(c =>
+                c.JobId == jobId
+            );
+
+            if (clientDetails == null)
+            {
+                return NotFound("Client details not found for this job.");
+            }
+
+            return Ok(clientDetails);
+        }
+
+        [HttpPut("{jobId}/client-details")]
+        public async Task<IActionResult> UpdateClientDetails(
+            int jobId,
+            [FromBody] ClientDetailsModel clientDetails
+        )
+        {
+            if (clientDetails == null)
+            {
+                return BadRequest("Client details cannot be null.");
+            }
+
+            var existingClientDetails = await _context.ClientDetails.FirstOrDefaultAsync(c =>
+                c.JobId == jobId
+            );
+
+            if (existingClientDetails == null)
+            {
+                // Optionally create if not exists, but usually it should exist if job exists
+                existingClientDetails = new ClientDetailsModel
+                {
+                    JobId = jobId,
+                    CreatedAt = DateTime.UtcNow,
+                };
+                _context.ClientDetails.Add(existingClientDetails);
+            }
+
+            existingClientDetails.FirstName = clientDetails.FirstName;
+            existingClientDetails.LastName = clientDetails.LastName;
+            existingClientDetails.Email = clientDetails.Email;
+            existingClientDetails.Phone = clientDetails.Phone;
+            existingClientDetails.CompanyName = clientDetails.CompanyName;
+            existingClientDetails.Position = clientDetails.Position;
+            existingClientDetails.UpdatedAt = DateTime.UtcNow;
+
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex)
+            {
+                return StatusCode(
+                    500,
+                    $"An error occurred while updating client details: {ex.Message}"
+                );
+            }
+
+            return NoContent();
         }
     }
 }

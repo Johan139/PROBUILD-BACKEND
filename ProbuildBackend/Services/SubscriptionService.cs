@@ -58,17 +58,18 @@ namespace ProbuildBackend.Services
             }
         }
 
-        private (int quoteLimit, int refreshCycleDays) GetSubscriptionLimits(string subscriptionPackage)
+        private (int quoteLimit, int refreshCycleDays) GetSubscriptionLimits(
+            string subscriptionPackage
+        )
         {
             return subscriptionPackage switch
             {
                 "Essential" => (10, 30), // Tier 1
-                "Growth" => (25, 30),    // Tier 2
-                "Pro" => (50, 30),       // Tier 3
-                _ => (5, 30),            // Default for free/other tiers
+                "Growth" => (25, 30), // Tier 2
+                "Pro" => (50, 30), // Tier 3
+                _ => (5, 30), // Default for free/other tiers
             };
         }
-
 
         public async Task GrantTemporaryTier1Access(string userId, string jobId)
         {
@@ -78,15 +79,22 @@ namespace ProbuildBackend.Services
                 throw new Exception("User not found");
             }
 
-            if (user.SubscriptionPackage == "Basic (Free) ($0.00)" || string.IsNullOrEmpty(user.SubscriptionPackage) || user.SubscriptionPackage == "BASIC" || user.SubscriptionPackage == "Basic" || user.SubscriptionPackage == "Trial Version (3 Days)" || user.SubscriptionPackage == "Trial Version (7 Days)")
+            if (
+                user.SubscriptionPackage == "Basic (Free) ($0.00)"
+                || string.IsNullOrEmpty(user.SubscriptionPackage)
+                || user.SubscriptionPackage == "BASIC"
+                || user.SubscriptionPackage == "Basic"
+                || user.SubscriptionPackage == "Trial Version (3 Days)"
+                || user.SubscriptionPackage == "Trial Version (7 Days)"
+            )
             {
                 // TODO: This logic should be updated to determine the end date based on the subtasks assigned to the specific user, not the job as a whole
                 // For now, we are using the latest end date from all subtasks for the job
-                var endDate = _context.JobSubtasks
-                                      .Where(s => s.JobId.ToString() == jobId)
-                                      .OrderByDescending(s => s.EndDate)
-                                      .Select(s => s.EndDate)
-                                      .FirstOrDefault();
+                var endDate = _context
+                    .JobSubtasks.Where(s => s.JobId.ToString() == jobId)
+                    .OrderByDescending(s => s.EndDate)
+                    .Select(s => s.EndDate)
+                    .FirstOrDefault();
 
                 if (endDate == default(DateTime))
                 {
@@ -100,7 +108,7 @@ namespace ProbuildBackend.Services
                     StartDate = DateTime.UtcNow,
                     EndDate = endDate,
                     OriginalSubscriptionTier = user.SubscriptionPackage,
-                    IsActive = true
+                    IsActive = true,
                 };
 
                 _context.TempSubscriptionAccess.Add(temporaryAccess);

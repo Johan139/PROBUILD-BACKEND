@@ -1,5 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations.Schema;
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace ProbuildBackend.Models
 {
@@ -18,6 +17,5 @@ namespace ProbuildBackend.Models
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         public string OperatingSystem { get; set; }
-
     }
 }

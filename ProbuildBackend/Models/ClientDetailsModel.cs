@@ -21,13 +21,13 @@ namespace ProbuildBackend.Models
         public string Email { get; set; }
 
         [MaxLength(50)]
-        public string Phone { get; set; }
+        public string? Phone { get; set; }
 
         [MaxLength(150)]
-        public string CompanyName { get; set; }
+        public string? CompanyName { get; set; }
 
         [MaxLength(100)]
-        public string Position { get; set; }
+        public string? Position { get; set; }
 
         [Required]
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

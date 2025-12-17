@@ -3,7 +3,7 @@
 namespace ProbuildBackend.Models.DTO
 {
     public class SubtaskNoteDocumentDTO
-    {      
+    {
         [Required]
         public int NoteId { get; set; }
         public string FileName { get; set; }

@@ -1,11 +1,12 @@
 namespace ProbuildBackend.Services
 {
-    public class TokenCleanupService(IServiceProvider services, ILogger<TokenCleanupService> logger) : BackgroundService
+    public class TokenCleanupService(IServiceProvider services, ILogger<TokenCleanupService> logger)
+        : BackgroundService
     {
         private readonly IServiceProvider _services = services;
         private readonly ILogger<TokenCleanupService> _logger = logger;
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             _logger.LogInformation("Token Cleanup Service is starting.");
 
@@ -26,8 +27,8 @@ namespace ProbuildBackend.Services
             using var scope = _services.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-            var tokensToRemove = context.RefreshTokens
-                .Where(rt => rt.Expires < DateTime.UtcNow || rt.Revoked != null)
+            var tokensToRemove = context
+                .RefreshTokens.Where(rt => rt.Expires < DateTime.UtcNow || rt.Revoked != null)
                 .ToList();
 
             if (tokensToRemove.Count != 0)

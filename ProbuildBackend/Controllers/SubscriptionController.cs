@@ -30,7 +30,9 @@ namespace ProbuildBackend.Controllers
                 return Ok("You have been unsubscribed from new job notifications.");
             }
 
-            var externalUser = await _context.JobNotificationRecipients.FirstOrDefaultAsync(r => r.email == email);
+            var externalUser = await _context.JobNotificationRecipients.FirstOrDefaultAsync(r =>
+                r.email == email
+            );
             if (externalUser != null)
             {
                 externalUser.notification_enabled = false;

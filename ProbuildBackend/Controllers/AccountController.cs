@@ -1,30 +1,21 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Hangfire;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Google.Apis.Auth;
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Newtonsoft.Json;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
-using Microsoft.AspNetCore.Identity.UI.Services;
-using Microsoft.IdentityModel.Tokens;
 using ProbuildBackend.Services;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using System.Text;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.DataProtection;
 using System.Security.Cryptography;
-using Microsoft.AspNetCore.Authorization;
-using Newtonsoft.Json;
-using Microsoft.AspNetCore.DataProtection;
 using System.Text;
+using Microsoft.AspNetCore.WebUtilities;
+using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 
 
 namespace ProbuildBackend.Controllers
@@ -39,9 +30,23 @@ namespace ProbuildBackend.Controllers
         private readonly ApplicationDbContext _context;
         private readonly IServiceProvider _serviceProvider;
         private readonly IDataProtectionProvider _dataProtectionProvider;
+        public readonly IEmailTemplateService _emailTemplate;
+        public readonly ILogLoginInformationService _logLoginInformationService;
         private readonly IBackgroundJobClient _jobClient;
-        public AccountController(UserManager<UserModel> userManager, IDataProtectionProvider dataProtectionProvider, IEmailSender emailSender, IConfiguration configuration, ApplicationDbContext context,
-    IServiceProvider serviceProvider,IBackgroundJobClient jobClient)
+        private readonly EmailAutomationManager _manager;
+
+        public AccountController(
+            UserManager<UserModel> userManager,
+            IDataProtectionProvider dataProtectionProvider,
+            IEmailSender emailSender,
+            IConfiguration configuration,
+            ApplicationDbContext context,
+            IServiceProvider serviceProvider,
+            IEmailTemplateService emailTemplate,
+            ILogLoginInformationService logLoginInformationService,
+            IBackgroundJobClient jobClient,
+            EmailAutomationManager manager
+        )
         {
             _userManager = userManager;
             _emailSender = emailSender;
@@ -49,8 +54,10 @@ namespace ProbuildBackend.Controllers
             _context = context;
             _serviceProvider = serviceProvider;
             _dataProtectionProvider = dataProtectionProvider;
+            _emailTemplate = emailTemplate;
+            _logLoginInformationService = logLoginInformationService;
             _jobClient = jobClient;
- 
+            _manager = manager;
         }
 
         [HttpPost("register")]
@@ -71,7 +78,7 @@ namespace ProbuildBackend.Controllers
                     UserName = email,
                     Email = email,
                     NormalizedUserName = normalizedEmail, // optional: handled automatically but safe
-                    NormalizedEmail = normalizedEmail,    // optional: handled automatically but safe
+                    NormalizedEmail = normalizedEmail, // optional: handled automatically but safe
                     FirstName = model.FirstName,
                     LastName = model.LastName,
                     PhoneNumber = model.PhoneNumber,
@@ -79,17 +86,25 @@ namespace ProbuildBackend.Controllers
                     CompanyRegNo = model.CompanyRegNo,
                     VatNo = model.VatNo,
                     UserType = model.UserType,
-                    ConstructionType = model.ConstructionType,
+                    ConstructionType = model.ConstructionType != null
+    ? string.Join(",", model.ConstructionType)
+    : null,
                     NrEmployees = model.NrEmployees,
                     YearsOfOperation = model.YearsOfOperation,
                     CertificationStatus = model.CertificationStatus,
                     CertificationDocumentPath = model.CertificationDocumentPath,
                     Availability = model.Availability,
                     Trade = model.Trade,
-                    ProductsOffered = model.ProductsOffered,
+                    ProductsOffered = model.ProductsOffered != null
+    ? string.Join(",", model.ProductsOffered)
+    : null,
                     SupplierType = model.SupplierType,
-                    JobPreferences = model.JobPreferences,
-                    DeliveryArea = model.DeliveryArea,
+                    JobPreferences = model.JobPreferences != null
+    ? string.Join(",", model.JobPreferences)
+    : null,
+                    DeliveryArea = model.DeliveryArea != null
+    ? string.Join(",", model.DeliveryArea)
+    : null,
                     DeliveryTime = model.DeliveryTime,
                     //We need to move away from the below. It will cause confusion between the new address model and old.
                     //Country = countryId.Id.ToString();
@@ -116,10 +131,29 @@ namespace ProbuildBackend.Controllers
                     Longitude = model.LongitudeFromIP,
                     Region = model.RegionFromIP,
                     TimeZone = model.Timezone,
-                    OperatingSystem = model.OperatingSystem
+                    OperatingSystem = model.OperatingSystem,
                 };
 
-                 _context.UserMetaData.Add(userMetaData);
+                // Add address (can be done before save)
+                //var address = new UserAddressModel
+                //{
+                //    StreetNumber = model.StreetNumber,
+                //    StreetName = model.StreetName,
+                //    City = model.City,
+                //    State = model.State,
+                //    PostalCode = model.PostalCode,
+                //    Country = model.Country,
+                //    Latitude = model.Latitude,
+                //    Longitude = model.Longitude,
+                //    FormattedAddress = model.FormattedAddress,
+                //    GooglePlaceId = model.GooglePlaceId,
+                //    CreatedAt = DateTime.UtcNow,
+                //    UpdatedAt = DateTime.UtcNow,
+                //    UserId = user.Id,
+                //    CountryCode = model.CountryCode,
+                //    AddressType = model.AddressType,
+                //};
+                //_context.UserAddress.Add(address);
 
                 // Add address (can be done before save)
                 //var address = new UserAddressModel
@@ -142,27 +176,66 @@ namespace ProbuildBackend.Controllers
                 //};
                 //_context.UserAddress.Add(address);
                 // Only save agreement if user was created successfully
-                var userAgree = new UserTermsAgreementModel
-                {
-                    UserId = user.Id,
-                    DateAgreed = DateTime.UtcNow
-                };
+                //THEY WANTED TO REMOVE THIS. SO ITS NOW REMOVED.
+                //var userAgree = new UserTermsAgreementModel
+                //{
+                //    UserId = user.Id,
+                //    DateAgreed = DateTime.UtcNow,
+                //};
 
-                _context.UserTermsAgreement.Add(userAgree);
+                //_context.UserTermsAgreement.Add(userAgree);
                 await _context.SaveChangesAsync();
 
                 var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-                var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["FrontEnd:FRONTEND_URL"];
-                var callbackUrl = $"{frontendUrl}/confirm-email/?userId={user.Id}&code={Uri.EscapeDataString(code)}";
+                var frontendUrl =
+                    Environment.GetEnvironmentVariable("FRONTEND_URL")
+                    ?? _configuration["FrontEnd:FRONTEND_URL"];
+                var callbackUrl =
+                    $"{frontendUrl}/confirm-email/?userId={user.Id}&code={Uri.EscapeDataString(code)}";
 
-                await _emailSender.SendEmailAsync(model.Email, "Confirm your email",
-                    $"Please confirm this account for {user.UserName} by <a href='{callbackUrl}'>clicking here</a>.");
+                var EmailConfirmation = await _emailTemplate.GetTemplateAsync(
+                    "ConfirmAccountEmail"
+                );
+                EmailConfirmation.Body = EmailConfirmation
+                    .Body.Replace("{{ConfirmLink}}", callbackUrl)
+                    .Replace("{{UserName}}", model.FirstName + " " + model.LastName)
+                    .Replace("{{Header}}", EmailConfirmation.HeaderHtml)
+                    .Replace("{{Footer}}", EmailConfirmation.FooterHtml);
+                await _emailSender.SendEmailAsync(EmailConfirmation, model.Email);
 
-                return Ok(new
+                if (user.SubscriptionPackage.Contains("Trial"))
                 {
-                    message = "Registration successful, please verify your email.",
-                    userId = user.Id
-                });
+                    var callbackUrlWelcome = $"{frontendUrl}/dashboard";
+                    var WelcomeEmail = await _emailTemplate.GetTemplateAsync("WelcomeTrialEmail");
+                    WelcomeEmail.Body = WelcomeEmail
+                        .Body.Replace("{{cta_url}}", callbackUrlWelcome)
+                        .Replace("{{first_name}}", model.FirstName + " " + model.LastName)
+                        .Replace("{{Header}}", EmailConfirmation.HeaderHtml)
+                        .Replace("{{Footer}}", EmailConfirmation.FooterHtml);
+                    await _emailSender.SendEmailAsync(WelcomeEmail, model.Email);
+                }
+
+                // Fetch the automation rule from DB
+                // Schedule all active rules using their DelayHours
+                var rules = await _context
+                    .EmailAutomationRules.Where(r => r.IsActive)
+                    .ToListAsync();
+
+                foreach (var r in rules)
+                {
+                    BackgroundJob.Schedule<EmailAutomationManager>(
+                        manager => manager.ExecuteAutomationAsync(user.Id, r.Id),
+                        TimeSpan.FromHours(r.DelayHours)
+                    );
+                }
+
+                return Ok(
+                    new
+                    {
+                        message = "Registration successful, please verify your email.",
+                        userId = user.Id,
+                    }
+                );
             }
             catch (Exception ex)
             {
@@ -172,25 +245,29 @@ namespace ProbuildBackend.Controllers
             }
         }
 
-
         [HttpGet("resend-email-verification/{email}")]
-
         public async Task<ActionResult> ResendEmailLink(string email)
         {
-
             var user = _context.Users.Where(p => p.Email == email).FirstOrDefault();
             var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
-            var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["FrontEnd:FRONTEND_URL"];
-            var callbackUrl = $"{frontendUrl}/confirm-email/?userId={user.Id}&code={Uri.EscapeDataString(code)}";
+            var frontendUrl =
+                Environment.GetEnvironmentVariable("FRONTEND_URL")
+                ?? _configuration["FrontEnd:FRONTEND_URL"];
+            var callbackUrl =
+                $"{frontendUrl}/confirm-email/?userId={user.Id}&code={Uri.EscapeDataString(code)}";
 
-            await _emailSender.SendEmailAsync(user.Email, "Confirm your email",
-                $"Please confirm this account for {user.UserName} by <a href='{callbackUrl}'>clicking here</a>.");
+            var EmailConfirmation = await _emailTemplate.GetTemplateAsync("ConfirmAccountEmail");
+            EmailConfirmation.Body = EmailConfirmation
+                .Body.Replace("{{ConfirmLink}}", callbackUrl)
+                .Replace("{{Header}}", EmailConfirmation.HeaderHtml)
+                .Replace("{{Footer}}", EmailConfirmation.FooterHtml)
+                .Replace("{{UserName}}", user.FirstName + " " + user.LastName);
 
-            return Ok(new
-            {
-                message = "Resend successful, please verify your email.",
-                userId = user.Id
-            });
+            await _emailSender.SendEmailAsync(EmailConfirmation, user.Email);
+
+            return Ok(
+                new { message = "Resend successful, please verify your email.", userId = user.Id }
+            );
         }
 
         [HttpGet("has-active-subscription/{userId}")]
@@ -199,7 +276,7 @@ namespace ProbuildBackend.Controllers
             var hasActive = await _context.PaymentRecords.AnyAsync(p =>
                 p.Status == "Active"
                 && p.ValidUntil > DateTime.UtcNow
-                && (p.UserId == userId || p.AssignedUser == userId)   // <- check either
+                && (p.UserId == userId || p.AssignedUser == userId) // <- check either
             );
             return Ok(new { hasActive });
         }
@@ -212,8 +289,8 @@ namespace ProbuildBackend.Controllers
                 return BadRequest("Role parameter cannot be null or empty.");
             }
 
-            var users = await _context.Users
-                .Where(u => u.UserType == userType) // Adjust based on your actual property name
+            var users = await _context
+                .Users.Where(u => u.UserType == userType) // Adjust based on your actual property name
                 .ToListAsync();
 
             if (users == null || !users.Any())
@@ -232,8 +309,8 @@ namespace ProbuildBackend.Controllers
                 return BadRequest("Id parameter cannot be null or empty.");
             }
 
-            var users = await _context.Users
-                .Where(u => u.Id == id) // Adjust based on your actual property name
+            var users = await _context
+                .Users.Where(u => u.Id == id) // Adjust based on your actual property name
                 .ToListAsync();
 
             if (users == null || !users.Any())
@@ -245,15 +322,24 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpGet("search")]
-        public async Task<ActionResult<IEnumerable<UserSearchDto>>> SearchUsers([FromQuery] string term)
+        public async Task<ActionResult<IEnumerable<UserSearchDto>>> SearchUsers(
+            [FromQuery] string term
+        )
         {
             if (string.IsNullOrWhiteSpace(term))
             {
                 return BadRequest("Search term cannot be empty.");
             }
 
-            var users = await _context.Users
-                .Where(u => u.FirstName.Contains(term) || u.LastName.Contains(term) || u.CompanyName.Contains(term) || u.Trade.Contains(term) || u.Email.Contains(term) || u.PhoneNumber.Contains(term))
+            var users = await _context
+                .Users.Where(u =>
+                    u.FirstName.Contains(term)
+                    || u.LastName.Contains(term)
+                    || u.CompanyName.Contains(term)
+                    || u.Trade.Contains(term)
+                    || u.Email.Contains(term)
+                    || u.PhoneNumber.Contains(term)
+                )
                 .Select(u => new UserSearchDto
                 {
                     Id = u.Id,
@@ -268,17 +354,18 @@ namespace ProbuildBackend.Controllers
                     SupplierType = u.SupplierType,
                     ProductsOffered = u.ProductsOffered,
                     Country = u.Country,
-                    City = u.City
+                    City = u.City,
                 })
                 .ToListAsync();
 
             return Ok(users);
         }
+
         [HttpGet("users")]
         public async Task<ActionResult<IEnumerable<UserSearchDto>>> GetUsers()
         {
-            var users = await _context.Users
-                .Select(u => new UserSearchDto
+            var users = await _context
+                .Users.Select(u => new UserSearchDto
                 {
                     Id = u.Id,
                     FirstName = u.FirstName,
@@ -292,7 +379,7 @@ namespace ProbuildBackend.Controllers
                     SupplierType = u.SupplierType,
                     ProductsOffered = u.ProductsOffered,
                     Country = u.Country,
-                    City = u.City
+                    City = u.City,
                 })
                 .ToListAsync();
 
@@ -327,12 +414,14 @@ namespace ProbuildBackend.Controllers
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginDto model)
         {
+            var user = await _userManager.FindByEmailAsync(model.Email);
             try
             {
-
-
-                var user = await _userManager.FindByEmailAsync(model.Email);
-                if (user != null && await _userManager.CheckPasswordAsync(user, model.Password) && user.EmailConfirmed == true)// add email comfirmation check
+                if (
+                    user != null
+                    && await _userManager.CheckPasswordAsync(user, model.Password)
+                    && user.EmailConfirmed == true
+                ) // add email comfirmation check
                 {
                     var token = GenerateJwtToken(user);
                     var refreshToken = GenerateRefreshToken();
@@ -342,31 +431,66 @@ namespace ProbuildBackend.Controllers
                         UserId = user.Id,
                         Token = refreshToken,
                         Expires = DateTime.UtcNow.AddDays(7),
-                        Created = DateTime.UtcNow
+                        Created = DateTime.UtcNow,
                     };
 
                     _context.RefreshTokens.Add(refreshTokenEntity);
+
+                    await _logLoginInformationService.LogLoginAsync(
+                        Guid.Parse(user.Id),
+                        HttpContext.Connection.RemoteIpAddress?.ToString(),
+                        Request.Headers["User-Agent"].ToString(),
+                        true
+                    );
+
                     await _context.SaveChangesAsync();
 
-                    return Ok(new
-                    {
-                        token,
-                        refreshToken,
-                        userId = user.Id,
-                        firstName = user.FirstName,
-                        lastName = user.LastName,
-                        userType = user.UserType
-                    });
+                    return Ok(
+                        new
+                        {
+                            token,
+                            refreshToken,
+                            userId = user.Id,
+                            firstName = user.FirstName,
+                            lastName = user.LastName,
+                            userType = user.UserType,
+                        }
+                    );
                 }
                 if (user != null && !user.EmailConfirmed)
                 {
-                    return Unauthorized(new { error = "Email address has not been verified. Please check your inbox and spam folder." });
+                    await _logLoginInformationService.LogLoginAsync(
+                        Guid.Parse(user.Id),
+                        HttpContext.Connection.RemoteIpAddress?.ToString(),
+                        Request.Headers["User-Agent"].ToString(),
+                        false,
+                        "Email address has not been verified. Please check your inbox and spam folder."
+                    );
+                    return Unauthorized(
+                        new
+                        {
+                            error = "Email address has not been verified. Please check your inbox and spam folder.",
+                        }
+                    );
                 }
+                await _logLoginInformationService.LogLoginAsync(
+                    Guid.Parse(user == null ? Guid.Empty.ToString(): user.Id),
+                    HttpContext.Connection.RemoteIpAddress?.ToString(),
+                    Request.Headers["User-Agent"].ToString(),
+                    false,
+                    "Invalid login credentials. Please try again."
+                );
                 return Unauthorized(new { error = "Invalid login credentials. Please try again." });
             }
             catch (Exception ex)
             {
-
+                await _logLoginInformationService.LogLoginAsync(
+                        Guid.Parse(user == null ? Guid.Empty.ToString() : user.Id),
+                    HttpContext.Connection.RemoteIpAddress?.ToString(),
+                    Request.Headers["User-Agent"].ToString(),
+                    false,
+                    ex.Message + " StackTrace:" + ex.StackTrace
+                );
                 throw;
             }
         }
@@ -376,13 +500,21 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var payload = await GoogleJsonWebSignature.ValidateAsync(model.IdToken, new GoogleJsonWebSignature.ValidationSettings
-                {
-                    Audience = new[] { "830495328853-9jp3r5b2o53124kpu10ais3pq0lljcoj.apps.googleusercontent.com" }
-                });
+                var payload = await GoogleJsonWebSignature.ValidateAsync(
+                    model.IdToken,
+                    new GoogleJsonWebSignature.ValidationSettings
+                    {
+                        Audience = new[]
+                        {
+                            "830495328853-9jp3r5b2o53124kpu10ais3pq0lljcoj.apps.googleusercontent.com",
+                        },
+                    }
+                );
 
                 // Check if user already exists
-                var existingUser = await _context.Users.FirstOrDefaultAsync(u => u.Email == payload.Email);
+                var existingUser = await _context.Users.FirstOrDefaultAsync(u =>
+                    u.Email == payload.Email
+                );
 
                 if (existingUser != null)
                 {
@@ -395,41 +527,44 @@ namespace ProbuildBackend.Controllers
                         UserId = existingUser.Id,
                         Token = refreshToken,
                         Expires = DateTime.UtcNow.AddDays(7),
-                        Created = DateTime.UtcNow
+                        Created = DateTime.UtcNow,
                     };
 
                     _context.RefreshTokens.Add(refreshEntity);
                     await _context.SaveChangesAsync();
 
-                    return Ok(new
-                    {
-                        token,
-                        refreshToken,
-                        userId = existingUser.Id,
-                        firstName = existingUser.FirstName,
-                        lastName = existingUser.LastName,
-                        userType = existingUser.UserType,
-                        requiresRegistration = false
-                    });
+                    return Ok(
+                        new
+                        {
+                            token,
+                            refreshToken,
+                            userId = existingUser.Id,
+                            firstName = existingUser.FirstName,
+                            lastName = existingUser.LastName,
+                            userType = existingUser.UserType,
+                            requiresRegistration = false,
+                        }
+                    );
                 }
 
                 // 🚨 New user, but cannot save yet (missing required fields)
-                return Ok(new
-                {
-                    requiresRegistration = true,
-                    email = payload.Email,
-                    firstName = payload.GivenName,
-                    lastName = payload.FamilyName,
-                    googleId = payload.Subject,
-                    picture = payload.Picture
-                });
+                return Ok(
+                    new
+                    {
+                        requiresRegistration = true,
+                        email = payload.Email,
+                        firstName = payload.GivenName,
+                        lastName = payload.FamilyName,
+                        googleId = payload.Subject,
+                        picture = payload.Picture,
+                    }
+                );
             }
             catch (Exception ex)
             {
                 return BadRequest(new { error = ex.Message });
             }
         }
-
 
         public class GoogleLoginRequest
         {
@@ -443,10 +578,15 @@ namespace ProbuildBackend.Controllers
         {
             var refreshToken = request.RefreshToken;
 
-            var storedToken = await _context.RefreshTokens
-                .FirstOrDefaultAsync(rt => rt.Token == refreshToken);
+            var storedToken = await _context.RefreshTokens.FirstOrDefaultAsync(rt =>
+                rt.Token == refreshToken
+            );
 
-            if (storedToken == null || storedToken.Revoked != null || storedToken.Expires < DateTime.UtcNow)
+            if (
+                storedToken == null
+                || storedToken.Revoked != null
+                || storedToken.Expires < DateTime.UtcNow
+            )
             {
                 return Unauthorized("Invalid refresh token.");
             }
@@ -470,8 +610,10 @@ namespace ProbuildBackend.Controllers
                     return Unauthorized("User or team member not found for the given token.");
                 }
 
-                var teamMembers = await _context.TeamMembers
-                    .Where(tm => tm.Email == memberById.Email && tm.Status == "Registered")
+                var teamMembers = await _context
+                    .TeamMembers.Where(tm =>
+                        tm.Email == memberById.Email && tm.Status == "Registered"
+                    )
                     .ToListAsync();
 
                 if (!teamMembers.Any())
@@ -490,7 +632,9 @@ namespace ProbuildBackend.Controllers
                     claims.Add(new Claim("team", $"{member.Id}:{member.InviterId}"));
                 }
 
-                var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
+                var key = new SymmetricSecurityKey(
+                    Encoding.UTF8.GetBytes(_configuration["Jwt:Key"])
+                );
                 var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
                 var newAccessToken = new JwtSecurityToken(
                     issuer: _configuration["Jwt:Issuer"],
@@ -509,17 +653,13 @@ namespace ProbuildBackend.Controllers
                 UserId = storedToken.UserId, // Re-use the same ID (either UserModel or TeamMember)
                 Token = newRefreshToken,
                 Expires = DateTime.UtcNow.AddDays(7),
-                Created = DateTime.UtcNow
+                Created = DateTime.UtcNow,
             };
 
             _context.RefreshTokens.Add(newRefreshTokenEntity);
             await _context.SaveChangesAsync();
 
-            return Ok(new
-            {
-                token = newAccessTokenString,
-                refreshToken = newRefreshToken
-            });
+            return Ok(new { token = newAccessTokenString, refreshToken = newRefreshToken });
         }
 
         [HttpPost("trailversion")]
@@ -528,10 +668,12 @@ namespace ProbuildBackend.Controllers
             try
             {
                 var user = await _context.Users.FindAsync(dto.UserId);
-                if (user == null) return NotFound("User not found.");
+                if (user == null)
+                    return NotFound("User not found.");
 
-                var existingTrial = await _context.PaymentRecords
-                    .AnyAsync(p => p.UserId == dto.UserId && p.IsTrial == true && p.Status == "Active");
+                var existingTrial = await _context.PaymentRecords.AnyAsync(p =>
+                    p.UserId == dto.UserId && p.IsTrial == true && p.Status == "Active"
+                );
 
                 if (existingTrial)
                     return BadRequest("Trial already used.");
@@ -551,7 +693,7 @@ namespace ProbuildBackend.Controllers
                     ValidUntil = validUntil,
                     Amount = 0,
                     IsTrial = true,
-                    SubscriptionID = GenerateTrialSubscriptionId()
+                    SubscriptionID = GenerateTrialSubscriptionId(),
                 };
 
                 _context.PaymentRecords.Add(trial);
@@ -560,10 +702,10 @@ namespace ProbuildBackend.Controllers
             }
             catch (Exception)
             {
-
                 throw;
             }
         }
+
         public static string GenerateTrialSubscriptionId()
         {
             // Generate 24 random bytes → longer output
@@ -574,27 +716,29 @@ namespace ProbuildBackend.Controllers
             }
 
             // Encode and clean
-            var base64 = Convert.ToBase64String(bytes)
+            var base64 = Convert
+                .ToBase64String(bytes)
                 .Replace("+", "")
                 .Replace("/", "")
                 .Replace("=", "");
 
             return $"trial_{base64}";
         }
+
         private string GenerateJwtToken(UserModel user)
         {
             var claims = new[]
             {
                 new Claim(JwtRegisteredClaimNames.Sub, user.Email ?? ""),
-                new Claim(ClaimTypes.Email, user.Email), 
+                new Claim(ClaimTypes.Email, user.Email),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
                 new Claim("UserId", user.Id),
-                new Claim("userId", user.Id), 
-                new Claim(ClaimTypes.NameIdentifier, user.Id), 
+                new Claim("userId", user.Id),
+                new Claim(ClaimTypes.NameIdentifier, user.Id),
                 new Claim("UserType", user.UserType ?? ""),
                 new Claim("FirstName", user.FirstName ?? ""),
                 new Claim("LastName", user.LastName ?? ""),
-                new Claim("CompanyName", user.CompanyName ?? "")
+                new Claim("CompanyName", user.CompanyName ?? ""),
             };
 
             var JWTKEY = Environment.GetEnvironmentVariable("JWT_KEY") ?? _configuration["Jwt:Key"];
@@ -606,7 +750,8 @@ namespace ProbuildBackend.Controllers
                 audience: _configuration["Jwt:Audience"],
                 claims: claims,
                 expires: DateTime.UtcNow.AddMinutes(30),
-                signingCredentials: creds);
+                signingCredentials: creds
+            );
 
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
@@ -614,32 +759,45 @@ namespace ProbuildBackend.Controllers
         [HttpPost("forgotpassword")]
         public async Task<IActionResult> ForgotPassword(ForgotPasswordModel model)
         {
-            var user = await _context.Users
-                .AsNoTracking()
+            var user = await _context
+                .Users.AsNoTracking()
                 .Select(u => new UserModel
                 {
                     Id = u.Id,
                     UserName = u.UserName,
                     Email = u.Email,
-                    SecurityStamp = u.SecurityStamp
+                    SecurityStamp = u.SecurityStamp,
                 })
                 .FirstOrDefaultAsync(u => u.Email == model.Email);
 
-
-
             var protector = _dataProtectionProvider
-     .CreateProtector($"{user.Id}:Default:ResetPassword")
-     .ToTimeLimitedDataProtector();
-            var token = protector.Protect("ResetToken:" + Guid.NewGuid(), lifetime: TimeSpan.FromMinutes(15));
+                .CreateProtector($"{user.Id}:Default:ResetPassword")
+                .ToTimeLimitedDataProtector();
+            var token = protector.Protect(
+                "ResetToken:" + Guid.NewGuid(),
+                lifetime: TimeSpan.FromMinutes(15)
+            );
 
-            var frontendBaseUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["FrontEnd:FRONTEND_URL"]; ;
-            var callbackUrl = $"{frontendBaseUrl}/reset-password?email={Uri.EscapeDataString(user.Email)}&token={Uri.EscapeDataString(token)}";
+            var frontendBaseUrl =
+                Environment.GetEnvironmentVariable("FRONTEND_URL")
+                ?? _configuration["FrontEnd:FRONTEND_URL"];
+            ;
+            var callbackUrl =
+                $"{frontendBaseUrl}/reset-password?email={Uri.EscapeDataString(user.Email)}&token={Uri.EscapeDataString(token)}";
 
-            await _emailSender.SendEmailAsync(model.Email, "Reset Password",
-                $"Please reset your password by <a href='{callbackUrl}'>clicking here. Please note the link will expire in 15 minutes.</a>.");
+            var ResetPassword = await _emailTemplate.GetTemplateAsync("PasswordResetEmail");
+
+            ResetPassword.Body = ResetPassword
+                .Body.Replace("{{ResetLink}}", callbackUrl)
+                .Replace("{{UserName}}", $"{user.FirstName} {user.LastName}")
+                .Replace("{{Header}}", ResetPassword.HeaderHtml)
+                .Replace("{{Footer}}", ResetPassword.FooterHtml);
+
+            await _emailSender.SendEmailAsync(ResetPassword, user.Email);
 
             return Ok();
         }
+
         public class ResetPasswordDto
         {
             public string email { get; set; }
@@ -651,8 +809,8 @@ namespace ProbuildBackend.Controllers
         public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto model)
         {
             // Fetch the existing user with all properties to preserve current values
-            var existingUser = await _context.Users
-                .AsNoTracking()
+            var existingUser = await _context
+                .Users.AsNoTracking()
                 .FirstOrDefaultAsync(u => u.Email == model.email);
 
             if (existingUser == null)
@@ -695,12 +853,12 @@ namespace ProbuildBackend.Controllers
                 State = existingUser.State ?? "",
                 City = existingUser.City ?? "",
                 SubscriptionPackage = existingUser.SubscriptionPackage ?? "",
-                IsVerified = existingUser.IsVerified
+                IsVerified = existingUser.IsVerified,
             };
 
             var protector = _dataProtectionProvider
-     .CreateProtector($"{user.Id}:Default:ResetPassword")
-     .ToTimeLimitedDataProtector();
+                .CreateProtector($"{user.Id}:Default:ResetPassword")
+                .ToTimeLimitedDataProtector();
             string unprotectedToken;
             try
             {
@@ -738,7 +896,6 @@ namespace ProbuildBackend.Controllers
             _context.Entry(user).Property(u => u.Availability).IsModified = true;
             await _context.SaveChangesAsync();
 
-
             return Ok();
         }
 
@@ -755,49 +912,67 @@ namespace ProbuildBackend.Controllers
         [HttpGet("invitation/{token}")]
         public async Task<IActionResult> GetInvitation(string token)
         {
+            // STEP 1 — Validate that the token exists BEFORE decoding it
+            var teamMember = await _context.TeamMembers
+                .FirstOrDefaultAsync(tm =>
+                    tm.InvitationToken == token &&
+                    tm.TokenExpiration > DateTime.UtcNow);
+
+            if (teamMember == null)
+                return BadRequest("Invalid or expired invitation token.");
+
+            // STEP 2 — Decode AFTER confirming it belongs to a valid invitation
             var protector = _dataProtectionProvider.CreateProtector("TeamMemberInvitation");
-            string unprotectedToken;
+
             try
             {
-                unprotectedToken = protector.Unprotect(token);
+                var decodedBytes = WebEncoders.Base64UrlDecode(token);
+                var protectedValue = Encoding.UTF8.GetString(decodedBytes);
+                var email = protector.Unprotect(protectedValue);
+
+                // Optional: Safety check that decoded email = teamMember.Email
+                if (!string.Equals(email, teamMember.Email, StringComparison.OrdinalIgnoreCase))
+                    return BadRequest("Token email mismatch.");
             }
-            catch (Exception)
+            catch
             {
                 return BadRequest("Invalid invitation token.");
             }
 
-            var teamMember = await _context.TeamMembers
-                .FirstOrDefaultAsync(tm => tm.InvitationToken == token && tm.TokenExpiration > DateTime.UtcNow);
-
-            if (teamMember == null)
+            return Ok(new
             {
-                return BadRequest("Invalid or expired invitation token.");
-            }
-
-            return Ok(new { teamMember.FirstName, teamMember.LastName, teamMember.Email, teamMember.Role });
+                teamMember.FirstName,
+                teamMember.LastName,
+                teamMember.Email,
+                teamMember.Role
+            });
         }
+
+
 
         [HttpPost("register/team-member")]
         public async Task<IActionResult> RegisterInvited([FromBody] InvitedRegistrationDto dto)
         {
             var protector = _dataProtectionProvider.CreateProtector("TeamMemberInvitation");
-            string unprotectedToken;
+
+            string decoded, email;
             try
             {
-                unprotectedToken = protector.Unprotect(dto.Token);
+                var decodedBytes = WebEncoders.Base64UrlDecode(dto.Token);
+                decoded = Encoding.UTF8.GetString(decodedBytes);
+                email = protector.Unprotect(decoded);
             }
-            catch (Exception)
+            catch
             {
                 return BadRequest("Invalid invitation token.");
             }
 
-            var teamMember = await _context.TeamMembers
-                .FirstOrDefaultAsync(tm => tm.InvitationToken == dto.Token && tm.TokenExpiration > DateTime.UtcNow);
+            var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(tm =>
+                tm.InvitationToken == dto.Token && tm.TokenExpiration > DateTime.UtcNow
+            );
 
             if (teamMember == null)
-            {
                 return BadRequest("Invalid or expired invitation token.");
-            }
 
             var hasher = new PasswordHasher<TeamMember>();
             teamMember.PasswordHash = hasher.HashPassword(teamMember, dto.Password);
@@ -807,8 +982,8 @@ namespace ProbuildBackend.Controllers
             teamMember.TokenExpiration = null;
 
             // Update all other pending invitations for this email address
-            var otherInvitations = await _context.TeamMembers
-                .Where(tm => tm.Email == teamMember.Email && tm.Status == "Invited")
+            var otherInvitations = await _context
+                .TeamMembers.Where(tm => tm.Email == teamMember.Email && tm.Status == "Invited")
                 .ToListAsync();
 
             foreach (var invitation in otherInvitations)
@@ -825,47 +1000,51 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("login/member")]
-       public async Task<IActionResult> LoginMember([FromBody] LoginDto model)
-       {
-           var teamMembers = await _context.TeamMembers
-               .Where(tm => tm.Email == model.Email && tm.Status == "Registered")
-               .ToListAsync();
+        public async Task<IActionResult> LoginMember([FromBody] LoginDto model)
+        {
+            var teamMembers = await _context
+                .TeamMembers.Where(tm => tm.Email == model.Email && tm.Status == "Registered")
+                .ToListAsync();
 
-           if (!teamMembers.Any())
-           {
-               return Unauthorized();
-           }
+            if (!teamMembers.Any())
+            {
+                return Unauthorized();
+            }
 
-           var firstMember = teamMembers.First();
-           var hasher = new PasswordHasher<TeamMember>();
-           var result = hasher.VerifyHashedPassword(firstMember, firstMember.PasswordHash, model.Password);
+            var firstMember = teamMembers.First();
+            var hasher = new PasswordHasher<TeamMember>();
+            var result = hasher.VerifyHashedPassword(
+                firstMember,
+                firstMember.PasswordHash,
+                model.Password
+            );
 
-           if (result == PasswordVerificationResult.Failed)
-           {
-               return Unauthorized();
-           }
+            if (result == PasswordVerificationResult.Failed)
+            {
+                return Unauthorized();
+            }
 
-           var claims = new List<Claim>
-           {
-               new Claim(ClaimTypes.Email, firstMember.Email),
-               new Claim("isTeamMember", "true"),
-           };
+            var claims = new List<Claim>
+            {
+                new Claim(ClaimTypes.Email, firstMember.Email),
+                new Claim("isTeamMember", "true"),
+            };
 
-           foreach (var member in teamMembers)
-           {
-               claims.Add(new Claim("team", $"{member.Id}:{member.InviterId}"));
-           }
+            foreach (var member in teamMembers)
+            {
+                claims.Add(new Claim("team", $"{member.Id}:{member.InviterId}"));
+            }
 
-           var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
-           var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]));
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-           var token = new JwtSecurityToken(
-               issuer: _configuration["Jwt:Issuer"],
-               audience: _configuration["Jwt:Audience"],
-               claims: claims,
-               expires: DateTime.UtcNow.AddMinutes(30),
-               signingCredentials: creds
-           );
+            var token = new JwtSecurityToken(
+                issuer: _configuration["Jwt:Issuer"],
+                audience: _configuration["Jwt:Audience"],
+                claims: claims,
+                expires: DateTime.UtcNow.AddMinutes(30),
+                signingCredentials: creds
+            );
 
             var refreshToken = GenerateRefreshToken();
             var refreshTokenEntity = new RefreshToken
@@ -873,124 +1052,77 @@ namespace ProbuildBackend.Controllers
                 UserId = firstMember.Id, // Using TeamMember's Id
                 Token = refreshToken,
                 Expires = DateTime.UtcNow.AddDays(7),
-                Created = DateTime.UtcNow
+                Created = DateTime.UtcNow,
             };
 
             _context.RefreshTokens.Add(refreshTokenEntity);
             await _context.SaveChangesAsync();
 
-           return Ok(new
-           {
-               token = new JwtSecurityTokenHandler().WriteToken(token),
-               refreshToken = refreshToken
-           });
-       }
+            return Ok(
+                new
+                {
+                    token = new JwtSecurityTokenHandler().WriteToken(token),
+                    refreshToken = refreshToken,
+                }
+            );
+        }
 
-       [HttpPut("preferences")]
-       public async Task<IActionResult> UpdatePreferences([FromBody] UpdatePreferencesDto model)
-       {
-           var userId = User.FindFirstValue("UserId");
-           if (string.IsNullOrEmpty(userId))
-           {
-               return Unauthorized();
-           }
+        [HttpPut("preferences")]
+        public async Task<IActionResult> UpdatePreferences([FromBody] UpdatePreferencesDto model)
+        {
+            var userId = User.FindFirstValue("UserId");
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized();
+            }
 
-           var user = await _userManager.FindByIdAsync(userId);
-           if (user == null)
-           {
-               return NotFound("User not found.");
-           }
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null)
+            {
+                return NotFound("User not found.");
+            }
 
-           user.NotificationRadiusMiles = model.NotificationRadiusMiles;
-           user.JobPreferences = JsonConvert.SerializeObject(model.JobPreferences);
+            user.NotificationRadiusMiles = model.NotificationRadiusMiles;
+            user.JobPreferences = JsonConvert.SerializeObject(model.JobPreferences);
 
-           var result = await _userManager.UpdateAsync(user);
+            var result = await _userManager.UpdateAsync(user);
 
-           if (result.Succeeded)
-           {
-               return Ok(new { message = "Preferences updated successfully." });
-           }
+            if (result.Succeeded)
+            {
+                return Ok(new { message = "Preferences updated successfully." });
+            }
 
-           return BadRequest(result.Errors);
-       }
+            return BadRequest(result.Errors);
+        }
 
-       [HttpGet("address")]
-       public async Task<IActionResult> GetUserAddress()
-       {
-           var userId = User.FindFirstValue("UserId");
-           if (string.IsNullOrEmpty(userId))
-           {
-               return Unauthorized();
-           }
+        [HttpGet("address")]
+        public async Task<IActionResult> GetUserAddress()
+        {
+            var userId = User.FindFirstValue("UserId");
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized();
+            }
 
-           var userAddress = await _context.UserAddress
-               .Where(a => a.UserId == userId)
-               .FirstOrDefaultAsync();
+            var userAddress = await _context
+                .UserAddress.Where(a => a.UserId == userId)
+                .FirstOrDefaultAsync();
 
-           if (userAddress == null)
-           {
-               return NotFound("Address not found.");
-           }
+            if (userAddress == null)
+            {
+                return NotFound("Address not found.");
+            }
 
-           return Ok(userAddress);
-       }
-   
+            return Ok(userAddress);
+        }
+
         // GET api/users/byUserId/{UserId}
         [HttpGet("countries")]
         public async Task<ActionResult<IEnumerable<UserModel>>> GetCountries()
         {
             try
             {
-
-  
-            var countries = await _context.Countries
-                .ToListAsync();
-
-            if (countries == null || !countries.Any())
-            {
-                return NotFound("No countries found.");
-            }
-
-            return Ok(countries);
-            }
-            catch (Exception ex)
-            {
-
-                throw;
-            }
-        }
-        // GET api/users/byUserId/{UserId}
-        [HttpGet("states")]
-        public async Task<ActionResult<IEnumerable<UserModel>>> GetStates()
-        {
-            try
-            {
-
-
-                var state = await _context.States
-                    .ToListAsync();
-
-                if (state == null || !state.Any())
-                {
-                    return NotFound("No countries found.");
-                }
-
-                return Ok(state);
-            }
-            catch (Exception ex)
-            {
-
-                throw;
-            }
-        }
-
-        [HttpGet("countries-codes")]
-        public async Task<ActionResult<IEnumerable<CountryNumberCodesModel>>> GetCountryCodes()
-        {
-            try
-            {
-                var countries = await _context.CountryNumberCodes
-                    .ToListAsync();
+                var countries = await _context.Countries.ToListAsync();
 
                 if (countries == null || !countries.Any())
                 {
@@ -1001,10 +1133,53 @@ namespace ProbuildBackend.Controllers
             }
             catch (Exception ex)
             {
-
                 throw;
             }
         }
+
+        // GET api/users/byUserId/{UserId}
+        [HttpGet("states")]
+        public async Task<ActionResult<IEnumerable<UserModel>>> GetStates()
+        {
+            try
+            {
+                var state = await _context.States.ToListAsync();
+
+                if (state == null || !state.Any())
+                {
+                    return NotFound("No countries found.");
+                }
+
+                return Ok(state);
+            }
+            catch (Exception ex)
+            {
+                throw;
+            }
+        }
+
+        [HttpGet("countries-codes")]
+        public async Task<ActionResult<IEnumerable<CountryNumberCodesModel>>> GetCountryCodes()
+        {
+            try
+            {
+                var countries = await _context.CountryNumberCodes
+                    .OrderBy(c => c.CountryCode == "US" ? 0 : 1)  // US at the top
+                    .ThenBy(c => c.CountryCode)                   // Then alphabetically
+                    .ToListAsync();
+
+                if (countries == null || !countries.Any())
+                {
+                    return NotFound("No countries found.");
+                }
+
+                return Ok(countries);
+            }
+            catch
+            {
+                throw;
+            }
+
+        }
     }
 }
-

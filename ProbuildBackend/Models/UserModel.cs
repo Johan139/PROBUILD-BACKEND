@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Identity;
 
-namespace ProbuildBackend.Models {
+namespace ProbuildBackend.Models
+{
     public class UserModel : IdentityUser
     {
         public string? FirstName { get; set; }
@@ -26,6 +27,7 @@ namespace ProbuildBackend.Models {
         public string? State { get; set; }
         public string? City { get; set; }
         public string? SubscriptionPackage { get; set; }
+
         public string? CountryNumberCode { get; set; }
         public string? StripeCustomerId { get; set; }
         public bool IsVerified { get; set; }
@@ -42,6 +44,7 @@ namespace ProbuildBackend.Models {
         public int QuoteRefreshRound { get; set; } = 1;
         public Portfolio? Portfolio { get; set; }
         public ICollection<Invitation>? SentInvitations { get; set; }
+
         public ICollection<UserAddressModel>? UserAddresses { get; set; }
     }
 }
