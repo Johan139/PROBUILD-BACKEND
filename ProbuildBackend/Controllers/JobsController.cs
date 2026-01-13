@@ -161,8 +161,17 @@ namespace ProbuildBackend.Controllers
                     return NotFound();
                 }
 
-                var address = await _context.JobAddresses.FirstOrDefaultAsync(a => a.JobId == id);
-
+                AddressModel? address = null;
+                try
+                {
+                    address = await _context.JobAddresses.FirstOrDefaultAsync(a => a.JobId == id);
+                }
+                catch (Exception ex)
+                {
+                    // Log the exception to see what's wrong
+                    Console.WriteLine($"Error fetching address: {ex.Message}");
+                    address = null; // Set to null if query fails
+                }
                 var user = await _context.Users.FindAsync(job.UserId);
                 var ratings = await _context
                     .Ratings.Where(r => r.RatedUserId == job.UserId)
@@ -1275,7 +1284,9 @@ namespace ProbuildBackend.Controllers
                         }
                     );
                 }
-
+                dashboardProjects = dashboardProjects
+    .OrderByDescending(p => p.CreatedAt)
+    .ToList();
                 return Ok(dashboardProjects);
             }
             catch (Exception ex)
