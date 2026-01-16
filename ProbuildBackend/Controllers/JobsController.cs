@@ -900,6 +900,10 @@ namespace ProbuildBackend.Controllers
                             existing.Status = subtask.Status;
                             existing.GroupTitle = subtask.GroupTitle;
                             existing.Deleted = subtask.Deleted;
+                            existing.Description = subtask.Description;
+                            existing.Location = subtask.Location;
+                            existing.Notes = subtask.Notes;
+                            existing.DetailsJson = subtask.DetailsJson;
                         }
                     }
                     else

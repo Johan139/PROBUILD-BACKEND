@@ -360,7 +360,7 @@ if (string.IsNullOrEmpty(elasticEnabledString))
 var elasticEnabled = bool.Parse(elasticEnabledString);
 if (elasticEnabled)
 {
-    app.UseAllElasticApm(builder.Configuration);
+  app.UseAllElasticApm(builder.Configuration);
 }
 
 app.UseWebSockets();

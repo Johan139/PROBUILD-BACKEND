@@ -73,6 +73,7 @@ namespace ProbuildBackend.Controllers
                             FirstName = user?.FirstName ?? teamMember.FirstName,
                             LastName = user?.LastName ?? teamMember.LastName,
                             PhoneNumber = user?.PhoneNumber ?? teamMember.PhoneNumber,
+                            Email = user?.Email ?? teamMember.Email,
                             JobRole = assignmentData.JobRole,
                             UserType = user?.UserType ?? teamMember.Role,
                         },
@@ -181,6 +182,7 @@ namespace ProbuildBackend.Controllers
                                 FirstName = user.FirstName,
                                 LastName = user.LastName,
                                 PhoneNumber = user.PhoneNumber,
+                                Email = user.Email,
                                 JobRole = assignment.JobRole,
                                 UserType = user.UserType,
                             }
@@ -195,6 +197,7 @@ namespace ProbuildBackend.Controllers
                                 FirstName = teamMember.FirstName,
                                 LastName = teamMember.LastName,
                                 PhoneNumber = teamMember.PhoneNumber,
+                                Email = teamMember.Email,
                                 JobRole = assignment.JobRole,
                                 UserType = teamMember.Role,
                             }

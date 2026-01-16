@@ -87,25 +87,27 @@ namespace ProbuildBackend.Controllers
                     CompanyRegNo = model.CompanyRegNo,
                     VatNo = model.VatNo,
                     UserType = model.UserType,
-                    ConstructionType = model.ConstructionType != null
-    ? string.Join(",", model.ConstructionType)
-    : null,
+                    ConstructionType =
+                        model.ConstructionType != null
+                            ? string.Join(",", model.ConstructionType)
+                            : null,
                     NrEmployees = model.NrEmployees,
                     YearsOfOperation = model.YearsOfOperation,
                     CertificationStatus = model.CertificationStatus,
                     CertificationDocumentPath = model.CertificationDocumentPath,
                     Availability = model.Availability,
                     Trade = model.Trade,
-                    ProductsOffered = model.ProductsOffered != null
-    ? string.Join(",", model.ProductsOffered)
-    : null,
+                    ProductsOffered =
+                        model.ProductsOffered != null
+                            ? string.Join(",", model.ProductsOffered)
+                            : null,
                     SupplierType = model.SupplierType,
-                    JobPreferences = model.JobPreferences != null
-    ? string.Join(",", model.JobPreferences)
-    : null,
-                    DeliveryArea = model.DeliveryArea != null
-    ? string.Join(",", model.DeliveryArea)
-    : null,
+                    JobPreferences =
+                        model.JobPreferences != null
+                            ? string.Join(",", model.JobPreferences)
+                            : null,
+                    DeliveryArea =
+                        model.DeliveryArea != null ? string.Join(",", model.DeliveryArea) : null,
                     DeliveryTime = model.DeliveryTime,
                     //We need to move away from the below. It will cause confusion between the new address model and old.
                     //Country = countryId.Id.ToString();
@@ -453,7 +455,7 @@ namespace ProbuildBackend.Controllers
                     );
                 }
                 await _logLoginInformationService.LogLoginAsync(
-                    Guid.Parse(user == null ? Guid.Empty.ToString(): user.Id),
+                    Guid.Parse(user == null ? Guid.Empty.ToString() : user.Id),
                     HttpContext.Connection.RemoteIpAddress?.ToString(),
                     Request.Headers["User-Agent"].ToString(),
                     false,
@@ -464,7 +466,7 @@ namespace ProbuildBackend.Controllers
             catch (Exception ex)
             {
                 await _logLoginInformationService.LogLoginAsync(
-                        Guid.Parse(user == null ? Guid.Empty.ToString() : user.Id),
+                    Guid.Parse(user == null ? Guid.Empty.ToString() : user.Id),
                     HttpContext.Connection.RemoteIpAddress?.ToString(),
                     Request.Headers["User-Agent"].ToString(),
                     false,
@@ -892,10 +894,9 @@ namespace ProbuildBackend.Controllers
         public async Task<IActionResult> GetInvitation(string token)
         {
             // STEP 1 — Validate that the token exists BEFORE decoding it
-            var teamMember = await _context.TeamMembers
-                .FirstOrDefaultAsync(tm =>
-                    tm.InvitationToken == token &&
-                    tm.TokenExpiration > DateTime.UtcNow);
+            var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(tm =>
+                tm.InvitationToken == token && tm.TokenExpiration > DateTime.UtcNow
+            );
 
             if (teamMember == null)
                 return BadRequest("Invalid or expired invitation token.");
@@ -918,23 +919,24 @@ namespace ProbuildBackend.Controllers
                 return BadRequest("Invalid invitation token.");
             }
 
-            return Ok(new
-            {
-                teamMember.FirstName,
-                teamMember.LastName,
-                teamMember.Email,
-                teamMember.Role
-            });
+            return Ok(
+                new
+                {
+                    teamMember.FirstName,
+                    teamMember.LastName,
+                    teamMember.Email,
+                    teamMember.Role,
+                }
+            );
         }
-
-
 
         [HttpPost("register/team-member")]
         public async Task<IActionResult> RegisterInvited([FromBody] InvitedRegistrationDto dto)
         {
             var protector = _dataProtectionProvider.CreateProtector("TeamMemberInvitation");
 
-            string decoded, email;
+            string decoded,
+                email;
             try
             {
                 var decodedBytes = WebEncoders.Base64UrlDecode(dto.Token);
@@ -1142,9 +1144,9 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var countries = await _context.CountryNumberCodes
-                    .OrderBy(c => c.CountryCode == "US" ? 0 : 1)  // US at the top
-                    .ThenBy(c => c.CountryCode)                   // Then alphabetically
+                var countries = await _context
+                    .CountryNumberCodes.OrderBy(c => c.CountryCode == "US" ? 0 : 1) // US at the top
+                    .ThenBy(c => c.CountryCode) // Then alphabetically
                     .ToListAsync();
 
                 if (countries == null || !countries.Any())
@@ -1158,7 +1160,6 @@ namespace ProbuildBackend.Controllers
             {
                 throw;
             }
-
         }
     }
 }
