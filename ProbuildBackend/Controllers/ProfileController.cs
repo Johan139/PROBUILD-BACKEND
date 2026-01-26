@@ -153,6 +153,8 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
+
+
                 if (string.IsNullOrWhiteSpace(id))
                     return BadRequest("Id parameter cannot be null or empty.");
 
@@ -187,9 +189,7 @@ namespace ProbuildBackend.Controllers
                 var user = await _context.Users.FirstOrDefaultAsync(a => a.Id == model.Id);
                 if (user == null)
                     return NotFound("User not found.");
-
                 var oldSubscription = user.SubscriptionPackage;
-
                 // Update user fields
                 user.UserName = model.Email;
                 user.Email = model.Email;
@@ -201,8 +201,8 @@ namespace ProbuildBackend.Controllers
                 user.VatNo = model.VatNo;
                 user.UserType = model.UserType;
                 user.ConstructionType = model.ConstructionType != null
-    ? string.Join(",", model.ConstructionType)
-    : null;
+        ? string.Join(",", model.ConstructionType)
+        : null;
                 user.NrEmployees = model.NrEmployees;
                 user.YearsOfOperation = model.YearsOfOperation;
                 user.CertificationStatus = model.CertificationStatus;
@@ -210,20 +210,19 @@ namespace ProbuildBackend.Controllers
                 user.Availability = model.Availability;
                 user.Trade = model.Trade;
                 user.ProductsOffered = model.ProductsOffered != null
-    ? string.Join(",", model.ProductsOffered)
-    : null;
+        ? string.Join(",", model.ProductsOffered)
+        : null;
                 user.SupplierType = model.SupplierType;
                 user.JobPreferences = model.JobPreferences != null
-    ? string.Join(",", model.JobPreferences)
-    : null;
+        ? string.Join(",", model.JobPreferences)
+        : null;
                 user.DeliveryArea = model.DeliveryArea != null
-    ? string.Join(",", model.DeliveryArea)
-    : null;
+        ? string.Join(",", model.DeliveryArea)
+        : null;
                 user.DeliveryTime = model.DeliveryTime;
                 user.CountryNumberCode = model.CountryNumberCode;
-                //We need to move away from the below. It will cause confusion between the new address model and old.
-                //user.Country = countryId.Id.ToString();
-                //user.State = stateId.Id.ToString();
+                //user.Country = model.Country;
+                //user.State = model.State;
                 //user.City = model.City;
                 user.SubscriptionPackage = model.SubscriptionPackage;
                 await _context.SaveChangesAsync();
@@ -479,7 +478,6 @@ namespace ProbuildBackend.Controllers
                 return StatusCode(500, $"An error occurred while fetching the blob: {ex.Message}");
             }
         }
-
         [HttpPost("AddUserAddress")]
         public async Task<IActionResult> AddUserAddress(UserAddressDTO address)
         {
@@ -488,6 +486,7 @@ namespace ProbuildBackend.Controllers
 
             try
             {
+
                 var userAddressModel = new UserAddressModel
                 {
                     StreetNumber = address.StreetNumber,
@@ -505,26 +504,21 @@ namespace ProbuildBackend.Controllers
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow,
                     AddressType = address.AddressType,
+
                 };
                 _context.UserAddress.Add(userAddressModel);
                 await _context.SaveChangesAsync();
 
-                return Ok(address);
+                return Ok(userAddressModel);
             }
             catch (Exception ex)
             {
-                return StatusCode(
-                    500,
-                    new { error = "Failed to add user address", details = ex.Message }
-                );
+                return StatusCode(500, new { error = "Failed to add user address", details = ex.Message });
             }
         }
 
         [HttpPut("UpdateUserAddress/{id:int}")]
-        public async Task<IActionResult> UpdateUserAddress(
-            int id,
-            [FromBody] UserAddressModel updated
-        )
+        public async Task<IActionResult> UpdateUserAddress(int id, [FromBody] UserAddressModel updated)
         {
             if (updated == null)
                 return BadRequest("Invalid payload.");
@@ -554,10 +548,7 @@ namespace ProbuildBackend.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(
-                    500,
-                    new { error = "Failed to update address", details = ex.Message }
-                );
+                return StatusCode(500, new { error = "Failed to update address", details = ex.Message });
             }
         }
 
@@ -568,19 +559,16 @@ namespace ProbuildBackend.Controllers
             if (address == null)
                 return NotFound("Address not found.");
 
-            address.Deleted = true;
+            address.Deleted = true;   // soft delete
 
             try
             {
-                await _context.SaveChangesAsync();
+                await _context.SaveChangesAsync(); // EF tracks the entity → UPDATE
                 return NoContent();
             }
             catch (Exception ex)
             {
-                return StatusCode(
-                    500,
-                    new { error = "Failed to delete address", details = ex.Message }
-                );
+                return StatusCode(500, new { error = "Failed to delete address", details = ex.Message });
             }
         }
 
@@ -620,6 +608,9 @@ namespace ProbuildBackend.Controllers
 
             return Ok(new { message = "Document soft deleted" });
         }
-
     }
 }
+
+
+    
+

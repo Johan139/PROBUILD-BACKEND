@@ -4,6 +4,7 @@ namespace ProbuildBackend.Models.DTO
 {
     public class UserAddressDTO
     {
+
         [JsonPropertyName("streetNumber")]
         public string StreetNumber { get; set; }
 

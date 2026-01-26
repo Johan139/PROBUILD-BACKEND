@@ -1,15 +1,8 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
-using Google.Apis.Auth;
-using Hangfire;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.WebUtilities;
+using Hangfire;
+using Microsoft.AspNetCore.DataProtection;
+using Google.Apis.Auth;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Newtonsoft.Json;
@@ -17,7 +10,13 @@ using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Services;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.AspNetCore.WebUtilities;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
+
 
 namespace ProbuildBackend.Controllers
 {
@@ -157,22 +156,47 @@ namespace ProbuildBackend.Controllers
                 //    AddressType = model.AddressType,
                 //};
                 //_context.UserAddress.Add(address);
-                // Only save agreement if user was created successfully
-                var userAgree = new UserTermsAgreementModel
-                {
-                    UserId = user.Id,
-                    DateAgreed = DateTime.UtcNow,
-                };
 
-                _context.UserTermsAgreement.Add(userAgree);
+                // Add address (can be done before save)
+                //var address = new UserAddressModel
+                //{
+                //    StreetNumber = model.StreetNumber,
+                //    StreetName = model.StreetName,
+                //    City = model.City,
+                //    State = model.State,
+                //    PostalCode = model.PostalCode,
+                //    Country = model.Country,
+                //    Latitude = model.Latitude,
+                //    Longitude = model.Longitude,
+                //    FormattedAddress = model.FormattedAddress,
+                //    GooglePlaceId = model.GooglePlaceId,
+                //    CreatedAt = DateTime.UtcNow,
+                //    UpdatedAt = DateTime.UtcNow,
+                //    UserId = user.Id,
+                //    CountryCode = model.CountryCode,
+                //    AddressType = model.AddressType,
+                //};
+                //_context.UserAddress.Add(address);
+                // Only save agreement if user was created successfully
+                //THEY WANTED TO REMOVE THIS. SO ITS NOW REMOVED.
+                //var userAgree = new UserTermsAgreementModel
+                //{
+                //    UserId = user.Id,
+                //    DateAgreed = DateTime.UtcNow,
+                //};
+
+                //_context.UserTermsAgreement.Add(userAgree);
                 await _context.SaveChangesAsync();
 
                 var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
                 var frontendUrl =
                     Environment.GetEnvironmentVariable("FRONTEND_URL")
                     ?? _configuration["FrontEnd:FRONTEND_URL"];
+                var backendUrl = Environment.GetEnvironmentVariable("Backend_URL")
+                    ?? _configuration["FrontEnd:Backend"];
                 var callbackUrl =
-                    $"{frontendUrl}/confirm-email/?userId={user.Id}&code={Uri.EscapeDataString(code)}";
+                $"{backendUrl}/api/Account/confirmemail" +
+                $"?userId={user.Id}&code={Uri.EscapeDataString(code)}";
 
                 var EmailConfirmation = await _emailTemplate.GetTemplateAsync(
                     "ConfirmAccountEmail"
@@ -234,8 +258,11 @@ namespace ProbuildBackend.Controllers
             var frontendUrl =
                 Environment.GetEnvironmentVariable("FRONTEND_URL")
                 ?? _configuration["FrontEnd:FRONTEND_URL"];
+            var backendUrl = Environment.GetEnvironmentVariable("Backend_URL")
+                 ?? _configuration["FrontEnd:Backend"];
             var callbackUrl =
-                $"{frontendUrl}/confirm-email/?userId={user.Id}&code={Uri.EscapeDataString(code)}";
+            $"{backendUrl}/api/Account/confirmemail" +
+            $"?userId={user.Id}&code={Uri.EscapeDataString(code)}";
 
             var EmailConfirmation = await _emailTemplate.GetTemplateAsync("ConfirmAccountEmail");
             EmailConfirmation.Body = EmailConfirmation
@@ -370,6 +397,9 @@ namespace ProbuildBackend.Controllers
         [HttpGet("confirmemail")]
         public async Task<IActionResult> ConfirmEmail(string userId, string code)
         {
+            var frontendUrl =
+    Environment.GetEnvironmentVariable("FRONTEND_URL")
+    ?? _configuration["FrontEnd:FRONTEND_URL"];
             if (userId == null || code == null)
             {
                 return BadRequest("Invalid email confirmation request.");
@@ -384,11 +414,11 @@ namespace ProbuildBackend.Controllers
             var result = await _userManager.ConfirmEmailAsync(user, code);
             if (result.Succeeded)
             {
-                return Ok(new { message = "Email confirmed successfully." });
+                return Redirect($"{frontendUrl}/login?confirmed=true");
             }
             else
             {
-                return BadRequest(result.Errors);
+                return Redirect($"{frontendUrl}/login?confirmed=false");
             }
         }
 
@@ -1161,5 +1191,21 @@ namespace ProbuildBackend.Controllers
                 throw;
             }
         }
+
+        [HttpGet("email-exists")]
+        public async Task<IActionResult> EmailExists([FromQuery] string email)
+        {
+            if (string.IsNullOrWhiteSpace(email))
+                return Ok(false);
+
+            var normalized = email.Trim().ToUpperInvariant();
+
+            var exists = await _context.Users
+                .AsNoTracking()
+                .AnyAsync(u => u.NormalizedEmail == normalized);
+
+            return Ok(exists);
+        }
+
     }
 }

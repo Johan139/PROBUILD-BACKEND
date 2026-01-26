@@ -28,9 +28,13 @@ namespace ProbuildBackend.Models
         public string Status { get; set; }
         public DateTime SubmittedAt { get; set; }
         public string? DocumentUrl { get; set; }
+
         public string? QuoteId { get; set; }
 
         [ForeignKey("QuoteId")]
+
+        // Prevent circular loops
+        [JsonIgnore]
         public Quote? Quote { get; set; }
     }
 }

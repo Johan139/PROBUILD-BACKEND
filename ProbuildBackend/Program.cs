@@ -31,22 +31,20 @@ builder.Logging.AddDebug();
 // Configure CORS to allow Angular app with credentials
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy(
-        "AllowAngularApp",
-        policy =>
-        {
-            policy
-                .WithOrigins(
-                    "http://localhost:4200",
-                    "https://probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io",
-                    "https://app.probuildai.com",
-                    "https://qa-probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io"
-                )
-                .AllowAnyHeader()
-                .WithMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
-                .AllowCredentials();
-        }
-    );
+    options.AddPolicy("AllowAngularApp", policy =>
+    {
+        policy
+            .SetIsOriginAllowed(origin =>
+                origin == "http://localhost:4200" ||
+                origin == "https://app.probuildai.com" ||
+                origin == "https://www.app.probuildai.com" ||
+                origin == "https://probuildai.com" ||
+                origin.EndsWith(".azurecontainerapps.io")
+            )
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+    });
 });
 
 // Configure the token provider for password reset
@@ -363,9 +361,10 @@ if (elasticEnabled)
   app.UseAllElasticApm(builder.Configuration);
 }
 
-app.UseWebSockets();
+
 app.UseRouting();
 app.UseCors("AllowAngularApp"); // Apply the named CORS policy after health endpoint
+app.UseWebSockets();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
@@ -469,6 +468,26 @@ try
             },
         }
     );
+
+    app.UseHangfireDashboard("/hangfire", new DashboardOptions
+    {
+        Authorization = new[] { new BasicAuthAuthorizationFilter(
+        new BasicAuthAuthorizationFilterOptions
+        {
+            RequireSsl = false, // Azure Container Apps uses TLS termination anyway
+            SslRedirect = false,
+            LoginCaseSensitive = false,
+            Users = new []
+            {
+                new BasicAuthAuthorizationUser
+                {
+                    Login = "admin",
+                    PasswordClear = "3oZ%7E8(T2d6"
+                }
+            }
+        })
+    }
+    });
 
     app.Logger.LogInformation("Application startup completed successfully. Starting to run...");
     var testType = typeof(ProbuildBackend.Services.EmailAutomationManager);
