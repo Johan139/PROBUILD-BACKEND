@@ -729,6 +729,7 @@ namespace ProbuildBackend.Services
                 "prompt-26-value-engineering",
                 "prompt-27-environmental-lifecycle",
                 "prompt-28-project-closeout",
+                "prompt-29-final-client-quotation-package",
                 "executive-summary-prompt",
             };
 
@@ -1100,83 +1101,89 @@ namespace ProbuildBackend.Services
 
         public async Task<string> AnalyzeBidsAsync(List<BidModel> bids, string comparisonType)
         {
-            _keepAliveService.StartPinging();
-            try
-            {
-                string promptKey = comparisonType.Equals(
-                    "Vendor",
-                    StringComparison.OrdinalIgnoreCase
-                )
-                    ? "vendor-comparison-prompt.txt"
-                    : "subcontractor-comparison-prompt.txt";
+            //_keepAliveService.StartPinging();
+            //try
+            //{
+            //    string promptKey = comparisonType.Equals(
+            //        "Vendor",
+            //        StringComparison.OrdinalIgnoreCase
+            //    )
+            //        ? "vendor-comparison-prompt.txt"
+            //        : "subcontractor-comparison-prompt.txt";
 
-                var prompt = await _promptManager.GetPromptAsync("ComparisonPrompts/", promptKey);
+            //    var prompt = await _promptManager.GetPromptAsync("ComparisonPrompts/", promptKey);
 
-                var bidsDetails = new List<object>();
-                foreach (var bid in bids)
-                {
-                    string quoteText = bid.Task ?? "No detailed quote text provided.";
-                    if (!string.IsNullOrEmpty(bid.QuoteId))
-                    {
-                        var quote = await _context
-                            .Quotes.Include(q => q.Rows)
-                            .FirstOrDefaultAsync(q => q.Id == bid.QuoteId);
-                        if (quote != null)
-                        {
-                            quoteText = JsonSerializer.Serialize(quote);
-                        }
-                    }
-                    else if (!string.IsNullOrEmpty(bid.DocumentUrl))
-                    {
-                        try
-                        {
-                            var (contentStream, _, _) = await _azureBlobService.GetBlobContentAsync(
-                                bid.DocumentUrl
-                            );
-                            quoteText = await _pdfTextExtractionService.ExtractTextAsync(
-                                contentStream
-                            );
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(
-                                ex,
-                                "Failed to extract text from PDF for bid {BidId}",
-                                bid.Id
-                            );
-                            quoteText = "Error extracting text from PDF.";
-                        }
-                    }
+            //    var bidsDetails = new List<object>();
+            //    foreach (var bid in bids)
+            //    {
+            //        string quoteText = bid.Task ?? "No detailed quote text provided.";
+            //        if (!string.IsNullOrEmpty(bid.QuoteId))
+            //        {
+            //            var quote = await _context.Quotes
+            //         .Include(q => q.Versions)
+            //             .ThenInclude(v => v.Rows)
+            //         .Include(q => q.Versions)
+            //             .ThenInclude(v => v.ExtraCosts)
+            //         .FirstOrDefaultAsync(q => q.Id == bid.QuoteId);
 
-                    bidsDetails.Add(
-                        new
-                        {
-                            bid.Id,
-                            bid.Amount,
-                            bid.User?.ProbuildRating,
-                            bid.User?.GoogleRating,
-                            bid.User?.JobPreferences,
-                            QuoteDetails = quoteText,
-                        }
-                    );
-                }
 
-                var bidsJson = JsonSerializer.Serialize(bidsDetails);
-                var fullPrompt = $"{prompt}\n\nBids:\n{bidsJson}";
+            //            if (quote != null)
+            //            {
+            //                quoteText = JsonSerializer.Serialize(quote);
+            //            }
+            //        }
+            //        else if (!string.IsNullOrEmpty(bid.DocumentUrl))
+            //        {
+            //            try
+            //            {
+            //                var (contentStream, _, _) = await _azureBlobService.GetBlobContentAsync(
+            //                    bid.DocumentUrl
+            //                );
+            //                quoteText = await _pdfTextExtractionService.ExtractTextAsync(
+            //                    contentStream
+            //                );
+            //            }
+            //            catch (Exception ex)
+            //            {
+            //                _logger.LogError(
+            //                    ex,
+            //                    "Failed to extract text from PDF for bid {BidId}",
+            //                    bid.Id
+            //                );
+            //                quoteText = "Error extracting text from PDF.";
+            //            }
+            //        }
 
-                var (analysisResult, _) = await _aiService.StartMultimodalConversationAsync(
-                    "system-user",
-                    null,
-                    fullPrompt,
-                    $"Analyze the provided {comparisonType} bids and return the top 3 candidates."
-                );
+            //        bidsDetails.Add(
+            //            new
+            //            {
+            //                bid.Id,
+            //                bid.Amount,
+            //                bid.User?.ProbuildRating,
+            //                bid.User?.GoogleRating,
+            //                bid.User?.JobPreferences,
+            //                QuoteDetails = quoteText,
+            //            }
+            //        );
+            //    }
 
-                return analysisResult;
-            }
-            finally
-            {
-                _keepAliveService.StopPinging();
-            }
+            //    var bidsJson = JsonSerializer.Serialize(bidsDetails);
+            //    var fullPrompt = $"{prompt}\n\nBids:\n{bidsJson}";
+
+            //    var (analysisResult, _) = await _aiService.StartMultimodalConversationAsync(
+            //        "system-user",
+            //        null,
+            //        fullPrompt,
+            //        $"Analyze the provided {comparisonType} bids and return the top 3 candidates."
+            //    );
+
+            //    return analysisResult;
+            //}
+            //finally
+            //{
+            //    _keepAliveService.StopPinging();
+            //}
+            return null;
         }
 
         public async Task<string> GenerateFeedbackForUnsuccessfulBidderAsync(
@@ -1184,82 +1191,83 @@ namespace ProbuildBackend.Services
             BidModel winningBid
         )
         {
-            var user = bid.User;
-            if (user != null)
-            {
-                bool isFreeTier =
-                    user.SubscriptionPackage == "Basic (Free) ($0.00)"
-                    || string.IsNullOrEmpty(user.SubscriptionPackage)
-                    || user.SubscriptionPackage.ToUpper() == "BASIC";
+            //var user = bid.User;
+            //if (user != null)
+            //{
+            //    bool isFreeTier =
+            //        user.SubscriptionPackage == "Basic (Free) ($0.00)"
+            //        || string.IsNullOrEmpty(user.SubscriptionPackage)
+            //        || user.SubscriptionPackage.ToUpper() == "BASIC";
 
-                if (isFreeTier)
-                {
-                    return "Feedback reports are only available for users on a paid subscription tier.";
-                }
-            }
+            //    if (isFreeTier)
+            //    {
+            //        return "Feedback reports are only available for users on a paid subscription tier.";
+            //    }
+            //}
 
-            var prompt = await _promptManager.GetPromptAsync(
-                "ComparisonPrompts/",
-                "unsuccessful-bid-prompt.txt"
-            );
+            //var prompt = await _promptManager.GetPromptAsync(
+            //    "ComparisonPrompts/",
+            //    "unsuccessful-bid-prompt.txt"
+            //);
 
-            var unsuccessfulQuote = await _context.Quotes.FirstOrDefaultAsync(q =>
-                q.Id == bid.QuoteId
-            );
-            var winningQuote = await _context.Quotes.FirstOrDefaultAsync(q =>
-                q.Id == winningBid.QuoteId
-            );
+            //var unsuccessfulQuote = await _context.Quotes.FirstOrDefaultAsync(q =>
+            //    q.Id == bid.QuoteId
+            //);
+            //var winningQuote = await _context.Quotes.FirstOrDefaultAsync(q =>
+            //    q.Id == winningBid.QuoteId
+            //);
 
-            var unsuccessfulBidAnalysis = new
-            {
-                bid.Id,
-                bid.Amount,
-                QuoteDetails = unsuccessfulQuote,
-            };
+            //var unsuccessfulBidAnalysis = new
+            //{
+            //    bid.Id,
+            //    bid.Amount,
+            //    QuoteDetails = unsuccessfulQuote,
+            //};
 
-            var winningBidBenchmark = new { winningBid.Amount, QuoteDetails = winningQuote };
+            //var winningBidBenchmark = new { winningBid.Amount, QuoteDetails = winningQuote };
 
-            var promptInput = new
-            {
-                ProjectName = bid.Job?.ProjectName,
-                WorkPackage = bid.Job?.JobType,
-                OurCompanyName = "Probuild", // Or fetch dynamically
-                UnsuccessfulSubcontractorName = user?.UserName,
-                AnalysisOfUnsuccessfulQuotation = JsonSerializer.Serialize(unsuccessfulBidAnalysis),
-                WinningBidBenchmark = JsonSerializer.Serialize(winningBidBenchmark),
-            };
+            //var promptInput = new
+            //{
+            //    ProjectName = bid.Job?.ProjectName,
+            //    WorkPackage = bid.Job?.JobType,
+            //    OurCompanyName = "Probuild", // Or fetch dynamically
+            //    UnsuccessfulSubcontractorName = user?.UserName,
+            //    AnalysisOfUnsuccessfulQuotation = JsonSerializer.Serialize(unsuccessfulBidAnalysis),
+            //    WinningBidBenchmark = JsonSerializer.Serialize(winningBidBenchmark),
+            //};
 
-            var fullPrompt = prompt
-                .Replace(
-                    "[e.g., The Falcon Heights Residential Development]",
-                    promptInput.ProjectName
-                )
-                .Replace(
-                    "[e.g., Structural Steel Fabrication and Erection]",
-                    promptInput.WorkPackage
-                )
-                .Replace("[Your Company Name]", promptInput.OurCompanyName)
-                .Replace(
-                    "[Enter the name of the company you are writing to]",
-                    promptInput.UnsuccessfulSubcontractorName
-                )
-                .Replace(
-                    "[Paste the detailed analysis of the subcontractor's quote here, including price, schedule, inclusions, exclusions, compliance notes.]",
-                    promptInput.AnalysisOfUnsuccessfulQuotation
-                )
-                .Replace(
-                    "[Summarize the key advantages of the winning bid. For example: \"Final price was R 1,150,000 (8% lower). Proposed schedule was 16 weeks (2 weeks shorter). Fully compliant with specifications. Included a detailed plan for managing material price volatility.\"]",
-                    promptInput.WinningBidBenchmark
-                );
+            //var fullPrompt = prompt
+            //    .Replace(
+            //        "[e.g., The Falcon Heights Residential Development]",
+            //        promptInput.ProjectName
+            //    )
+            //    .Replace(
+            //        "[e.g., Structural Steel Fabrication and Erection]",
+            //        promptInput.WorkPackage
+            //    )
+            //    .Replace("[Your Company Name]", promptInput.OurCompanyName)
+            //    .Replace(
+            //        "[Enter the name of the company you are writing to]",
+            //        promptInput.UnsuccessfulSubcontractorName
+            //    )
+            //    .Replace(
+            //        "[Paste the detailed analysis of the subcontractor's quote here, including price, schedule, inclusions, exclusions, compliance notes.]",
+            //        promptInput.AnalysisOfUnsuccessfulQuotation
+            //    )
+            //    .Replace(
+            //        "[Summarize the key advantages of the winning bid. For example: \"Final price was R 1,150,000 (8% lower). Proposed schedule was 16 weeks (2 weeks shorter). Fully compliant with specifications. Included a detailed plan for managing material price volatility.\"]",
+            //        promptInput.WinningBidBenchmark
+            //    );
 
-            var (analysisResult, _) = await _aiService.StartMultimodalConversationAsync(
-                "system-user",
-                null,
-                fullPrompt,
-                "Generate a feedback report for the provided bid."
-            );
+            //var (analysisResult, _) = await _aiService.StartMultimodalConversationAsync(
+            //    "system-user",
+            //    null,
+            //    fullPrompt,
+            //    "Generate a feedback report for the provided bid."
+            //);
 
-            return analysisResult;
+            //return analysisResult;
+            return null;
         }
 
         private string ExtractBlueprintJson(string aiResponse)

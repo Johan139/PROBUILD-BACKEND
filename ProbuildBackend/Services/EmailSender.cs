@@ -1,6 +1,8 @@
 ﻿using ProbuildBackend.Models;
 using SendGrid;
 using SendGrid.Helpers.Mail;
+using System.Net;
+using System.Net.Mail;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 
 namespace ProbuildBackend.Services
@@ -12,6 +14,7 @@ namespace ProbuildBackend.Services
         public EmailSender(IConfiguration configuration)
         {
             _configuration = configuration;
+
         }
 
         public async Task SendEmailAsync(EmailTemplate emailTemplate, string email)
@@ -49,6 +52,43 @@ namespace ProbuildBackend.Services
                 throw new Exception(
                     $"Failed to send email. Status code: {response.StatusCode}. Details: {responseBody}"
                 );
+            }
+        }
+        public async Task SendEmailWithAttachmentAsync(
+            EmailTemplate template,
+            string toEmail,
+            byte[] attachmentBytes,
+            string attachmentFileName,
+            string attachmentContentType = "application/pdf")
+        {
+            var apiKey =
+    Environment.GetEnvironmentVariable("SENDGRID_KEY")
+    ?? _configuration["SendGrid:ApiKey"];
+            var sendgridEmail = template.FromEmail;
+            var client = new SendGridClient(apiKey);
+            // Example using SendGrid:
+            var msg = new SendGridMessage();
+            msg.SetFrom(new EmailAddress(sendgridEmail, "ProBuild"));
+            msg.AddTo(new EmailAddress(toEmail));
+            msg.SetSubject(template.Subject);
+            msg.AddContent(MimeType.Html, template.Body);
+
+            // Add the attachment
+            var attachment = new SendGrid.Helpers.Mail.Attachment
+            {
+                Content = Convert.ToBase64String(attachmentBytes),
+                Filename = attachmentFileName,
+                Type = attachmentContentType,
+                Disposition = "attachment"
+            };
+            msg.AddAttachment(attachment);
+
+            var response = await client.SendEmailAsync(msg);
+
+            if (response.StatusCode != System.Net.HttpStatusCode.OK &&
+                response.StatusCode != System.Net.HttpStatusCode.Accepted)
+            {
+                throw new Exception($"Failed to send email: {response.StatusCode}");
             }
         }
     }

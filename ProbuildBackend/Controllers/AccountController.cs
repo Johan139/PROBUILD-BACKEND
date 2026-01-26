@@ -1,8 +1,10 @@
-using Microsoft.AspNetCore.Mvc;
+using Elastic.Apm.Api;
+using Google.Apis.Auth;
 using Hangfire;
 using Microsoft.AspNetCore.DataProtection;
-using Google.Apis.Auth;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Newtonsoft.Json;
@@ -14,7 +16,6 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.AspNetCore.WebUtilities;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 
 
@@ -463,6 +464,7 @@ namespace ProbuildBackend.Controllers
                             firstName = user.FirstName,
                             lastName = user.LastName,
                             userType = user.UserType,
+                            email = user.Email,
                         }
                     );
                 }
@@ -551,6 +553,7 @@ namespace ProbuildBackend.Controllers
                             firstName = existingUser.FirstName,
                             lastName = existingUser.LastName,
                             userType = existingUser.UserType,
+                            email = existingUser.Email,
                             requiresRegistration = false,
                         }
                     );

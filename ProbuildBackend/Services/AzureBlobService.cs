@@ -1,4 +1,4 @@
-using System.IO.Compression;
+﻿using System.IO.Compression;
 using Azure.Storage;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
@@ -464,24 +464,31 @@ namespace ProbuildBackend.Services
 
         public async Task<string> UploadImageAsync(IFormFile file, string folder)
         {
-            string fileName = $"{Guid.NewGuid()}_{file.FileName}";
+            string sanitizedFileName = file.FileName
+                .Replace(" ", "_")
+                .Replace("%", "")
+                .Replace("#", "")
+                .Replace("&", "");
+
+            string fileName = $"{Guid.NewGuid()}_{sanitizedFileName}";
             string blobName = $"{folder}/{fileName}";
+
             BlobClient blobClient = _containerClient.GetBlobClient(blobName);
 
-            var blobHttpHeaders = new BlobHttpHeaders { ContentType = file.ContentType };
+            await blobClient.UploadAsync(
+                file.OpenReadStream(),
+                new BlobUploadOptions
+                {
+                    HttpHeaders = new BlobHttpHeaders
+                    {
+                        ContentType = file.ContentType
+                    }
+                }
+            );
 
-            var metadata = new Dictionary<string, string> { { "originalFileName", file.FileName } };
-
-            var uploadOptions = new BlobUploadOptions
-            {
-                HttpHeaders = blobHttpHeaders,
-                Metadata = metadata,
-            };
-
-            using var stream = file.OpenReadStream();
-            await blobClient.UploadAsync(stream, uploadOptions);
-
+            // ✅ THIS IS THE ONLY SAFE URL
             return blobClient.Uri.ToString();
         }
+
     }
 }
