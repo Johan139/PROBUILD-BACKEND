@@ -197,7 +197,23 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .WithOne()
             .HasForeignKey(p => p.JobId)
             .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<Quote>()
+     .HasMany(q => q.Versions)
+     .WithOne(v => v.Quote)
+     .HasForeignKey(v => v.QuoteId)
+     .OnDelete(DeleteBehavior.Cascade);
 
+        modelBuilder.Entity<QuoteVersionModel>()
+            .HasMany(v => v.Rows)
+            .WithOne(r => r.QuoteVersion)
+            .HasForeignKey(r => r.QuoteVersionId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<QuoteVersionModel>()
+            .HasMany(v => v.ExtraCosts)
+            .WithOne(ec => ec.QuoteVersion)
+            .HasForeignKey(ec => ec.QuoteVersionId)
+            .OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<JobModel>().HasOne(j => j.User).WithMany().HasForeignKey(j => j.UserId);
 
         modelBuilder.Entity<AddressModel>(entity =>

@@ -14,6 +14,7 @@
 
         public string ProjectName { get; set; }
         public string ProjectAddress { get; set; }
+        public string? PaymentTerms { get; set; }
         public DateTime? Date { get; set; }
         public DateTime? DueDate { get; set; }
         public Guid? LogoId { get; set; }

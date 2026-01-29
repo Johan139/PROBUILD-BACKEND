@@ -19,7 +19,7 @@
         public string ProjectAddress { get; set; }
         public string From { get; set; }
         public string To { get; set; }
-
+        public string? PaymentTerms { get; set; }
         public DateTime? Date { get; set; }
         public DateTime? DueDate { get; set; }
 

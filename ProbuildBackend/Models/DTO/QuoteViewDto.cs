@@ -6,7 +6,8 @@
         public string Number { get; set; }
         public string Status { get; set; }
         public string DocumentType { get; set; }
-
+        public string CreatedID { get; set; }
+        public string? SentTo { get; set; }
         public int CurrentVersion { get; set; }
         public string? LogoUrl { get; set; }
         public QuoteVersionDto Version { get; set; }

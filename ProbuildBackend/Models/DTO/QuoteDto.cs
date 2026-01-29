@@ -16,7 +16,7 @@
         public string ClientAddress { get; set; }
         public string ClientPhone { get; set; }
         public string ClientEmail { get; set; }
-
+        public string? PaymentTerms { get; set; }
         public string ProjectName { get; set; }
         public string ProjectAddress { get; set; }
         public decimal Total { get; set; }
