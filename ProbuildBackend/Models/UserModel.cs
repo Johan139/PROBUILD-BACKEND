@@ -45,6 +45,7 @@ namespace ProbuildBackend.Models
         public Portfolio? Portfolio { get; set; }
         public ICollection<Invitation>? SentInvitations { get; set; }
 
+        public bool? isPlaceholder { get; set; }
         public ICollection<UserAddressModel>? UserAddresses { get; set; }
     }
 }

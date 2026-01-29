@@ -41,6 +41,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<Quote> Quotes { get; set; }
     public DbSet<QuoteRow> QuoteRows { get; set; }
     public DbSet<QuoteExtraCost> QuoteExtraCosts { get; set; }
+    public DbSet<QuoteVersionModel> QuoteVersions { get; set; }
     public DbSet<RefreshToken> RefreshTokens { get; set; }
     public DbSet<TeamMember> TeamMembers { get; set; }
     public DbSet<Permission> Permissions { get; set; }
@@ -59,7 +60,9 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<Portfolio> Portfolios { get; set; }
     public DbSet<BidAnalysis> BidAnalyses { get; set; }
     public DbSet<Invitation> Invitations { get; set; }
+    public DbSet<CompaniesModel> Companies { get; set; }
 
+    public DbSet<CompanyAddressModel> CompanyAddresses { get; set; }
     public DbSet<AddressTypeModel> AddressType { get; set; }
     public DbSet<CountriesModel> Countries { get; set; }
     public DbSet<StatesModel> States { get; set; }
@@ -194,7 +197,23 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .WithOne()
             .HasForeignKey(p => p.JobId)
             .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<Quote>()
+     .HasMany(q => q.Versions)
+     .WithOne(v => v.Quote)
+     .HasForeignKey(v => v.QuoteId)
+     .OnDelete(DeleteBehavior.Cascade);
 
+        modelBuilder.Entity<QuoteVersionModel>()
+            .HasMany(v => v.Rows)
+            .WithOne(r => r.QuoteVersion)
+            .HasForeignKey(r => r.QuoteVersionId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<QuoteVersionModel>()
+            .HasMany(v => v.ExtraCosts)
+            .WithOne(ec => ec.QuoteVersion)
+            .HasForeignKey(ec => ec.QuoteVersionId)
+            .OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<JobModel>().HasOne(j => j.User).WithMany().HasForeignKey(j => j.UserId);
 
         modelBuilder.Entity<AddressModel>(entity =>
@@ -266,7 +285,41 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
                     "CASE WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN geography::Point(latitude, longitude, 4326) ELSE NULL END"
                 );
         });
+        modelBuilder.Entity<CompanyAddressModel>(entity =>
+        {
+            entity.ToTable("CompanyAddress");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Latitude).HasColumnType("decimal(10,8)").IsRequired(false);
+            entity.Property(e => e.Longitude).HasColumnType("decimal(11,8)").IsRequired(false);
+            // Explicitly map properties to snake_case column names
+            entity.Property(e => e.StreetNumber).HasColumnName("street_number");
+            entity.Property(e => e.StreetName).HasColumnName("street_name");
+            entity.Property(e => e.City).HasColumnName("city");
+            entity.Property(e => e.State).HasColumnName("state");
+            entity.Property(e => e.PostalCode).HasColumnName("postal_code");
+            entity.Property(e => e.Country).HasColumnName("country");
 
+            entity.Property(e => e.Latitude).HasColumnName("latitude");
+            entity.Property(e => e.Longitude).HasColumnName("longitude");
+            entity
+                .Property(e => e.FormattedAddress)
+                .HasColumnName("formatted_address")
+                .HasMaxLength(255)
+                .IsRequired(false);
+            entity
+                .Property(e => e.GooglePlaceId)
+                .HasColumnName("google_place_id")
+                .HasMaxLength(100)
+                .IsRequired(false);
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+            entity.Property(e => e.CompanyId).HasColumnName("CompanyId").IsRequired();
+            entity
+                .Property(e => e.Location)
+                .HasComputedColumnSql(
+                    "CASE WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN geography::Point(latitude, longitude, 4326) ELSE NULL END"
+                );
+        });
         modelBuilder.Entity<JobAssignmentModel>().HasKey(ja => new { ja.UserId, ja.JobId });
 
         modelBuilder
@@ -280,10 +333,9 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
 
         modelBuilder
             .Entity<Quote>()
-            .HasMany(q => q.ExtraCosts)
-            .WithOne(ec => ec.Quote)
-            .HasForeignKey(ec => ec.QuoteId)
-            .OnDelete(DeleteBehavior.Cascade);
+            .HasMany(q => q.Versions)
+            .WithOne(v => v.Quote)
+            .HasForeignKey(v => v.QuoteId);
 
         modelBuilder
             .Entity<Quote>()

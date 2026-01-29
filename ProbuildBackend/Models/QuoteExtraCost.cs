@@ -4,12 +4,16 @@ namespace ProbuildBackend.Models
 {
     public class QuoteExtraCost
     {
-        [Key]
-        public int Id { get; set; }
-        public string QuoteId { get; set; } = string.Empty;
-        public string Type { get; set; } = string.Empty;
+        public Guid Id { get; set; }
+
+        public Guid QuoteVersionId { get; set; }   // <-- REQUIRED
+        public QuoteVersionModel QuoteVersion { get; set; }
+
+        public string Type { get; set; }
+
         public decimal Value { get; set; }
-        public string Title { get; set; } = string.Empty;
-        public Quote Quote { get; set; } = null!;
+
+        public string Title { get; set; }
     }
+
 }
