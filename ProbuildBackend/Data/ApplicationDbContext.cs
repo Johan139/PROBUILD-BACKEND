@@ -67,6 +67,8 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<BudgetLineItem> BudgetLineItems { get; set; }
     public DbSet<JobTradeBudget> JobTradeBudgets { get; set; }
     public DbSet<JobPermitModel> JobPermits { get; set; }
+    public DbSet<TradePackage> TradePackages { get; set; }
+    public DbSet<JobAnalysisState> JobAnalysisStates { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

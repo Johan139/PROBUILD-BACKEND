@@ -29,6 +29,7 @@ namespace ProbuildBackend.Controllers
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IConfiguration _config;
         private readonly WebSocketManager _webSocketManager;
+        private readonly IAiAnalysisService _aiAnalysisService;
 
         public JobsController(
             ApplicationDbContext context,
@@ -39,7 +40,8 @@ namespace ProbuildBackend.Controllers
             IEmailSender emailService,
             IHttpClientFactory httpClientFactory,
             IConfiguration config,
-            WebSocketManager webSocketManager
+            WebSocketManager webSocketManager,
+            IAiAnalysisService aiAnalysisService
         )
         {
             _httpContextAccessor =
@@ -53,6 +55,32 @@ namespace ProbuildBackend.Controllers
                 httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
             _config = config ?? throw new ArgumentNullException(nameof(config));
             _webSocketManager = webSocketManager;
+            _aiAnalysisService = aiAnalysisService;
+        }
+
+        [HttpGet("{jobId}/planning-data")]
+        public async Task<ActionResult<PlanningDataDto>> GetPlanningData(int jobId)
+        {
+            var data = await _aiAnalysisService.GetPlanningDataAsync(jobId);
+            return Ok(data);
+        }
+
+        [HttpGet("{jobId}/analysis-state")]
+        public async Task<ActionResult<JobAnalysisState>> GetAnalysisState(int jobId)
+        {
+            var state = await _context.JobAnalysisStates.FirstOrDefaultAsync(s => s.JobId == jobId);
+            if (state == null)
+            {
+                return Ok(
+                    new JobAnalysisState
+                    {
+                        JobId = jobId,
+                        CurrentStep = 0,
+                        StatusMessage = "Initializing...",
+                    }
+                );
+            }
+            return Ok(state);
         }
 
         [HttpGet]
@@ -558,20 +586,24 @@ namespace ProbuildBackend.Controllers
                         BuildingSize = jobRequest.BuildingSize,
                         OperatingArea = jobRequest.OperatingArea ?? "Pending AI Analysis",
                         UserId = jobRequest.UserId,
-                        Status = jobRequest.Status,
+                        Status = !string.IsNullOrEmpty(jobRequest.AnalysisType)
+                            ? "ANALYZING"
+                            : jobRequest.Status,
                         BiddingType = "NOT_BIDDING",
                         CreatedAt = DateTime.UtcNow,
                     };
 
+                    var userContextFileUrl = "";
                     if (jobRequest.UserContextFile != null)
                     {
-                        var userContextFileUrl = (
-                            await _azureBlobservice.UploadFiles(
-                                new List<IFormFile> { jobRequest.UserContextFile },
-                                null,
-                                null
-                            )
-                        ).FirstOrDefault();
+                        userContextFileUrl =
+                            (
+                                await _azureBlobservice.UploadFiles(
+                                    new List<IFormFile> { jobRequest.UserContextFile },
+                                    null,
+                                    null
+                                )
+                            ).FirstOrDefault() ?? "";
                     }
 
                     _context.Jobs.Add(job);
@@ -651,17 +683,6 @@ namespace ProbuildBackend.Controllers
 
                         if (jobRequest.AnalysisType == "Comprehensive")
                         {
-                            var userContextFileUrl = "";
-                            if (jobRequest.UserContextFile != null)
-                            {
-                                userContextFileUrl = (
-                                    await _azureBlobservice.UploadFiles(
-                                        new List<IFormFile> { jobRequest.UserContextFile },
-                                        null,
-                                        null
-                                    )
-                                ).FirstOrDefault();
-                            }
                             BackgroundJob.Enqueue(() =>
                                 _documentProcessorService.ProcessDocumentsForJobAsync(
                                     job.Id,
@@ -676,17 +697,6 @@ namespace ProbuildBackend.Controllers
                         }
                         else if (jobRequest.AnalysisType == "Selected")
                         {
-                            var userContextFileUrl = "";
-                            if (jobRequest.UserContextFile != null)
-                            {
-                                userContextFileUrl = (
-                                    await _azureBlobservice.UploadFiles(
-                                        new List<IFormFile> { jobRequest.UserContextFile },
-                                        null,
-                                        null
-                                    )
-                                ).FirstOrDefault();
-                            }
                             BackgroundJob.Enqueue(() =>
                                 _documentProcessorService.ProcessSelectedAnalysisForJobAsync(
                                     job.Id,
@@ -702,17 +712,6 @@ namespace ProbuildBackend.Controllers
                         }
                         else if (jobRequest.AnalysisType == "Renovation")
                         {
-                            var userContextFileUrl = "";
-                            if (jobRequest.UserContextFile != null)
-                            {
-                                userContextFileUrl = (
-                                    await _azureBlobservice.UploadFiles(
-                                        new List<IFormFile> { jobRequest.UserContextFile },
-                                        null,
-                                        null
-                                    )
-                                ).FirstOrDefault();
-                            }
                             BackgroundJob.Enqueue(() =>
                                 _documentProcessorService.ProcessRenovationAnalysisForJobAsync(
                                     job.Id,
@@ -727,6 +726,8 @@ namespace ProbuildBackend.Controllers
                         }
                     }
 
+                    jobRequest.JobId = job.Id;
+                    jobRequest.Status = job.Status;
                     return Ok(jobRequest);
                 }
                 catch (Exception ex)
@@ -1288,9 +1289,7 @@ namespace ProbuildBackend.Controllers
                         }
                     );
                 }
-                dashboardProjects = dashboardProjects
-    .OrderByDescending(p => p.CreatedAt)
-    .ToList();
+                dashboardProjects = dashboardProjects.OrderByDescending(p => p.CreatedAt).ToList();
                 return Ok(dashboardProjects);
             }
             catch (Exception ex)
