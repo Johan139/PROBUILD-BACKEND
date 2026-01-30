@@ -29,7 +29,7 @@ namespace ProbuildBackend.Models
         public DateTime SubmittedAt { get; set; }
         public string? DocumentUrl { get; set; }
 
-        public string? QuoteId { get; set; }
+        public Guid? QuoteId { get; set; }
 
         [ForeignKey("QuoteId")]
 

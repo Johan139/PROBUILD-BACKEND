@@ -1,8 +1,15 @@
-using Microsoft.AspNetCore.Mvc;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
+using Elastic.Apm.Api;
+using Google.Api.Ads.AdWords.v201809;
+using Google.Apis.Auth;
 using Hangfire;
 using Microsoft.AspNetCore.DataProtection;
-using Google.Apis.Auth;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Newtonsoft.Json;
@@ -10,13 +17,8 @@ using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Services;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
-using Microsoft.AspNetCore.WebUtilities;
+using static Google.Api.Ads.AdWords.Util.Reports.v201809.PaidOrganicQueryReportReportRow;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
-
 
 namespace ProbuildBackend.Controllers
 {
@@ -72,131 +74,132 @@ namespace ProbuildBackend.Controllers
                 var email = model.Email.Trim();
                 var normalizedEmail = email.ToUpperInvariant();
 
-                var user = new UserModel
+                var user = _context
+                    .Users.Where(u => u.Email == normalizedEmail && u.isPlaceholder == true)
+                    .FirstOrDefault();
+
+                if (user != null)
                 {
-                    Id = Guid.NewGuid().ToString(),
-                    UserName = email,
-                    Email = email,
-                    NormalizedUserName = normalizedEmail, // optional: handled automatically but safe
-                    NormalizedEmail = normalizedEmail, // optional: handled automatically but safe
-                    FirstName = model.FirstName,
-                    LastName = model.LastName,
-                    PhoneNumber = model.PhoneNumber,
-                    CompanyName = model.CompanyName,
-                    CompanyRegNo = model.CompanyRegNo,
-                    VatNo = model.VatNo,
-                    UserType = model.UserType,
-                    ConstructionType =
+                    user.FirstName = model.FirstName;
+                    user.LastName = model.LastName;
+                    user.PhoneNumber = model.PhoneNumber;
+                    user.CompanyName = model.CompanyName;
+                    user.CompanyRegNo = model.CompanyRegNo;
+                    user.VatNo = model.VatNo;
+                    user.UserType = model.UserType;
+                    user.ConstructionType =
                         model.ConstructionType != null
                             ? string.Join(",", model.ConstructionType)
-                            : null,
-                    NrEmployees = model.NrEmployees,
-                    YearsOfOperation = model.YearsOfOperation,
-                    CertificationStatus = model.CertificationStatus,
-                    CertificationDocumentPath = model.CertificationDocumentPath,
-                    Availability = model.Availability,
-                    Trade = model.Trade,
-                    ProductsOffered =
+                            : null;
+                    user.NrEmployees = model.NrEmployees;
+                    user.YearsOfOperation = model.YearsOfOperation;
+                    user.CertificationStatus = model.CertificationStatus;
+                    user.CertificationDocumentPath = model.CertificationDocumentPath;
+                    user.Availability = model.Availability;
+                    user.Trade = model.Trade;
+                    user.ProductsOffered =
                         model.ProductsOffered != null
                             ? string.Join(",", model.ProductsOffered)
-                            : null,
-                    SupplierType = model.SupplierType,
-                    JobPreferences =
+                            : null;
+                    user.SupplierType = model.SupplierType;
+                    user.JobPreferences =
                         model.JobPreferences != null
                             ? string.Join(",", model.JobPreferences)
-                            : null,
-                    DeliveryArea =
-                        model.DeliveryArea != null ? string.Join(",", model.DeliveryArea) : null,
-                    DeliveryTime = model.DeliveryTime,
+                            : null;
+                    user.DeliveryArea =
+                        model.DeliveryArea != null ? string.Join(",", model.DeliveryArea) : null;
+                    user.DeliveryTime = model.DeliveryTime;
                     //We need to move away from the below. It will cause confusion between the new address model and old.
                     //Country = countryId.Id.ToString();
                     //State = stateId.Id.ToString();
                     //City = model.City;
-                    SubscriptionPackage = model.SubscriptionPackage,
-                    DateCreated = DateTime.UtcNow,
-                    CountryNumberCode = model.CountryNumberCode,
-                };
-
-                var result = await _userManager.CreateAsync(user, model.Password);
-
-                if (!result.Succeeded)
-                    return BadRequest(result.Errors);
-
-                var userMetaData = new UserMetaDataModel
+                    user.SubscriptionPackage = model.SubscriptionPackage;
+                    user.DateCreated = DateTime.UtcNow;
+                    user.CountryNumberCode = model.CountryNumberCode;
+                    user.isPlaceholder = false;
+                }
+                else
                 {
-                    UserId = user.Id,
-                    City = model.CityFromIP,
-                    Country = model.CountryFromIP,
-                    CreatedAt = DateTime.UtcNow,
-                    IpAddress = model.IpAddress,
-                    Latitude = model.LatitudeFromIP,
-                    Longitude = model.LongitudeFromIP,
-                    Region = model.RegionFromIP,
-                    TimeZone = model.Timezone,
-                    OperatingSystem = model.OperatingSystem,
-                };
+                    user = new UserModel
+                    {
+                        Id = Guid.NewGuid().ToString(),
+                        UserName = email,
+                        Email = email,
+                        NormalizedUserName = normalizedEmail, // optional: handled automatically but safe
+                        NormalizedEmail = normalizedEmail, // optional: handled automatically but safe
+                        FirstName = model.FirstName,
+                        LastName = model.LastName,
+                        PhoneNumber = model.PhoneNumber,
+                        CompanyName = model.CompanyName,
+                        CompanyRegNo = model.CompanyRegNo,
+                        VatNo = model.VatNo,
+                        UserType = model.UserType,
+                        ConstructionType =
+                            model.ConstructionType != null
+                                ? string.Join(",", model.ConstructionType)
+                                : null,
+                        NrEmployees = model.NrEmployees,
+                        YearsOfOperation = model.YearsOfOperation,
+                        CertificationStatus = model.CertificationStatus,
+                        CertificationDocumentPath = model.CertificationDocumentPath,
+                        Availability = model.Availability,
+                        Trade = model.Trade,
+                        ProductsOffered =
+                            model.ProductsOffered != null
+                                ? string.Join(",", model.ProductsOffered)
+                                : null,
+                        SupplierType = model.SupplierType,
+                        JobPreferences =
+                            model.JobPreferences != null
+                                ? string.Join(",", model.JobPreferences)
+                                : null,
+                        DeliveryArea =
+                            model.DeliveryArea != null
+                                ? string.Join(",", model.DeliveryArea)
+                                : null,
+                        DeliveryTime = model.DeliveryTime,
+                        //We need to move away from the below. It will cause confusion between the new address model and old.
+                        //Country = countryId.Id.ToString();
+                        //State = stateId.Id.ToString();
+                        //City = model.City;
+                        SubscriptionPackage = model.SubscriptionPackage,
+                        DateCreated = DateTime.UtcNow,
+                        CountryNumberCode = model.CountryNumberCode,
+                        isPlaceholder = false,
+                    };
 
-                // Add address (can be done before save)
-                //var address = new UserAddressModel
-                //{
-                //    StreetNumber = model.StreetNumber,
-                //    StreetName = model.StreetName,
-                //    City = model.City,
-                //    State = model.State,
-                //    PostalCode = model.PostalCode,
-                //    Country = model.Country,
-                //    Latitude = model.Latitude,
-                //    Longitude = model.Longitude,
-                //    FormattedAddress = model.FormattedAddress,
-                //    GooglePlaceId = model.GooglePlaceId,
-                //    CreatedAt = DateTime.UtcNow,
-                //    UpdatedAt = DateTime.UtcNow,
-                //    UserId = user.Id,
-                //    CountryCode = model.CountryCode,
-                //    AddressType = model.AddressType,
-                //};
-                //_context.UserAddress.Add(address);
+                    var result = await _userManager.CreateAsync(user, model.Password);
 
-                // Add address (can be done before save)
-                //var address = new UserAddressModel
-                //{
-                //    StreetNumber = model.StreetNumber,
-                //    StreetName = model.StreetName,
-                //    City = model.City,
-                //    State = model.State,
-                //    PostalCode = model.PostalCode,
-                //    Country = model.Country,
-                //    Latitude = model.Latitude,
-                //    Longitude = model.Longitude,
-                //    FormattedAddress = model.FormattedAddress,
-                //    GooglePlaceId = model.GooglePlaceId,
-                //    CreatedAt = DateTime.UtcNow,
-                //    UpdatedAt = DateTime.UtcNow,
-                //    UserId = user.Id,
-                //    CountryCode = model.CountryCode,
-                //    AddressType = model.AddressType,
-                //};
-                //_context.UserAddress.Add(address);
-                // Only save agreement if user was created successfully
-                //THEY WANTED TO REMOVE THIS. SO ITS NOW REMOVED.
-                //var userAgree = new UserTermsAgreementModel
-                //{
-                //    UserId = user.Id,
-                //    DateAgreed = DateTime.UtcNow,
-                //};
+                    if (!result.Succeeded)
+                        return BadRequest(result.Errors);
 
-                //_context.UserTermsAgreement.Add(userAgree);
+                    var userMetaData = new UserMetaDataModel
+                    {
+                        UserId = user.Id,
+                        City = model.CityFromIP,
+                        Country = model.CountryFromIP,
+                        CreatedAt = DateTime.UtcNow,
+                        IpAddress = model.IpAddress,
+                        Latitude = model.LatitudeFromIP,
+                        Longitude = model.LongitudeFromIP,
+                        Region = model.RegionFromIP,
+                        TimeZone = model.Timezone,
+                        OperatingSystem = model.OperatingSystem,
+                    };
+                }
+
                 await _context.SaveChangesAsync();
 
                 var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
                 var frontendUrl =
                     Environment.GetEnvironmentVariable("FRONTEND_URL")
                     ?? _configuration["FrontEnd:FRONTEND_URL"];
-                var backendUrl = Environment.GetEnvironmentVariable("Backend_URL")
+                var backendUrl =
+                    Environment.GetEnvironmentVariable("Backend_URL")
                     ?? _configuration["FrontEnd:Backend"];
                 var callbackUrl =
-                $"{backendUrl}/api/Account/confirmemail" +
-                $"?userId={user.Id}&code={Uri.EscapeDataString(code)}";
+                    $"{backendUrl}/api/Account/confirmemail"
+                    + $"?userId={user.Id}&code={Uri.EscapeDataString(code)}";
 
                 var EmailConfirmation = await _emailTemplate.GetTemplateAsync(
                     "ConfirmAccountEmail"
@@ -258,11 +261,12 @@ namespace ProbuildBackend.Controllers
             var frontendUrl =
                 Environment.GetEnvironmentVariable("FRONTEND_URL")
                 ?? _configuration["FrontEnd:FRONTEND_URL"];
-            var backendUrl = Environment.GetEnvironmentVariable("Backend_URL")
-                 ?? _configuration["FrontEnd:Backend"];
+            var backendUrl =
+                Environment.GetEnvironmentVariable("Backend_URL")
+                ?? _configuration["FrontEnd:Backend"];
             var callbackUrl =
-            $"{backendUrl}/api/Account/confirmemail" +
-            $"?userId={user.Id}&code={Uri.EscapeDataString(code)}";
+                $"{backendUrl}/api/Account/confirmemail"
+                + $"?userId={user.Id}&code={Uri.EscapeDataString(code)}";
 
             var EmailConfirmation = await _emailTemplate.GetTemplateAsync("ConfirmAccountEmail");
             EmailConfirmation.Body = EmailConfirmation
@@ -398,8 +402,8 @@ namespace ProbuildBackend.Controllers
         public async Task<IActionResult> ConfirmEmail(string userId, string code)
         {
             var frontendUrl =
-    Environment.GetEnvironmentVariable("FRONTEND_URL")
-    ?? _configuration["FrontEnd:FRONTEND_URL"];
+                Environment.GetEnvironmentVariable("FRONTEND_URL")
+                ?? _configuration["FrontEnd:FRONTEND_URL"];
             if (userId == null || code == null)
             {
                 return BadRequest("Invalid email confirmation request.");
@@ -465,6 +469,7 @@ namespace ProbuildBackend.Controllers
                             firstName = user.FirstName,
                             lastName = user.LastName,
                             userType = user.UserType,
+                            email = user.Email,
                         }
                     );
                 }
@@ -553,6 +558,7 @@ namespace ProbuildBackend.Controllers
                             firstName = existingUser.FirstName,
                             lastName = existingUser.LastName,
                             userType = existingUser.UserType,
+                            email = existingUser.Email,
                             requiresRegistration = false,
                         }
                     );
@@ -1200,12 +1206,11 @@ namespace ProbuildBackend.Controllers
 
             var normalized = email.Trim().ToUpperInvariant();
 
-            var exists = await _context.Users
-                .AsNoTracking()
-                .AnyAsync(u => u.NormalizedEmail == normalized);
+            var exists = await _context
+                .Users.AsNoTracking()
+                .AnyAsync(u => u.NormalizedEmail == normalized && u.isPlaceholder == false);
 
             return Ok(exists);
         }
-
     }
 }
