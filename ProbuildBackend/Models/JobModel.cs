@@ -52,10 +52,11 @@ namespace ProbuildBackend.Models
         public UserModel? User { get; set; }
         public ICollection<BidModel>? Bids { get; set; }
         public string? Blueprint { get; set; }
-        public ICollection<JobDocumentModel>? Documents { get; set; } 
+        public ICollection<JobDocumentModel>? Documents { get; set; }
         public ICollection<NotificationModel>? Notifications { get; set; }
         public ICollection<JobTradeBudget>? TradeBudgets { get; set; }
         public ICollection<JobPermitModel>? Permits { get; set; }
+        public ICollection<TradePackage>? TradePackages { get; set; }
         public long? JobAddressId { get; set; }
 
         [ForeignKey("JobAddressId")]

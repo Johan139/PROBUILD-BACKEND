@@ -1001,7 +1001,7 @@ namespace ProbuildBackend.Services
                     // 1. Parse Rooms
                     // Looking for | Room Name | Area (sqft) |
                     var roomRegex = new Regex(
-                        @"\| Room Name \| Area.*?(\n\n|###|$)",
+                        @"\|\s*(?:\*\*)?Room Name(?:\*\*)?\s*\|\s*(?:\*\*)?Area(?:\*\*)?.*?(\n\n|###|$)",
                         RegexOptions.Singleline
                     );
                     var roomMatch = roomRegex.Match(response);
@@ -1068,7 +1068,7 @@ namespace ProbuildBackend.Services
                     // 2. Parse Metadata
                     // Looking for | Category | Details |
                     var metadataRegex = new Regex(
-                        @"\| Category \| Details.*?(\n\n|###|$)",
+                        @"\|\s*(?:\*\*)?Category(?:\*\*)?\s*\|\s*(?:\*\*)?Details(?:\*\*)?.*?(\n\n|###|$)",
                         RegexOptions.Singleline
                     );
                     var metaMatch = metadataRegex.Match(response);
@@ -1145,7 +1145,7 @@ namespace ProbuildBackend.Services
 
                     // 3. Parse Permits
                     var permitRegex = new Regex(
-                        @"\| Permit Name \| Issuing Agency \| Requirements.*?(\n\n|###|$)",
+                        @"\|\s*(?:\*\*)?Permit Name(?:\*\*)?\s*\|\s*(?:\*\*)?Issuing Agency(?:\*\*)?\s*\|\s*(?:\*\*)?Requirements(?:\*\*)?.*?(\n\n|###|$)",
                         RegexOptions.Singleline
                     );
                     var permitMatch = permitRegex.Match(response);
@@ -1220,7 +1220,7 @@ namespace ProbuildBackend.Services
 
                     // 4. Parse Blueprint Issues
                     var issuesRegex = new Regex(
-                        @"\| Sheet Number \| Error Description \| Potential Impact.*?(\n\n|###|$)",
+                        @"\|\s*(?:\*\*)?Sheet Number(?:\*\*)?\s*\|\s*(?:\*\*)?Error Description(?:\*\*)?\s*\|\s*(?:\*\*)?Potential Impact(?:\*\*)?.*?(\n\n|###|$)",
                         RegexOptions.Singleline
                     );
                     var issuesMatch = issuesRegex.Match(response);
@@ -1305,7 +1305,7 @@ namespace ProbuildBackend.Services
 
                     // 5. Parse Zoning (Real data extraction)
                     var zoningRegex = new Regex(
-                        @"### \d+\. Zoning & Site Report([\s\S]*?)###",
+                        @"#{1,6}\s*(?:\*\*)?.*?Zoning & Site Report(?:\*\*)?([\s\S]*?)(?:#{1,6}|$)",
                         RegexOptions.Singleline
                     );
                     var zoningMatch = zoningRegex.Match(response);
@@ -1352,7 +1352,7 @@ namespace ProbuildBackend.Services
                         // Extract Utilities
                         var utilMatch = Regex.Match(
                             zoningContent,
-                            @"Utility Status:(.*?)(\n\* [^*]|\n###)",
+                            @"(?:\*\*)?Utility Status(?:\*\*)?:(.*?)(?=\n\*|\n#|$)",
                             RegexOptions.Singleline
                         );
                         if (utilMatch.Success)
@@ -1384,7 +1384,7 @@ namespace ProbuildBackend.Services
                         // Extract Unforeseen Work
                         var riskSectionMatch = Regex.Match(
                             zoningContent,
-                            @"\*\*Unforeseen Work.*?\*\*:(.*?)(?=\n\*|\n###|$)",
+                            @"(?:\*\*)?Unforeseen Work(?:\*\*)?.*?:(.*?)(?=\n\*|\n#|$)",
                             RegexOptions.Singleline
                         );
                         if (riskSectionMatch.Success)
@@ -1512,7 +1512,7 @@ namespace ProbuildBackend.Services
 
                     // PPE Table
                     var ppeRegex = new Regex(
-                        @"\| PPE Item \|.*?(\n\n|###|$)",
+                        @"\|\s*(?:\*\*)?PPE Item(?:\*\*)?\s*\|.*?(\n\n|###|$)",
                         RegexOptions.Singleline
                     );
                     var ppeMatch = ppeRegex.Match(response);
@@ -1592,7 +1592,7 @@ namespace ProbuildBackend.Services
 
                     // Mockups Table
                     var mockupRegex = new Regex(
-                        @"\| Mock-up Description \|.*?(\n\n|###|$)",
+                        @"\|\s*(?:\*\*)?Mock-up Description(?:\*\*)?\s*\|.*?(\n\n|###|$)",
                         RegexOptions.Singleline
                     );
                     var mockupMatch = mockupRegex.Match(response);
@@ -1622,7 +1622,7 @@ namespace ProbuildBackend.Services
 
                     // Hold Points (Inspection Table)
                     var holdRegex = new Regex(
-                        @"\| Phase \| Activity.*?Hold Point\?.*?(\n\n|###|$)",
+                        @"\|\s*(?:\*\*)?Phase(?:\*\*)?\s*\|\s*(?:\*\*)?Activity(?:\*\*)?.*?Hold Point\?.*?(\n\n|###|$)",
                         RegexOptions.Singleline
                     );
                     var holdMatch = holdRegex.Match(response);
@@ -1732,8 +1732,9 @@ namespace ProbuildBackend.Services
                 var tradePackages = new List<TradePackage>();
 
                 // Regex to find all "Subcontractor Cost Breakdown" tables
+                // Should be more flexible with header formatting (e.g. bold markers)
                 var tableRegex = new Regex(
-                    @"### Output 2: Subcontractor Cost Breakdown[\s\S]*?\| Trade \| Scope of Work \|[\s\S]*?(\n\n|###|$)",
+                    @"Output 2: Subcontractor Cost Breakdown[\s\S]*?\|\s*Trade\s*\|\s*Scope of Work\s*\|[\s\S]*?(\n\n|###|$)",
                     RegexOptions.Singleline
                 );
 
@@ -1748,7 +1749,7 @@ namespace ProbuildBackend.Services
                     {
                         if (
                             string.IsNullOrWhiteSpace(row)
-                            || !row.StartsWith("|")
+                            || !row.Trim().StartsWith("|")
                             || row.Contains("Trade")
                             || row.Contains("---")
                         )
@@ -1984,6 +1985,25 @@ namespace ProbuildBackend.Services
             }
         }
 
+        public async Task RefreshTradePackagesAsync(int jobId)
+        {
+            var processingResult = await _context
+                .DocumentProcessingResults.OrderByDescending(r => r.CreatedAt)
+                .FirstOrDefaultAsync(r => r.JobId == jobId);
+
+            if (processingResult != null && !string.IsNullOrEmpty(processingResult.FullResponse))
+            {
+                _logger.LogInformation($"Refreshing trade packages for Job {jobId}");
+                await ParseAndSaveTradePackages(jobId, processingResult.FullResponse);
+            }
+            else
+            {
+                _logger.LogWarning(
+                    $"No processing result found for Job {jobId} to refresh trade packages."
+                );
+            }
+        }
+
         public async Task<string> AnalyzeBidsAsync(List<BidModel> bids, string comparisonType)
         {
             //_keepAliveService.StartPinging();
@@ -2010,7 +2030,6 @@ namespace ProbuildBackend.Services
             //         .Include(q => q.Versions)
             //             .ThenInclude(v => v.ExtraCosts)
             //         .FirstOrDefaultAsync(q => q.Id == bid.QuoteId);
-
 
             //            if (quote != null)
             //            {
