@@ -21,6 +21,7 @@ namespace ProbuildBackend.Models
         public string CreatedBy { get; set; }
         public string? SentTo { get; set; }
         public DateTime CreatedDate { get; set; }
+        public DateTime? ArchivedAt { get; set; }
     }
 
 }

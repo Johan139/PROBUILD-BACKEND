@@ -291,8 +291,9 @@ namespace ProbuildBackend.Controllers
         {
             var quotes = await _context.Quotes
                 .Where(q =>
-                    q.CreatedID == userId ||
-                    q.SentTo == userId
+                    (q.CreatedID == userId ||
+                    q.SentTo == userId) &&
+                    q.ArchivedAt == null
                 )
                 .OrderByDescending(q => q.CreatedDate)
                 .Select(q => new

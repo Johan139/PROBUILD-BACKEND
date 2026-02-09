@@ -1,7 +1,5 @@
-﻿using System.Globalization;
-using System.IO.Compression;
-using System.Security.Claims;
-using Hangfire;
+﻿using Hangfire;
+using Hangfire.Common;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -11,6 +9,9 @@ using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Services;
+using System.Globalization;
+using System.IO.Compression;
+using System.Security.Claims;
 using BomWithCosts = ProbuildBackend.Models.BomWithCosts;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 
@@ -1148,7 +1149,7 @@ namespace ProbuildBackend.Controllers
             try
             {
                 var jobs = await _context.Jobs
-        .Where(job => job.UserId == userId && job.Status != "ARCHIVED")
+        .Where(job => job.UserId == userId && job.ArchivedAt == null)
         .OrderByDescending(job => job.CreatedAt)
         .ToListAsync();
 
@@ -1194,7 +1195,7 @@ namespace ProbuildBackend.Controllers
                 var jobs = await _context
                     .Jobs.Where(j =>
                         (j.UserId == userId || assignedJobIds.Contains(j.Id))
-                        && j.Status != "ARCHIVED"
+                        && j.ArchivedAt == null
                     )
                     .Include(j => j.JobAddress)
                     .ToListAsync();
@@ -1323,7 +1324,7 @@ namespace ProbuildBackend.Controllers
                 );
             }
 
-            job.Status = "ARCHIVED";
+
             job.ArchivedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
@@ -1375,7 +1376,7 @@ namespace ProbuildBackend.Controllers
                 return NotFound();
             }
 
-            if (job.Status != "ARCHIVED")
+            if (job.ArchivedAt == null)
             {
                 return BadRequest("Job is not archived.");
             }
@@ -1394,7 +1395,7 @@ namespace ProbuildBackend.Controllers
         public async Task<ActionResult<IEnumerable<JobDto>>> GetArchivedJobs()
         {
             var jobs = await _context
-                .Jobs.Where(j => j.Status == "ARCHIVED")
+                .Jobs.Where(j => j.ArchivedAt == null)
                 .Select(j => new JobDto
                 {
                     JobId = j.Id,
@@ -1408,11 +1409,10 @@ namespace ProbuildBackend.Controllers
 
             return Ok(jobs);
         }
-
         [HttpGet("dashboard")]
         public async Task<ActionResult<IEnumerable<JobDto>>> GetDashboardJobs()
         {
-            var jobs = await _context.Jobs.Where(j => j.Status != "ARCHIVED").ToListAsync();
+            var jobs = await _context.Jobs.Where(j => j.ArchivedAt == null).ToListAsync();
 
             var jobDtos = new List<JobDto>();
 
