@@ -1,5 +1,6 @@
 ﻿using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
+using Elastic.Apm.Api;
 using iText.IO.Font.Constants;
 using iText.IO.Image;
 using iText.Kernel.Colors;
@@ -184,7 +185,21 @@ namespace ProbuildBackend.Controllers
                 return BadRequest("Quote submission limit reached.");
 
             quote.Status = "Submitted";
+            string label = quote.DocumentType?.ToLower() == "invoice"
+? "Invoice"
+: "Quote";
 
+            string SubmitMessage = $"New {label} submitted: {quote.Number}";
+            var quoteNotification = new NotificationModel
+            {
+                Message = $"{SubmitMessage}",
+                JobId = quote.JobID,
+                SenderId = quote.CreatedID,
+                Recipients = new List<string> { quote.SentTo },
+                Type = "Quote",
+                QuoteId = quote.Id
+            };
+            _context.Notifications.Add(quoteNotification);
             await _subscriptionService.IncrementQuoteCount(quote.CreatedID);
             await _context.SaveChangesAsync();
 
@@ -571,6 +586,21 @@ namespace ProbuildBackend.Controllers
                     quote.Status = "Submitted";
                     await _subscriptionService.IncrementQuoteCount(quote.CreatedID);
                 }
+                string label = quote.DocumentType?.ToLower() == "invoice"
+? "Invoice"
+: "Quote";
+
+                string SubmitMessage = $"New {label} submitted: {quote.Number}";
+                var quoteNotification = new NotificationModel
+                {
+                    Message = $"{SubmitMessage}",
+                    JobId = quote.JobID,
+                    SenderId = quote.CreatedID,
+                    Recipients = new List<string> { quote.SentTo },
+                    Type = "Quote",
+                    QuoteId = quote.Id
+                };
+                _context.Notifications.Add(quoteNotification);
 
                 await _context.SaveChangesAsync();
 
@@ -1520,7 +1550,43 @@ namespace ProbuildBackend.Controllers
         {
             var quote = await _context.Quotes.FindAsync(quoteId);
             if (quote == null) return NotFound();
+            var quoteNotification = new NotificationModel();
+            string label = quote.DocumentType?.ToLower() == "invoice"
+        ? "Invoice"
+        : "Quote";
 
+            string ApprovedMessage = $"{label} Approved: {quote.Number}";
+            string RejectMessage = $"{label} Rejected: {quote.Number}";
+            switch (status)
+            {   
+                case "Approved":
+                     quoteNotification = new NotificationModel
+                    {
+                        Message = $"{ApprovedMessage}",
+                        JobId = quote.JobID,
+                        SenderId = quote.SentTo,
+                        Recipients = new List<string> { quote.CreatedID },
+                        Type = "Quote",
+                         QuoteId = quote.Id
+                     };
+                
+                    break;
+                case "Rejected":
+                     quoteNotification = new NotificationModel
+                    {
+                        Message = $"{RejectMessage}",
+                        JobId = quote.JobID,
+                        SenderId = quote.SentTo,
+                        Recipients = new List<string> { quote.CreatedID },
+                        Type = "Quote",
+                        QuoteId = quote.Id
+                     };
+                   
+                    break;
+                default:
+                    break;
+            }
+            _context.Notifications.Add(quoteNotification);
             quote.Status = status;
             await _context.SaveChangesAsync();
 

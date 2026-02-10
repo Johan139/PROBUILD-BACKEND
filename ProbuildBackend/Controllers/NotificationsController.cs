@@ -77,6 +77,10 @@ namespace ProbuildBackend.Controllers
             [FromQuery] int pageSize = 10
         )
         {
+            try
+            {
+
+
             var userId = User.FindFirstValue("UserId");
 
             // validation for page and pageSize
@@ -109,6 +113,9 @@ namespace ProbuildBackend.Controllers
                             : $"{n.SenderFirstName} {n.SenderLastName}",
                     IsRead = n.IsRead,
                     ReadAt = n.ReadAt,
+                    QuoteId = n.QuoteId,
+                    Type = n.Type,
+
                 })
                 .ToListAsync();
 
@@ -119,6 +126,12 @@ namespace ProbuildBackend.Controllers
             };
 
             return Ok(response);
+            }
+            catch (Exception ex)
+            {
+
+                throw;
+            }
         }
 
         [HttpPost("test")]

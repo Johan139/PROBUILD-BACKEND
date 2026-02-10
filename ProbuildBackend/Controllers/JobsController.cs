@@ -951,6 +951,7 @@ namespace ProbuildBackend.Controllers
                         Timestamp = DateTime.UtcNow,
                         JobId = job.Id,
                         SenderId = subtasks.UserId,
+                        Type = "Job"
                     };
 
                     _context.Notifications.Add(notification);
@@ -1601,6 +1602,7 @@ namespace ProbuildBackend.Controllers
                         SenderId = request.SenderId,
                         Timestamp = DateTime.UtcNow,
                         Recipients = recipientIds,
+                        Type = "Job"
                     };
 
                     _context.Notifications.Add(notification);
