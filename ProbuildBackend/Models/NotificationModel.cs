@@ -13,7 +13,7 @@ namespace ProbuildBackend.Models
         public DateTime Timestamp { get; set; } = DateTime.UtcNow;
 
         [ForeignKey("JobId")]
-        public int JobId { get; set; }
+        public int? JobId { get; set; }
         public JobModel? Job { get; set; }
 
         [ForeignKey("UserId")]
@@ -29,5 +29,9 @@ namespace ProbuildBackend.Models
 
         public bool? IsRead { get; set; }
         public DateTime? ReadAt { get; set; }
+
+        public string? Type { get; set; }
+
+        public Guid? QuoteId { get; set; }
     }
 }
