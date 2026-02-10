@@ -188,7 +188,7 @@ namespace ProbuildBackend.Controllers
                 {
                     return NotFound();
                 }
-                
+
                 AddressModel? address = null;
                 try
                 {
@@ -650,6 +650,9 @@ namespace ProbuildBackend.Controllers
                             UpdatedAt = DateTime.UtcNow,
                             JobId = job.Id,
                         };
+
+                        job.Address = jobRequest.Address;
+                        job.JobAddress = address;
 
                         _context.JobAddresses.Add(address);
                         await _context.SaveChangesAsync();
@@ -1152,10 +1155,10 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var jobs = await _context.Jobs
-        .Where(job => job.UserId == userId && job.Status != "ARCHIVED")
-        .OrderByDescending(job => job.CreatedAt)
-        .ToListAsync();
+                var jobs = await _context
+                    .Jobs.Where(job => job.UserId == userId && job.Status != "ARCHIVED")
+                    .OrderByDescending(job => job.CreatedAt)
+                    .ToListAsync();
 
                 if (jobs == null || !jobs.Any())
                 {
