@@ -11,10 +11,15 @@ namespace ProbuildBackend.Models
         public string? Task { get; set; }
         public int Duration { get; set; }
         public int JobId { get; set; }
+        public int? TradePackageId { get; set; }
 
         // Prevent circular loops
         [JsonIgnore]
         public JobModel? Job { get; set; }
+
+        [ForeignKey("TradePackageId")]
+        [JsonIgnore]
+        public TradePackage? TradePackage { get; set; }
 
         public string? UserId { get; set; }
 

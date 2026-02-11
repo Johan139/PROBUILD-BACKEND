@@ -31,6 +31,12 @@ namespace ProbuildBackend.Models
 
         public string? EstimatedDuration { get; set; }
 
+        public DateTime? StartDate { get; set; }
+
+        public DateTime? BidDeadline { get; set; }
+
+        public string? LaborType { get; set; } // "Labor" | "Labor and Materials"
+
         public string? CsiCode { get; set; }
 
         public bool PostedToMarketplace { get; set; }

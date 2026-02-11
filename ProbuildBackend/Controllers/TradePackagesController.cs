@@ -88,5 +88,60 @@ namespace ProbuildBackend.Controllers
                 );
             }
         }
+
+        [HttpGet("user/{userId}/postings")]
+        public async Task<ActionResult<IEnumerable<object>>> GetUserMarketplacePostings(
+            string userId
+        )
+        {
+            try
+            {
+                var postings = await _context
+                    .TradePackages.Where(tp => tp.Job.UserId == userId && tp.PostedToMarketplace)
+                    .Include(tp => tp.Job)
+                        .ThenInclude(j => j.JobAddress)
+                    .Select(tp => new
+                    {
+                        tp.Id,
+                        tp.TradeName,
+                        tp.Category,
+                        tp.ScopeOfWork,
+                        tp.Budget,
+                        tp.Status,
+                        tp.EstimatedManHours,
+                        tp.HourlyRate,
+                        tp.EstimatedDuration,
+                        tp.StartDate,
+                        tp.BidDeadline,
+                        tp.LaborType,
+                        tp.CsiCode,
+                        tp.PostedToMarketplace,
+                        tp.CreatedAt,
+                        JobId = tp.JobId,
+                        ProjectName = tp.Job.ProjectName,
+                        Address = tp.Job.Address
+                            ?? (
+                                tp.Job.JobAddress != null ? tp.Job.JobAddress.FormattedAddress : ""
+                            ),
+                        City = tp.Job.JobAddress != null ? tp.Job.JobAddress.City : "",
+                        State = tp.Job.JobAddress != null ? tp.Job.JobAddress.State : "",
+                    })
+                    .OrderByDescending(tp => tp.CreatedAt)
+                    .ToListAsync();
+
+                return Ok(postings);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(
+                    500,
+                    new
+                    {
+                        error = "Failed to fetch user marketplace postings",
+                        details = ex.Message,
+                    }
+                );
+            }
+        }
     }
 }
