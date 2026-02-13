@@ -14,6 +14,13 @@ namespace ProbuildBackend.Middleware
         public string ErrorMessage { get; set; }
     }
 
+    public class AnalysisDataUpdate
+    {
+        public int JobId { get; set; }
+        public string DataType { get; set; }
+        public object Data { get; set; }
+    }
+
     [Authorize]
     public class ProgressHub : Hub
     {
@@ -70,10 +77,26 @@ namespace ProbuildBackend.Middleware
             await Clients.Client(connectionId).SendAsync("ReceiveAnalysisProgress", update);
         }
 
+        public async Task SendAnalysisData(string connectionId, AnalysisDataUpdate update)
+        {
+            _logger.LogInformation(
+                "Sending analysis data {DataType} for JobId {JobId} to {ConnectionId}",
+                update.DataType,
+                update.JobId,
+                connectionId
+            );
+            await Clients.Client(connectionId).SendAsync("ReceiveAnalysisData", update);
+        }
+
         public async Task BroadcastProgress(int progress)
         {
             _logger.LogInformation("Broadcasting progress {Progress} to all clients", progress);
             await Clients.All.SendAsync("ReceiveProgress", progress);
+        }
+
+        public async Task Ping()
+        {
+            await Clients.Caller.SendAsync("Pong");
         }
     }
 }

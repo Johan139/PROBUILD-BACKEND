@@ -62,6 +62,13 @@ namespace ProbuildBackend.Controllers
             return Ok(contract);
         }
 
+        [HttpGet("job/{jobId}")]
+        public async Task<IActionResult> GetContractsByJobId(int jobId)
+        {
+            var contracts = await _context.Contracts.Where(c => c.JobId == jobId).ToListAsync();
+            return Ok(contracts);
+        }
+
         [HttpPost("{contractId}/sign")]
         public async Task<IActionResult> SignContract(
             Guid contractId,

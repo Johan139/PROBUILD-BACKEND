@@ -61,6 +61,7 @@ namespace ProbuildBackend.Controllers
             var bid = new BidModel
             {
                 JobId = bidRequest.JobId,
+                TradePackageId = bidRequest.TradePackageId,
                 DocumentUrl = bidRequest.DocumentUrl,
                 UserId = userId,
                 Status = "Submitted",

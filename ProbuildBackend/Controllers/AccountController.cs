@@ -1,3 +1,7 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using Elastic.Apm.Api;
 using Google.Api.Ads.AdWords.v201809;
 using Google.Apis.Auth;
@@ -13,13 +17,8 @@ using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Services;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
 using static Google.Api.Ads.AdWords.Util.Reports.v201809.PaidOrganicQueryReportReportRow;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
-
 
 namespace ProbuildBackend.Controllers
 {
@@ -75,12 +74,12 @@ namespace ProbuildBackend.Controllers
                 var email = model.Email.Trim();
                 var normalizedEmail = email.ToUpperInvariant();
 
-
-                var user = _context.Users.Where(u => u.Email == normalizedEmail && u.isPlaceholder == true).FirstOrDefault();
+                var user = _context
+                    .Users.Where(u => u.Email == normalizedEmail && u.isPlaceholder == true)
+                    .FirstOrDefault();
 
                 if (user != null)
                 {
-
                     user.FirstName = model.FirstName;
                     user.LastName = model.LastName;
                     user.PhoneNumber = model.PhoneNumber;
@@ -88,25 +87,27 @@ namespace ProbuildBackend.Controllers
                     user.CompanyRegNo = model.CompanyRegNo;
                     user.VatNo = model.VatNo;
                     user.UserType = model.UserType;
-                    user.ConstructionType = model.ConstructionType != null
-    ? string.Join(",", model.ConstructionType)
-    : null;
+                    user.ConstructionType =
+                        model.ConstructionType != null
+                            ? string.Join(",", model.ConstructionType)
+                            : null;
                     user.NrEmployees = model.NrEmployees;
                     user.YearsOfOperation = model.YearsOfOperation;
                     user.CertificationStatus = model.CertificationStatus;
                     user.CertificationDocumentPath = model.CertificationDocumentPath;
                     user.Availability = model.Availability;
                     user.Trade = model.Trade;
-                    user.ProductsOffered = model.ProductsOffered != null
-    ? string.Join(",", model.ProductsOffered)
-    : null;
+                    user.ProductsOffered =
+                        model.ProductsOffered != null
+                            ? string.Join(",", model.ProductsOffered)
+                            : null;
                     user.SupplierType = model.SupplierType;
-                    user.JobPreferences = model.JobPreferences != null
-    ? string.Join(",", model.JobPreferences)
-    : null;
-                    user.DeliveryArea = model.DeliveryArea != null
-    ? string.Join(",", model.DeliveryArea)
-    : null;
+                    user.JobPreferences =
+                        model.JobPreferences != null
+                            ? string.Join(",", model.JobPreferences)
+                            : null;
+                    user.DeliveryArea =
+                        model.DeliveryArea != null ? string.Join(",", model.DeliveryArea) : null;
                     user.DeliveryTime = model.DeliveryTime;
                     //We need to move away from the below. It will cause confusion between the new address model and old.
                     //Country = countryId.Id.ToString();
@@ -119,8 +120,7 @@ namespace ProbuildBackend.Controllers
                 }
                 else
                 {
-
-                     user = new UserModel
+                    user = new UserModel
                     {
                         Id = Guid.NewGuid().ToString(),
                         UserName = email,
@@ -134,25 +134,29 @@ namespace ProbuildBackend.Controllers
                         CompanyRegNo = model.CompanyRegNo,
                         VatNo = model.VatNo,
                         UserType = model.UserType,
-                        ConstructionType = model.ConstructionType != null
-        ? string.Join(",", model.ConstructionType)
-        : null,
+                        ConstructionType =
+                            model.ConstructionType != null
+                                ? string.Join(",", model.ConstructionType)
+                                : null,
                         NrEmployees = model.NrEmployees,
                         YearsOfOperation = model.YearsOfOperation,
                         CertificationStatus = model.CertificationStatus,
                         CertificationDocumentPath = model.CertificationDocumentPath,
                         Availability = model.Availability,
                         Trade = model.Trade,
-                        ProductsOffered = model.ProductsOffered != null
-        ? string.Join(",", model.ProductsOffered)
-        : null,
+                        ProductsOffered =
+                            model.ProductsOffered != null
+                                ? string.Join(",", model.ProductsOffered)
+                                : null,
                         SupplierType = model.SupplierType,
-                        JobPreferences = model.JobPreferences != null
-        ? string.Join(",", model.JobPreferences)
-        : null,
-                        DeliveryArea = model.DeliveryArea != null
-        ? string.Join(",", model.DeliveryArea)
-        : null,
+                        JobPreferences =
+                            model.JobPreferences != null
+                                ? string.Join(",", model.JobPreferences)
+                                : null,
+                        DeliveryArea =
+                            model.DeliveryArea != null
+                                ? string.Join(",", model.DeliveryArea)
+                                : null,
                         DeliveryTime = model.DeliveryTime,
                         //We need to move away from the below. It will cause confusion between the new address model and old.
                         //Country = countryId.Id.ToString();
@@ -161,7 +165,7 @@ namespace ProbuildBackend.Controllers
                         SubscriptionPackage = model.SubscriptionPackage,
                         DateCreated = DateTime.UtcNow,
                         CountryNumberCode = model.CountryNumberCode,
-                        isPlaceholder = false
+                        isPlaceholder = false,
                     };
 
                     var result = await _userManager.CreateAsync(user, model.Password);
@@ -190,11 +194,12 @@ namespace ProbuildBackend.Controllers
                 var frontendUrl =
                     Environment.GetEnvironmentVariable("FRONTEND_URL")
                     ?? _configuration["FrontEnd:FRONTEND_URL"];
-                var backendUrl = Environment.GetEnvironmentVariable("Backend_URL")
+                var backendUrl =
+                    Environment.GetEnvironmentVariable("Backend_URL")
                     ?? _configuration["FrontEnd:Backend"];
                 var callbackUrl =
-                $"{backendUrl}/api/Account/confirmemail" +
-                $"?userId={user.Id}&code={Uri.EscapeDataString(code)}";
+                    $"{backendUrl}/api/Account/confirmemail"
+                    + $"?userId={user.Id}&code={Uri.EscapeDataString(code)}";
 
                 var EmailConfirmation = await _emailTemplate.GetTemplateAsync(
                     "ConfirmAccountEmail"
@@ -256,11 +261,12 @@ namespace ProbuildBackend.Controllers
             var frontendUrl =
                 Environment.GetEnvironmentVariable("FRONTEND_URL")
                 ?? _configuration["FrontEnd:FRONTEND_URL"];
-            var backendUrl = Environment.GetEnvironmentVariable("Backend_URL")
-                 ?? _configuration["FrontEnd:Backend"];
+            var backendUrl =
+                Environment.GetEnvironmentVariable("Backend_URL")
+                ?? _configuration["FrontEnd:Backend"];
             var callbackUrl =
-            $"{backendUrl}/api/Account/confirmemail" +
-            $"?userId={user.Id}&code={Uri.EscapeDataString(code)}";
+                $"{backendUrl}/api/Account/confirmemail"
+                + $"?userId={user.Id}&code={Uri.EscapeDataString(code)}";
 
             var EmailConfirmation = await _emailTemplate.GetTemplateAsync("ConfirmAccountEmail");
             EmailConfirmation.Body = EmailConfirmation
@@ -396,8 +402,8 @@ namespace ProbuildBackend.Controllers
         public async Task<IActionResult> ConfirmEmail(string userId, string code)
         {
             var frontendUrl =
-    Environment.GetEnvironmentVariable("FRONTEND_URL")
-    ?? _configuration["FrontEnd:FRONTEND_URL"];
+                Environment.GetEnvironmentVariable("FRONTEND_URL")
+                ?? _configuration["FrontEnd:FRONTEND_URL"];
             if (userId == null || code == null)
             {
                 return BadRequest("Invalid email confirmation request.");
@@ -484,7 +490,7 @@ namespace ProbuildBackend.Controllers
                     );
                 }
                 await _logLoginInformationService.LogLoginAsync(
-                    Guid.Parse(user == null ? Guid.Empty.ToString(): user.Id),
+                    Guid.Parse(user == null ? Guid.Empty.ToString() : user.Id),
                     HttpContext.Connection.RemoteIpAddress?.ToString(),
                     Request.Headers["User-Agent"].ToString(),
                     false,
@@ -495,7 +501,7 @@ namespace ProbuildBackend.Controllers
             catch (Exception ex)
             {
                 await _logLoginInformationService.LogLoginAsync(
-                        Guid.Parse(user == null ? Guid.Empty.ToString() : user.Id),
+                    Guid.Parse(user == null ? Guid.Empty.ToString() : user.Id),
                     HttpContext.Connection.RemoteIpAddress?.ToString(),
                     Request.Headers["User-Agent"].ToString(),
                     false,
@@ -924,10 +930,9 @@ namespace ProbuildBackend.Controllers
         public async Task<IActionResult> GetInvitation(string token)
         {
             // STEP 1 — Validate that the token exists BEFORE decoding it
-            var teamMember = await _context.TeamMembers
-                .FirstOrDefaultAsync(tm =>
-                    tm.InvitationToken == token &&
-                    tm.TokenExpiration > DateTime.UtcNow);
+            var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(tm =>
+                tm.InvitationToken == token && tm.TokenExpiration > DateTime.UtcNow
+            );
 
             if (teamMember == null)
                 return BadRequest("Invalid or expired invitation token.");
@@ -950,23 +955,24 @@ namespace ProbuildBackend.Controllers
                 return BadRequest("Invalid invitation token.");
             }
 
-            return Ok(new
-            {
-                teamMember.FirstName,
-                teamMember.LastName,
-                teamMember.Email,
-                teamMember.Role
-            });
+            return Ok(
+                new
+                {
+                    teamMember.FirstName,
+                    teamMember.LastName,
+                    teamMember.Email,
+                    teamMember.Role,
+                }
+            );
         }
-
-
 
         [HttpPost("register/team-member")]
         public async Task<IActionResult> RegisterInvited([FromBody] InvitedRegistrationDto dto)
         {
             var protector = _dataProtectionProvider.CreateProtector("TeamMemberInvitation");
 
-            string decoded, email;
+            string decoded,
+                email;
             try
             {
                 var decodedBytes = WebEncoders.Base64UrlDecode(dto.Token);
@@ -1174,9 +1180,9 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var countries = await _context.CountryNumberCodes
-                    .OrderBy(c => c.CountryCode == "US" ? 0 : 1)  // US at the top
-                    .ThenBy(c => c.CountryCode)                   // Then alphabetically
+                var countries = await _context
+                    .CountryNumberCodes.OrderBy(c => c.CountryCode == "US" ? 0 : 1) // US at the top
+                    .ThenBy(c => c.CountryCode) // Then alphabetically
                     .ToListAsync();
 
                 if (countries == null || !countries.Any())
@@ -1190,7 +1196,6 @@ namespace ProbuildBackend.Controllers
             {
                 throw;
             }
-
         }
 
         [HttpGet("email-exists")]
@@ -1201,12 +1206,11 @@ namespace ProbuildBackend.Controllers
 
             var normalized = email.Trim().ToUpperInvariant();
 
-            var exists = await _context.Users
-                .AsNoTracking()
+            var exists = await _context
+                .Users.AsNoTracking()
                 .AnyAsync(u => u.NormalizedEmail == normalized && u.isPlaceholder == false);
 
             return Ok(exists);
         }
-
     }
 }

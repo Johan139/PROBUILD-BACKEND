@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
@@ -11,8 +12,6 @@ using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
-using System.Security.Claims;
-using System.Text;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 
 namespace ProbuildBackend.Controllers
@@ -78,7 +77,6 @@ namespace ProbuildBackend.Controllers
             var raw = protector.Protect(dto.Email);
             var safeToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(raw));
 
-
             if (existingTeamMember != null)
             {
                 if (existingTeamMember.Status == "Deleted")
@@ -86,6 +84,7 @@ namespace ProbuildBackend.Controllers
                     existingTeamMember.Status = "Invited";
                     existingTeamMember.FirstName = dto.FirstName;
                     existingTeamMember.LastName = dto.LastName;
+                    existingTeamMember.PhoneNumber = dto.PhoneNumber;
                     existingTeamMember.Role = dto.Role;
                     teamMemberToInvite = existingTeamMember;
                     teamMemberToInvite.InvitationToken = safeToken;
@@ -123,10 +122,11 @@ namespace ProbuildBackend.Controllers
                     FirstName = dto.FirstName,
                     LastName = dto.LastName,
                     Email = dto.Email,
+                    PhoneNumber = dto.PhoneNumber,
                     Role = dto.Role,
                     Status = "Invited",
                     InvitationToken = safeToken,
-                    TokenExpiration = DateTime.UtcNow.AddDays(7)
+                    TokenExpiration = DateTime.UtcNow.AddDays(7),
                 };
                 emailSubject = "You have been invited to join a team on Probuild";
                 _context.TeamMembers.Add(teamMemberToInvite);
@@ -134,21 +134,23 @@ namespace ProbuildBackend.Controllers
 
             await AssignDefaultPermissions(teamMemberToInvite);
 
-
             var notification = new NotificationModel
             {
                 SenderId = inviterId,
                 Message = $"You have been invited to a team by {inviterFullName}.",
                 Timestamp = DateTime.UtcNow,
-                Recipients = new List<string> { teamMemberToInvite.Id }
+                Recipients = new List<string> { teamMemberToInvite.Id },
             };
             _context.Notifications.Add(notification);
 
             await _context.SaveChangesAsync();
 
-            var existingUserAccount = await _context.Users.FirstOrDefaultAsync(u => u.Email == dto.Email);
+            var existingUserAccount = await _context.Users.FirstOrDefaultAsync(u =>
+                u.Email == dto.Email
+            );
 
-            var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
+            var frontendUrl =
+                Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
             string callbackUrl;
 
             if (existingUserAccount != null)
@@ -184,8 +186,6 @@ namespace ProbuildBackend.Controllers
                 Console.WriteLine($"Error sending invitation email to {dto.Email}: {ex.Message}");
                 return StatusCode(500, "Failed to send invitation email.");
             }
-
-
 
             await _hubContext
                 .Clients.User(teamMemberToInvite.Id)
@@ -501,12 +501,13 @@ namespace ProbuildBackend.Controllers
                 }
             }
         }
+
         [HttpPost("accept-invitation")]
         public async Task<IActionResult> AcceptInvitation([FromBody] AcceptInviteDto dto)
         {
-            var teamMember = await _context.TeamMembers
-                .FirstOrDefaultAsync(tm => tm.InvitationToken == dto.Token &&
-                                           tm.TokenExpiration > DateTime.UtcNow);
+            var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(tm =>
+                tm.InvitationToken == dto.Token && tm.TokenExpiration > DateTime.UtcNow
+            );
 
             if (teamMember == null)
                 return BadRequest("Invalid or expired token.");
