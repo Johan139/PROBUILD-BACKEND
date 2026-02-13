@@ -270,6 +270,7 @@ builder.Services.AddScoped<IEmailSender, EmailSender>();
 builder.Services.AddScoped<IConversationRepository, SqlConversationRepository>();
 builder.Services.AddScoped<IPromptManagerService, PromptManagerService>();
 builder.Services.AddScoped<ICompanyService, CompanyService>();
+builder.Services.AddScoped<IArchiveService, ArchiveService>();
 
 // The DI container will automatically inject the other services into GeminiAiService's constructor
 builder.Services.AddScoped<IAiService, GeminiAiService>();

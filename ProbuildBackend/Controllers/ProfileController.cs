@@ -58,7 +58,7 @@ namespace ProbuildBackend.Controllers
         public async Task<IActionResult> GetUserDocuments(string UserId)
         {
             var documents = await _context
-                .ProfileDocuments.Where(doc => doc.UserId == UserId && (doc.Deleted == false || doc.Deleted == null))
+                .ProfileDocuments.Where(doc => doc.UserId == UserId && (doc.Deleted == false || doc.Deleted == null) && doc.ArchivedAt == null)
                 .ToListAsync();
 
             if (documents == null || !documents.Any())
@@ -552,6 +552,25 @@ namespace ProbuildBackend.Controllers
                 return StatusCode(500, new { error = "Failed to update address", details = ex.Message });
             }
         }
+
+        [HttpPost("ArchiveDocument/{id}")]
+        public async Task<IActionResult> ArchiveDocument(int id)
+        {
+            var document = await _context.ProfileDocuments.FindAsync(id);
+            if (document == null)
+                return NotFound("Document not found.");
+            document.ArchivedAt = DateTime.UtcNow;
+            try
+            {
+                await _context.SaveChangesAsync();
+                return Ok(new { message = "Document archived successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to archive document", details = ex.Message });
+            }
+        }
+
 
         [HttpDelete("DeleteUserAddress/{id:int}")]
         public async Task<IActionResult> DeleteUserAddress(int id)
