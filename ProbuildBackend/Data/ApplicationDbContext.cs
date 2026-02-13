@@ -72,6 +72,9 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<JobPermitModel> JobPermits { get; set; }
     public DbSet<TradePackage> TradePackages { get; set; }
     public DbSet<JobAnalysisState> JobAnalysisStates { get; set; }
+    public DbSet<ExternalCompany> ExternalCompanies { get; set; }
+    public DbSet<ExternalContact> ExternalContacts { get; set; }
+    public DbSet<NoteModel> Notes { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -199,19 +202,22 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .WithOne()
             .HasForeignKey(p => p.JobId)
             .OnDelete(DeleteBehavior.Cascade);
-        modelBuilder.Entity<Quote>()
-     .HasMany(q => q.Versions)
-     .WithOne(v => v.Quote)
-     .HasForeignKey(v => v.QuoteId)
-     .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder
+            .Entity<Quote>()
+            .HasMany(q => q.Versions)
+            .WithOne(v => v.Quote)
+            .HasForeignKey(v => v.QuoteId)
+            .OnDelete(DeleteBehavior.Cascade);
 
-        modelBuilder.Entity<QuoteVersionModel>()
+        modelBuilder
+            .Entity<QuoteVersionModel>()
             .HasMany(v => v.Rows)
             .WithOne(r => r.QuoteVersion)
             .HasForeignKey(r => r.QuoteVersionId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        modelBuilder.Entity<QuoteVersionModel>()
+        modelBuilder
+            .Entity<QuoteVersionModel>()
             .HasMany(v => v.ExtraCosts)
             .WithOne(ec => ec.QuoteVersion)
             .HasForeignKey(ec => ec.QuoteVersionId)
@@ -388,6 +394,72 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .WithMany(u => u.SentInvitations)
             .HasForeignKey(i => i.InviterId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<ExternalCompany>(entity =>
+        {
+            entity.ToTable("ExternalCompanies");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.Source, e.ExternalId }).IsUnique();
+            entity
+                .HasIndex(e => new
+                {
+                    e.Source,
+                    e.Name,
+                    e.Domain,
+                })
+                .IsUnique();
+        });
+
+        modelBuilder.Entity<ExternalContact>(entity =>
+        {
+            entity.ToTable("ExternalContacts");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.Source, e.ExternalId }).IsUnique();
+            entity.HasIndex(e => new { e.ExternalCompanyId, e.Email });
+
+            entity
+                .HasOne(e => e.ExternalCompany)
+                .WithMany(c => c.Contacts)
+                .HasForeignKey(e => e.ExternalCompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<NoteModel>(entity =>
+        {
+            entity.ToTable("Notes");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.NoteText).HasMaxLength(2000).IsRequired();
+            entity
+                .Property(e => e.Visibility)
+                .HasMaxLength(20)
+                .HasDefaultValue("private")
+                .IsRequired();
+            entity.Property(e => e.CreatedByUserId).HasMaxLength(450).IsRequired();
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+            entity.HasIndex(e => e.JobId);
+            entity.HasIndex(e => e.TradePackageId);
+            entity.HasIndex(e => new
+            {
+                e.JobId,
+                e.TradePackageId,
+                e.Visibility,
+            });
+            entity.HasIndex(e => new { e.CreatedByUserId, e.CreatedAt });
+
+            entity
+                .HasOne<JobModel>()
+                .WithMany()
+                .HasForeignKey(e => e.JobId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity
+                .HasOne<TradePackage>()
+                .WithMany()
+                .HasForeignKey(e => e.TradePackageId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
 
         base.OnModelCreating(modelBuilder);
     }
