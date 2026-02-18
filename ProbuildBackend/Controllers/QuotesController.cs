@@ -13,6 +13,7 @@ using iText.Layout.Properties;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ProbuildBackend.Helpers;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
@@ -564,7 +565,7 @@ namespace ProbuildBackend.Controllers
 
                     var result = await _userManager.CreateAsync(
                         placeholderUser,
-                        GenerateRandomPassword(12)
+                        PasswordGenerator.GenerateRandomPassword(12)
                     );
 
                     if (!result.Succeeded)

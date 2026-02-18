@@ -36,18 +36,18 @@ builder.Services.AddCors(options =>
       policy =>
       {
         policy
-              .SetIsOriginAllowed(origin =>
-                  origin == "http://localhost:4200"
-                  || origin == "https://app.probuildai.com"
-                  || origin == "https://www.app.probuildai.com"
-                  || origin == "https://probuildai.com"
-                  || origin.EndsWith(".azurecontainerapps.io")
-              )
-              .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials();
-      }
-  );
+            .SetIsOriginAllowed(origin =>
+                origin == "http://localhost:4200" ||
+                origin == "https://app.probuildai.com" ||
+                origin == "https://www.app.probuildai.com" ||
+                origin == "https://probuildai.com" ||
+                origin == "http://localhost:3000" ||
+                origin.EndsWith(".azurecontainerapps.io")
+            )
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+    });
 });
 
 // Configure the token provider for password reset
@@ -216,6 +216,7 @@ builder.Services.AddTransient<IEmailSender, EmailSender>();
 builder.Services.AddScoped<IEmailTemplateService, EmailTemplateService>();
 builder.Services.AddScoped<ILogLoginInformationService, LogLoginInformationService>();
 builder.Services.AddSingleton<AzureBlobService>();
+builder.Services.AddSingleton<IProgressService, ProgressService>();
 builder.Services.AddScoped<EmailAutomationManager>();
 builder.Services.AddScoped<PaymentService>();
 builder.Services.AddScoped<SubscriptionService>();
@@ -320,7 +321,8 @@ using (var scope = app.Services.CreateScope())
 app.MapGet("/health", () => Results.Ok("Healthy"));
 
 // Map SignalR hub
-app.MapHub<ProgressHub>("/hubs/progressHub");
+app.MapHub<ProgressHub>("/hubs/progressHub").AllowAnonymous();
+
 app.Logger.LogInformation("ProgressHub endpoint mapped at /hubs/progressHub");
 app.MapHub<NotificationHub>("/hubs/notifications");
 app.MapHub<ChatHub>("/chathub");

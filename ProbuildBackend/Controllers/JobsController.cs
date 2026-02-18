@@ -1,5 +1,6 @@
 ﻿using Hangfire;
 using Hangfire.Common;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -30,6 +31,7 @@ namespace ProbuildBackend.Controllers
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IConfiguration _config;
         private readonly WebSocketManager _webSocketManager;
+        private readonly UserManager<UserModel> _userManager;
         private readonly IAiAnalysisService _aiAnalysisService;
 
         public JobsController(
@@ -42,6 +44,7 @@ namespace ProbuildBackend.Controllers
             IHttpClientFactory httpClientFactory,
             IConfiguration config,
             WebSocketManager webSocketManager,
+            UserManager<UserModel> userManager,
             IAiAnalysisService aiAnalysisService
         )
         {
@@ -57,6 +60,7 @@ namespace ProbuildBackend.Controllers
             _config = config ?? throw new ArgumentNullException(nameof(config));
             _webSocketManager = webSocketManager;
             _aiAnalysisService = aiAnalysisService;
+            _userManager = userManager;
         }
 
         [HttpGet("{jobId}/planning-data")]
@@ -551,6 +555,7 @@ namespace ProbuildBackend.Controllers
             }
 
             if (string.IsNullOrWhiteSpace(jobRequest.ProjectName))
+
             {
                 return BadRequest("Project name is required.");
             }
@@ -561,6 +566,61 @@ namespace ProbuildBackend.Controllers
                 using var transaction = await _context.Database.BeginTransactionAsync();
                 try
                 {
+
+                    if(string.IsNullOrEmpty(jobRequest.UserId))
+                    {
+                    var normalizedEmail = jobRequest.Email.ToUpperInvariant();
+                        var user = await _userManager.FindByEmailAsync(jobRequest.Email);
+                        if (user != null)
+                        {
+                            jobRequest.UserId = user.Id;
+                        }
+                        else
+                        {
+
+
+                            var placeholderUser = new UserModel
+                            {
+                                Id = Guid.NewGuid().ToString(),
+                                UserName = jobRequest.Email,
+                                Email = jobRequest.Email,
+                                NormalizedUserName = normalizedEmail, // optional: handled automatically but safe
+                                NormalizedEmail = normalizedEmail, // optional: handled automatically but safe
+                                FirstName = "",
+                                LastName = "",
+                                PhoneNumber = "",
+                                CompanyName = "",
+                                CompanyRegNo = "",
+                                VatNo = "",
+                                UserType = "",
+                                ConstructionType = null,
+                                NrEmployees = "",
+                                YearsOfOperation = "",
+                                CertificationStatus = "",
+                                CertificationDocumentPath = "",
+                                Availability = "",
+                                Trade = "",
+                                ProductsOffered = "",
+                                SupplierType = "",
+                                JobPreferences = null,
+                                DeliveryArea = null,
+                                DeliveryTime = "",
+                                SubscriptionPackage = "",
+                                DateCreated = DateTime.UtcNow,
+                                CountryNumberCode = "",
+                                isPlaceholder = true
+
+                            };
+
+                            var result = await _userManager.CreateAsync(
+                                placeholderUser,
+                                PasswordGenerator.GenerateRandomPassword(12)
+                            );
+
+                            jobRequest.UserId = placeholderUser.Id;
+                        }
+                    }
+
                     var job = new JobModel
                     {
                         TradeBudgets = jobRequest.TradeBudgets,
@@ -612,11 +672,11 @@ namespace ProbuildBackend.Controllers
 
                     var clientModel = new ClientDetailsModel()
                     {
-                        FirstName = jobRequest.FirstName,
-                        LastName = jobRequest.LastName,
-                        Email = jobRequest.Email,
+                        FirstName = jobRequest.FirstName ?? "Website Analysis",
+                        LastName = jobRequest.LastName ?? "Website Analysis",
+                        Email = jobRequest.Email ?? "Website Analysis",
                         CompanyName = jobRequest.CompanyName,
-                        Phone = jobRequest.Phone,
+                        Phone = jobRequest.Phone ?? "Website Analysis",
                         Position = jobRequest.Position,
                         CreatedAt = DateTime.Now,
                         JobId = job.Id,
