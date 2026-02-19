@@ -14,8 +14,10 @@ namespace ProbuildBackend.Controllers
     {
         public readonly IArchiveService _archiveService;
         private readonly ApplicationDbContext _context;
-        public ArchiveController(IArchiveService archiveService, ApplicationDbContext context) {
-        _archiveService = archiveService;
+
+        public ArchiveController(IArchiveService archiveService, ApplicationDbContext context)
+        {
+            _archiveService = archiveService;
             _context = context;
         }
 
@@ -37,11 +39,14 @@ namespace ProbuildBackend.Controllers
             catch (Exception ex)
             {
                 // Log the exception here
-                return StatusCode(500, new { error = ex.Message, details = ex.InnerException?.Message });
+                return StatusCode(
+                    500,
+                    new { error = ex.Message, details = ex.InnerException?.Message }
+                );
             }
         }
-        [HttpPost("archiveJob")]
 
+        [HttpPost("archiveJob")]
         public async Task<IActionResult> ArchiveJob([FromQuery] int jobId)
         {
             if (jobId == 0)
@@ -54,8 +59,8 @@ namespace ProbuildBackend.Controllers
 
             return Ok(success);
         }
-        [HttpPost("archivequoteinvoice")]
 
+        [HttpPost("archivequoteinvoice")]
         public async Task<IActionResult> ArchiveQuoteOrInvoice([FromQuery] Guid itemId)
         {
             if (itemId == Guid.Empty)
@@ -68,11 +73,13 @@ namespace ProbuildBackend.Controllers
 
             return Ok(success);
         }
+
         [HttpPost("unarchive")]
         public async Task<IActionResult> UnarchiveItem(
-           [FromQuery] string itemId,
-           [FromQuery] string itemType,
-           [FromQuery] string userId)
+            [FromQuery] string itemId,
+            [FromQuery] string itemType,
+            [FromQuery] string userId
+        )
         {
             if (string.IsNullOrEmpty(itemId))
                 return BadRequest("Item ID is required");
@@ -90,6 +97,43 @@ namespace ProbuildBackend.Controllers
 
             return Ok();
         }
+
+        [HttpPost("delete")]
+        public async Task<IActionResult> DeleteArchivedItem(
+            [FromQuery] string itemId,
+            [FromQuery] string itemType,
+            [FromQuery] string userId
+        )
+        {
+            if (string.IsNullOrWhiteSpace(itemId))
+                return BadRequest("Item ID is required");
+
+            if (string.IsNullOrWhiteSpace(itemType))
+                return BadRequest("Item type is required");
+
+            if (string.IsNullOrWhiteSpace(userId))
+                return BadRequest("User ID is required");
+
+            var success = await _archiveService.DeleteArchivedItemAsync(itemId, itemType, userId);
+
+            if (!success)
+                return BadRequest("Unable to delete archived item");
+
+            return Ok();
+        }
+
+        [HttpDelete]
+        public async Task<IActionResult> EmptyArchive([FromQuery] string userId)
+        {
+            if (string.IsNullOrWhiteSpace(userId))
+                return BadRequest("User ID is required");
+
+            var success = await _archiveService.EmptyArchiveAsync(userId);
+
+            if (!success)
+                return BadRequest("Unable to empty archive");
+
+            return Ok();
+        }
     }
 }
- 

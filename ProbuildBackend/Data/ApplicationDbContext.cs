@@ -461,6 +461,20 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
                 .OnDelete(DeleteBehavior.SetNull);
         });
 
+        modelBuilder.Entity<TradePackage>(entity =>
+        {
+            entity.Property(e => e.LaborBudget).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.MaterialBudget).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.TotalBudget).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.EffectiveBudget).HasColumnType("decimal(18,2)");
+
+            entity
+                .HasOne(e => e.LinkedTradePackage)
+                .WithMany()
+                .HasForeignKey(e => e.LinkedTradePackageId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
+
         base.OnModelCreating(modelBuilder);
     }
 }
