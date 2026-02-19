@@ -1729,7 +1729,7 @@ namespace ProbuildBackend.Services
         {
             try
             {
-                var tradePackages = new List<TradePackage>();
+                var parsedTradePackages = new List<TradePackage>();
 
                 // Regex to find all "Subcontractor Cost Breakdown" tables
                 // Should be more flexible with header formatting (e.g. bold markers)
@@ -1776,13 +1776,17 @@ namespace ProbuildBackend.Services
                                 continue;
 
                             var scope = cols[1];
-                            decimal.TryParse(cols[2], out var manHours);
+                            var manHours = ParseMoneyLikeValue(cols[2]);
 
-                            var hourlyRateStr = cols[3].Replace("$", "").Replace(",", "");
-                            decimal.TryParse(hourlyRateStr, out var hourlyRate);
+                            var hourlyRate = ParseMoneyLikeValue(cols[3]);
 
-                            var totalCostStr = cols[4].Replace("$", "").Replace(",", "");
-                            decimal.TryParse(totalCostStr, out var totalCost);
+                            var totalCost = ParseMoneyLikeValue(cols[4]);
+
+                            if (totalCost <= 0)
+                            {
+                                // Fallback: some AI outputs include trailing notes/columns where cost is shifted
+                                totalCost = cols.Select(ParseMoneyLikeValue).OrderByDescending(v => v).FirstOrDefault();
+                            }
 
                             var csiCode = cols.Count > 5 ? cols[5] : null;
 
@@ -1793,7 +1797,18 @@ namespace ProbuildBackend.Services
                             if (tradeName.Contains("Rental") || tradeName.Contains("Equipment"))
                                 category = "Equipment";
 
-                            tradePackages.Add(
+                            var laborBudget = Math.Round(manHours * hourlyRate, 2);
+                            if (laborBudget <= 0 && totalCost > 0)
+                            {
+                                // Conservative fallback split when labor columns are malformed
+                                laborBudget = Math.Round(totalCost * 0.6m, 2);
+                            }
+                            var materialBudget = Math.Max(
+                                0,
+                                Math.Round(totalCost - laborBudget, 2)
+                            );
+
+                            parsedTradePackages.Add(
                                 new TradePackage
                                 {
                                     JobId = jobId,
@@ -1801,11 +1816,17 @@ namespace ProbuildBackend.Services
                                     ScopeOfWork = scope,
                                     EstimatedManHours = manHours,
                                     HourlyRate = hourlyRate,
+                                    LaborBudget = laborBudget,
+                                    MaterialBudget = materialBudget,
+                                    TotalBudget = totalCost,
+                                    EffectiveBudget = totalCost,
                                     Budget = totalCost,
                                     CsiCode = csiCode,
                                     Category = category,
+                                    LaborType = "Labor and Materials",
                                     Status = "Draft",
                                     PostedToMarketplace = false,
+                                    SourceType = "AI",
                                     EstimatedDuration = "TBD", // Could parse timeline if needed
                                 }
                             );
@@ -1813,16 +1834,67 @@ namespace ProbuildBackend.Services
                     }
                 }
 
-                if (tradePackages.Any())
+                if (parsedTradePackages.Any())
                 {
-                    // Clear existing packages for this job to avoid duplicates on re-runs
-                    var existing = _context.TradePackages.Where(tp => tp.JobId == jobId);
-                    _context.TradePackages.RemoveRange(existing);
+                    var existingPackages = await _context
+                        .TradePackages.Where(tp => tp.JobId == jobId)
+                        .ToListAsync();
 
-                    _context.TradePackages.AddRange(tradePackages);
+                    var existingByKey = existingPackages
+                        .GroupBy(tp =>
+                            BuildTradePackageMatchKey(tp.TradeName, tp.CsiCode, tp.Category)
+                        )
+                        .ToDictionary(g => g.Key, g => g.First());
+
+                    var matchedKeys = new HashSet<string>();
+
+                    foreach (var parsed in parsedTradePackages)
+                    {
+                        var key = BuildTradePackageMatchKey(
+                            parsed.TradeName,
+                            parsed.CsiCode,
+                            parsed.Category
+                        );
+
+                        if (existingByKey.TryGetValue(key, out var existing))
+                        {
+                            matchedKeys.Add(key);
+                            MergeParsedPackageIntoExisting(existing, parsed);
+                            continue;
+                        }
+
+                        parsed.CreatedAt = DateTime.UtcNow;
+                        _context.TradePackages.Add(parsed);
+                    }
+
+                    foreach (var existing in existingPackages)
+                    {
+                        var key = BuildTradePackageMatchKey(
+                            existing.TradeName,
+                            existing.CsiCode,
+                            existing.Category
+                        );
+
+                        if (matchedKeys.Contains(key))
+                        {
+                            continue;
+                        }
+
+                        if (existing.IsAutoGenerated || IsAiSource(existing))
+                        {
+                            existing.IsInactive = true;
+                            existing.IsHidden = true;
+                            existing.PostedToMarketplace = false;
+                            if (string.IsNullOrWhiteSpace(existing.Status))
+                            {
+                                existing.Status = "Draft";
+                            }
+                        }
+                    }
+
                     await _context.SaveChangesAsync();
                     _logger.LogInformation(
-                        $"Saved {tradePackages.Count} trade packages for Job {jobId}"
+                        $"Reconciled {parsedTradePackages.Count} parsed trade packages for Job {jobId}"
                     );
                 }
             }
@@ -1830,6 +1902,82 @@ namespace ProbuildBackend.Services
             {
                 _logger.LogError(ex, $"Failed to parse Trade Packages for Job {jobId}");
             }
+        }
+
+        private static void MergeParsedPackageIntoExisting(
+            TradePackage existing,
+            TradePackage parsed
+        )
+        {
+            existing.TradeName = parsed.TradeName;
+            existing.ScopeOfWork = parsed.ScopeOfWork;
+            existing.EstimatedManHours = parsed.EstimatedManHours;
+            existing.HourlyRate = parsed.HourlyRate;
+            existing.CsiCode = parsed.CsiCode;
+            existing.Category = parsed.Category;
+            existing.TotalBudget = parsed.TotalBudget;
+            existing.LaborBudget = parsed.LaborBudget;
+            existing.MaterialBudget = parsed.MaterialBudget;
+            existing.EstimatedDuration = parsed.EstimatedDuration;
+
+            if (string.IsNullOrWhiteSpace(existing.SourceType))
+            {
+                existing.SourceType = "AI";
+            }
+
+            if (string.IsNullOrWhiteSpace(existing.LaborType))
+            {
+                existing.LaborType = "Labor and Materials";
+            }
+
+            var isLaborOnly = IsLaborOnly(existing.LaborType);
+            existing.EffectiveBudget = isLaborOnly ? existing.LaborBudget : existing.TotalBudget;
+            existing.Budget = existing.EffectiveBudget;
+
+            if (isLaborOnly)
+            {
+                existing.IsHidden = false;
+                existing.IsInactive = false;
+            }
+        }
+
+        private static string BuildTradePackageMatchKey(
+            string? tradeName,
+            string? csiCode,
+            string? category
+        )
+        {
+            var normalizedTrade = (tradeName ?? string.Empty).Trim().ToLowerInvariant();
+            var normalizedCsi = (csiCode ?? string.Empty).Trim().ToLowerInvariant();
+            var normalizedCategory = (category ?? "Trade").Trim().ToLowerInvariant();
+            return $"{normalizedTrade}|{normalizedCsi}|{normalizedCategory}";
+        }
+
+        private static bool IsAiSource(TradePackage tradePackage)
+        {
+            return string.Equals(tradePackage.SourceType, "AI", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsLaborOnly(string? laborType)
+        {
+            var normalized = (laborType ?? string.Empty).Trim().ToLowerInvariant();
+            return normalized == "labor" || normalized == "labor only";
+        }
+
+        private static decimal ParseMoneyLikeValue(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return 0;
+            }
+
+            var cleaned = Regex.Replace(raw, @"[^0-9\.-]", "");
+            if (decimal.TryParse(cleaned, out var parsed))
+            {
+                return parsed;
+            }
+
+            return 0;
         }
 
         private async Task<string> ExecuteSequentialRenovationPromptsAsync(
