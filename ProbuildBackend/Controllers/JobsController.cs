@@ -1,4 +1,7 @@
-﻿using Hangfire;
+﻿using System.Globalization;
+using System.IO.Compression;
+using System.Security.Claims;
+using Hangfire;
 using Hangfire.Common;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -10,9 +13,6 @@ using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Services;
-using System.Globalization;
-using System.IO.Compression;
-using System.Security.Claims;
 using BomWithCosts = ProbuildBackend.Models.BomWithCosts;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 
@@ -563,7 +563,6 @@ namespace ProbuildBackend.Controllers
             }
 
             if (string.IsNullOrWhiteSpace(jobRequest.ProjectName))
-
             {
                 return BadRequest("Project name is required.");
             }
@@ -574,10 +573,9 @@ namespace ProbuildBackend.Controllers
                 using var transaction = await _context.Database.BeginTransactionAsync();
                 try
                 {
-
-                    if(string.IsNullOrEmpty(jobRequest.UserId))
+                    if (string.IsNullOrEmpty(jobRequest.UserId))
                     {
-                    var normalizedEmail = jobRequest.Email.ToUpperInvariant();
+                        var normalizedEmail = jobRequest.Email.ToUpperInvariant();
                         var user = await _userManager.FindByEmailAsync(jobRequest.Email);
                         if (user != null)
                         {
@@ -585,8 +583,6 @@ namespace ProbuildBackend.Controllers
                         }
                         else
                         {
-
-
                             var placeholderUser = new UserModel
                             {
                                 Id = Guid.NewGuid().ToString(),
@@ -616,8 +612,7 @@ namespace ProbuildBackend.Controllers
                                 SubscriptionPackage = "",
                                 DateCreated = DateTime.UtcNow,
                                 CountryNumberCode = "",
-                                isPlaceholder = true
-
+                                isPlaceholder = true,
                             };
 
                             var result = await _userManager.CreateAsync(
@@ -1027,7 +1022,7 @@ namespace ProbuildBackend.Controllers
                         Timestamp = DateTime.UtcNow,
                         JobId = job.Id,
                         SenderId = subtasks.UserId,
-                        Type = "Job"
+                        Type = "Job",
                     };
 
                     _context.Notifications.Add(notification);
@@ -1399,7 +1394,6 @@ namespace ProbuildBackend.Controllers
                 );
             }
 
-
             job.ArchivedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
@@ -1484,6 +1478,7 @@ namespace ProbuildBackend.Controllers
 
             return Ok(jobs);
         }
+
         [HttpGet("dashboard")]
         public async Task<ActionResult<IEnumerable<JobDto>>> GetDashboardJobs()
         {
@@ -1676,7 +1671,7 @@ namespace ProbuildBackend.Controllers
                         SenderId = request.SenderId,
                         Timestamp = DateTime.UtcNow,
                         Recipients = recipientIds,
-                        Type = "Job"
+                        Type = "Job",
                     };
 
                     _context.Notifications.Add(notification);
@@ -1792,7 +1787,11 @@ namespace ProbuildBackend.Controllers
                     await _context.SaveChangesAsync();
                 }
 
-                return Ok(new { thumbnailUrl });
+                var displayThumbnailUrl = !string.IsNullOrWhiteSpace(thumbnailUrl)
+                    ? _azureBlobservice.GenerateTemporaryPublicUrl(thumbnailUrl)
+                    : thumbnailUrl;
+
+                return Ok(new { thumbnailUrl = displayThumbnailUrl });
             }
             catch (Exception ex)
             {
