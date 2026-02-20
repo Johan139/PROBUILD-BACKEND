@@ -49,7 +49,9 @@ namespace ProbuildBackend.Services
             bool generateDetailsWithAi,
             string userContextText,
             string userContextFileUrl,
-            string budgetLevel
+            string budgetLevel,
+            bool? isFrontEnd = false,
+            string? ipAddress = null
         )
         {
             try
@@ -141,6 +143,31 @@ namespace ProbuildBackend.Services
                     try
                     {
                         await _emailService.SendEmailAsync(ProjectAnalysisEmail, user.Email);
+
+                        if (isFrontEnd == true && !string.IsNullOrEmpty(ipAddress))
+                        {
+                            var existing = await _context.WebsiteJobTracker
+                                .FirstOrDefaultAsync(x => x.IpAddress == ipAddress);
+
+                            if (existing == null)
+                            {
+                                _context.WebsiteJobTracker.Add(new WebsiteJobTrackerModel
+                                {
+                                    Id = Guid.NewGuid(),
+                                    IpAddress = ipAddress,
+                                    JobCount = 1,
+                                    FirstSeenAt = DateTime.UtcNow,
+                                    LastSeenAt = DateTime.UtcNow
+                                });
+                            }
+                            else
+                            {
+                                existing.JobCount++;
+                                existing.LastSeenAt = DateTime.UtcNow;
+                            }
+
+                            await _context.SaveChangesAsync();
+                        }
                     }
                     catch (Exception ex)
                     {

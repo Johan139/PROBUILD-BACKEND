@@ -557,6 +557,8 @@ namespace ProbuildBackend.Controllers
         [RequestSizeLimit(200 * 1024 * 1024)]
         public async Task<IActionResult> PostJob([FromForm] JobDto jobRequest)
         {
+            string? ipAddress = null;
+
             if (jobRequest == null)
             {
                 return BadRequest("Job request cannot be null.");
@@ -566,6 +568,7 @@ namespace ProbuildBackend.Controllers
             {
                 return BadRequest("Project name is required.");
             }
+
 
             var strategy = _context.Database.CreateExecutionStrategy();
             return await strategy.ExecuteAsync(async () =>
@@ -740,7 +743,9 @@ namespace ProbuildBackend.Controllers
                     }
 
                     await transaction.CommitAsync();
-
+                    var raw = Request.Headers["X-Forwarded-For"].FirstOrDefault();
+                    ipAddress = raw?.Split(',').First().Trim()
+                                ?? HttpContext.Connection.RemoteIpAddress?.ToString();
                     if (documentUrls.Any())
                     {
                         string connectionId =
@@ -758,7 +763,10 @@ namespace ProbuildBackend.Controllers
                                     jobRequest.GenerateDetailsWithAi,
                                     jobRequest.UserContextText,
                                     userContextFileUrl,
-                                    jobRequest.BudgetLevel
+                                    jobRequest.BudgetLevel,
+                                    jobRequest.isFrontEnd,
+                                    ipAddress
+
                                 )
                             );
                         }
@@ -806,6 +814,25 @@ namespace ProbuildBackend.Controllers
                     );
                 }
             });
+        }
+
+        [HttpGet("check-limit")]
+        public async Task<IActionResult> CheckLimit()
+        {
+
+            var raw = Request.Headers["X-Forwarded-For"].FirstOrDefault();
+            var ip = raw?.Split(',').First().Trim()
+                     ?? HttpContext.Connection.RemoteIpAddress?.ToString();
+
+            if (string.IsNullOrEmpty(ip))
+                return Ok(new { allowed = true });
+
+            var tracker = await _context.WebsiteJobTracker
+                .FirstOrDefaultAsync(x => x.IpAddress == ip);
+
+            var allowed = tracker == null || tracker.JobCount < 2;
+
+            return Ok(new { allowed });
         }
 
         [HttpPost("UploadImage")]
@@ -1434,6 +1461,8 @@ namespace ProbuildBackend.Controllers
 
             return NoContent();
         }
+
+
 
         [HttpPut("{jobId}/unarchive")]
         public async Task<IActionResult> UnarchiveJob(int jobId)

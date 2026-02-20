@@ -9,7 +9,9 @@ namespace ProbuildBackend.Interface
             bool generateDetailsWithAi,
             string userContextText,
             string userContextFileUrl,
-            string budgetLevel
+            string budgetLevel,
+           bool? isFrontEnd = false,
+           string? ipAddress = null
         );
         Task ProcessSelectedAnalysisForJobAsync(
             int jobId,
