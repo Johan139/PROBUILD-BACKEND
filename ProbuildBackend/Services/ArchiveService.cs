@@ -78,11 +78,30 @@ namespace ProbuildBackend.Services
     })
     .ToListAsync();
 
-
+                var archivedTradePackages = await _context.TradePackages
+    .Where(tp => tp.ArchivedAt != null)
+    .Join(
+        _context.Jobs.Where(j => j.UserId == userId),
+        tp => tp.JobId,
+        j => j.Id,
+        (tp, j) => new ArchivedItemDto
+        {
+            Id = tp.Id.ToString(),
+            JobId = "job-" + tp.JobId.ToString(),
+            Type = "TRADE_PACKAGE",
+            Title = tp.ScopeOfWork ?? tp.TradeName ?? "Untitled Job",
+            TradeName = tp.TradeName ?? tp.Category ?? "",
+            Status = tp.Status ?? "Posted",
+            BidsCount = _context.Bids.Count(b => b.TradePackageId == tp.Id),
+            ArchivedAt = tp.ArchivedAt ?? DateTime.MinValue
+        }
+    )
+    .ToListAsync();
 
                 var archivedItems = archivedJobs
          .Concat(archivedQuotes)
          .Concat(archivedDocuments)
+         .Concat(archivedTradePackages)
          .OrderByDescending(x => x.ArchivedAt)
          .ToList();
 
@@ -160,6 +179,16 @@ namespace ProbuildBackend.Services
                             if (quote == null) return false;
 
                             quote.ArchivedAt = null;
+                            break;
+                        }
+                    case "TRADE_PACKAGE":
+                        {
+                            var tp = await _context.TradePackages
+                                .FirstOrDefaultAsync(t => t.Id == Convert.ToInt32(itemId));
+
+                            if (tp == null) return false;
+
+                            tp.ArchivedAt = null;
                             break;
                         }
                     case "DOCUMENT":

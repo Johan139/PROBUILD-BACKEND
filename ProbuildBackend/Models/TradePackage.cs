@@ -41,6 +41,8 @@ namespace ProbuildBackend.Models
 
         public bool PostedToMarketplace { get; set; }
 
+        public DateTime? ArchivedAt { get; set; }
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 }
