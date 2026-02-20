@@ -31,19 +31,36 @@ namespace ProbuildBackend.Services
                     })
                     .ToListAsync();
 
-                var archivedQuotes = await (
-                    from q in _context.Quotes
-                    join u in _context.Users on q.SentTo equals u.Id into userJoin
-                    from u in userJoin.DefaultIfEmpty()
-                    where q.ArchivedAt != null && q.CreatedID == userId
-                    select new ArchivedItemDto
-                    {
-                        Id = q.Id.ToString(),
-                        Type = q.DocumentType,
-                        Title = q.Number ?? "",
-                        Status = q.Status ?? "",
-                        ArchivedAt = q.ArchivedAt,
+                var archivedQuotes =
+                          await (
+                              from q in _context.Quotes
+                              join u in _context.Users
+                                  on q.SentTo equals u.Id into userJoin
+                              from u in userJoin.DefaultIfEmpty()
+                              where q.ArchivedAt != null && q.CreatedID == userId
+                              select new ArchivedItemDto
+                              {
+                                  Id = q.Id.ToString(),
+                                  Type = q.DocumentType,
+                                  Title = q.Number ?? "",
+                                  Status = q.Status ?? "",
+                                  ArchivedAt = q.ArchivedAt,
 
+                                  Client =
+                                      u == null
+                                          ? ""
+                                          : !string.IsNullOrWhiteSpace(u.FirstName) || !string.IsNullOrWhiteSpace(u.LastName)
+                                              ? (u.FirstName + " " + u.LastName).Trim()
+                                              : u.Email,
+
+                                  Amount =
+                                      _context.QuoteVersions
+                                          .Where(v => v.QuoteId == q.Id)
+                                          .OrderByDescending(v => v.Version) // or VersionNumber
+                                          .Select(v => v.Total)
+                                          .FirstOrDefault()
+                              }
+                          ).ToListAsync();
 
                 var archivedTradePackages = await _context.TradePackages
     .Where(tp => tp.ArchivedAt != null)
@@ -64,7 +81,19 @@ namespace ProbuildBackend.Services
         }
     )
     .ToListAsync();
-
+                var archivedDocuments = await _context.ProfileDocuments
+.Where(d => d.ArchivedAt != null && d.UserId == userId)
+.Select(d => new ArchivedItemDto
+{
+Id = d.Id.ToString(),
+Type = "DOCUMENT",
+Title = d.FileName,
+Project = "",
+DocumentType = "Profile",
+Size = 0,
+ArchivedAt = d.ArchivedAt.Value
+})
+.ToListAsync();
 
                 var archivedItems = archivedJobs
          .Concat(archivedQuotes)
