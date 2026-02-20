@@ -114,6 +114,14 @@ namespace ProbuildBackend.Controllers
 
                 foreach (var item in jobs)
                 {
+                    var TradePackage = _context.TradePackages.Where(jb => jb.JobId == item.Job.Id).FirstOrDefault();
+                    if (TradePackage != null)
+                    {
+                        if (TradePackage.ArchivedAt != null)
+                        {
+                            continue;
+                        }
+                    }
                     var subtasks = await _context
                         .JobSubtasks.Where(s => s.JobId == item.Job.Id && !s.Deleted)
                         .ToListAsync();

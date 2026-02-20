@@ -113,7 +113,32 @@ namespace ProbuildBackend.Controllers
 
             return NoContent();
         }
+        [HttpPut("archivepackage/{id}")]
+        public async Task<IActionResult> ArchivePackage(int id)
+        {
 
+
+            try
+            {
+                var archivePackage = _context.TradePackages.Where(m => m.Id == id).FirstOrDefault();
+                archivePackage.ArchivedAt = DateTime.Now;
+
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (!_context.TradePackages.Any(e => e.Id == id))
+                {
+                    return NotFound();
+                }
+                else
+                {
+                    throw;
+                }
+            }
+
+            return NoContent();
+        }
         [HttpPost("{id}/post")]
         public async Task<IActionResult> PostToMarketplace(int id)
         {
@@ -605,12 +630,10 @@ namespace ProbuildBackend.Controllers
             try
             {
                 var postings = await _context
-                    .TradePackages.Where(tp =>
-                        tp.Job.UserId == userId
-                        && tp.PostedToMarketplace
-                        && !tp.IsHidden
-                        && !tp.IsInactive
-                    )
+
+                    .TradePackages.Where(tp => tp.Job.UserId == userId && tp.PostedToMarketplace && tp.ArchivedAt == null && !tp.IsHidden
+                        && !tp.IsInactive)
+
                     .Include(tp => tp.Job)
                         .ThenInclude(j => j.JobAddress)
                     .Select(tp => new
