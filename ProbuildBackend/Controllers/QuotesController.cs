@@ -53,6 +53,57 @@ namespace ProbuildBackend.Controllers
             _userManager = userManager;
         }
 
+        [HttpPost("upload")]
+        [RequestSizeLimit(200 * 1024 * 1024)]
+        public async Task<IActionResult> Upload([FromForm] UploadQuoteDto uploadQuoteDto)
+        {
+            if (
+                uploadQuoteDto == null
+                || uploadQuoteDto.Quote == null
+                || !uploadQuoteDto.Quote.Any()
+            )
+            {
+                return BadRequest(new { error = "No quote file provided" });
+            }
+
+            var quoteFile = uploadQuoteDto.Quote.First();
+            var allowedExtensions = new[] { ".pdf" };
+            var extension = System.IO.Path.GetExtension(quoteFile.FileName).ToLowerInvariant();
+
+            if (Array.IndexOf(allowedExtensions, extension) < 0)
+            {
+                return BadRequest(
+                    new { error = "Invalid file type. Only PDF files are allowed for quotes." }
+                );
+            }
+
+            var uploadedFileUrls = await _azureBlobService.UploadFiles(
+                uploadQuoteDto.Quote,
+                null,
+                null
+            );
+
+            var fileUrl = uploadedFileUrls.FirstOrDefault();
+            if (fileUrl != null)
+            {
+                var jobDocument = new JobDocumentModel
+                {
+                    JobId = null,
+                    FileName = System.IO.Path.GetFileName(new Uri(fileUrl).LocalPath),
+                    BlobUrl = fileUrl,
+                    SessionId = uploadQuoteDto.sessionId,
+                    Type = "Quote",
+                    UploadedAt = DateTime.Now,
+                };
+                _context.JobDocuments.Add(jobDocument);
+                await _context.SaveChangesAsync();
+            }
+
+            var response = new { FileUrl = fileUrl };
+
+            return Ok(response);
+        }
+
         // ======================================================
         // SAVE DRAFT (CREATE OR NEW VERSION)
         // ======================================================
@@ -186,9 +237,7 @@ namespace ProbuildBackend.Controllers
                 return BadRequest("Quote submission limit reached.");
 
             quote.Status = "Submitted";
-            string label = quote.DocumentType?.ToLower() == "invoice"
-? "Invoice"
-: "Quote";
+            string label = quote.DocumentType?.ToLower() == "invoice" ? "Invoice" : "Quote";
 
             string SubmitMessage = $"New {label} submitted: {quote.Number}";
             var quoteNotification = new NotificationModel
@@ -198,7 +247,7 @@ namespace ProbuildBackend.Controllers
                 SenderId = quote.CreatedID,
                 Recipients = new List<string> { quote.SentTo },
                 Type = "Quote",
-                QuoteId = quote.Id
+                QuoteId = quote.Id,
             };
             _context.Notifications.Add(quoteNotification);
             await _subscriptionService.IncrementQuoteCount(quote.CreatedID);
@@ -308,11 +357,9 @@ namespace ProbuildBackend.Controllers
         [HttpGet("user/{userId}")]
         public async Task<IActionResult> GetUserQuotes(string userId)
         {
-            var quotes = await _context.Quotes
-                .Where(q =>
-                    (q.CreatedID == userId ||
-                    q.SentTo == userId) &&
-                    q.ArchivedAt == null
+            var quotes = await _context
+                .Quotes.Where(q =>
+                    (q.CreatedID == userId || q.SentTo == userId) && q.ArchivedAt == null
                 )
                 .OrderByDescending(q => q.CreatedDate)
                 .Select(q => new
@@ -590,9 +637,7 @@ namespace ProbuildBackend.Controllers
                     quote.Status = "Submitted";
                     await _subscriptionService.IncrementQuoteCount(quote.CreatedID);
                 }
-                string label = quote.DocumentType?.ToLower() == "invoice"
-? "Invoice"
-: "Quote";
+                string label = quote.DocumentType?.ToLower() == "invoice" ? "Invoice" : "Quote";
 
                 string SubmitMessage = $"New {label} submitted: {quote.Number}";
                 var quoteNotification = new NotificationModel
@@ -602,7 +647,7 @@ namespace ProbuildBackend.Controllers
                     SenderId = quote.CreatedID,
                     Recipients = new List<string> { quote.SentTo },
                     Type = "Quote",
-                    QuoteId = quote.Id
+                    QuoteId = quote.Id,
                 };
                 _context.Notifications.Add(quoteNotification);
 
@@ -1742,39 +1787,38 @@ namespace ProbuildBackend.Controllers
         public async Task<IActionResult> ChangeStatus(Guid quoteId, [FromBody] string status)
         {
             var quote = await _context.Quotes.FindAsync(quoteId);
-            if (quote == null) return NotFound();
+            if (quote == null)
+                return NotFound();
             var quoteNotification = new NotificationModel();
-            string label = quote.DocumentType?.ToLower() == "invoice"
-        ? "Invoice"
-        : "Quote";
+            string label = quote.DocumentType?.ToLower() == "invoice" ? "Invoice" : "Quote";
 
             string ApprovedMessage = $"{label} Approved: {quote.Number}";
             string RejectMessage = $"{label} Rejected: {quote.Number}";
             switch (status)
-            {   
+            {
                 case "Approved":
-                     quoteNotification = new NotificationModel
+                    quoteNotification = new NotificationModel
                     {
                         Message = $"{ApprovedMessage}",
                         JobId = quote.JobID,
                         SenderId = quote.SentTo,
                         Recipients = new List<string> { quote.CreatedID },
                         Type = "Quote",
-                         QuoteId = quote.Id
-                     };
-                
+                        QuoteId = quote.Id,
+                    };
+
                     break;
                 case "Rejected":
-                     quoteNotification = new NotificationModel
+                    quoteNotification = new NotificationModel
                     {
                         Message = $"{RejectMessage}",
                         JobId = quote.JobID,
                         SenderId = quote.SentTo,
                         Recipients = new List<string> { quote.CreatedID },
                         Type = "Quote",
-                        QuoteId = quote.Id
-                     };
-                   
+                        QuoteId = quote.Id,
+                    };
+
                     break;
                 default:
                     break;

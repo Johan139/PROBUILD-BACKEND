@@ -12,7 +12,7 @@ namespace ProbuildBackend.Models
         public int JobId { get; set; }
 
         [ForeignKey("JobId")]
-        public JobModel Job { get; set; }
+        public JobModel? Job { get; set; }
 
         [Required]
         public string TradeName { get; set; }

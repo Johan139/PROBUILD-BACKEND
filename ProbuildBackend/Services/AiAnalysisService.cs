@@ -162,7 +162,7 @@ namespace ProbuildBackend.Services
                                 {
                                     JobId = job.Id,
                                     StatusMessage =
-                                        $"Analyzing: {promptKey.Replace(".txt", "").Replace("-", " ")}",
+                                        $"Analyzing: {FormatPromptStatusLabel(promptKey)}",
                                     CurrentStep = step,
                                     TotalSteps = orderedPrompts.Count,
                                     IsComplete = false,
@@ -173,7 +173,7 @@ namespace ProbuildBackend.Services
 
                     await UpdateAnalysisState(
                         job.Id,
-                        $"Analyzing: {promptKey.Replace(".txt", "").Replace("-", " ")}",
+                        $"Analyzing: {FormatPromptStatusLabel(promptKey)}",
                         step,
                         orderedPrompts.Count
                     );
@@ -782,7 +782,7 @@ namespace ProbuildBackend.Services
                                 {
                                     JobId = jobId,
                                     StatusMessage =
-                                        $"Analyzing: {promptName.Replace(".txt", "").Replace("-", " ")}",
+                                        $"Analyzing: {FormatPromptStatusLabel(promptName)}",
                                     CurrentStep = step,
                                     TotalSteps = promptNames.Length,
                                     IsComplete = false,
@@ -793,7 +793,7 @@ namespace ProbuildBackend.Services
 
                     await UpdateAnalysisState(
                         jobId,
-                        $"Analyzing: {promptName.Replace(".txt", "").Replace("-", " ")}",
+                        $"Analyzing: {FormatPromptStatusLabel(promptName)}",
                         step,
                         promptNames.Length
                     );
@@ -2029,7 +2029,7 @@ namespace ProbuildBackend.Services
                                 {
                                     JobId = jobId,
                                     StatusMessage =
-                                        $"Analyzing: {promptName.Replace(".txt", "").Replace("-", " ")}",
+                                        $"Analyzing: {FormatPromptStatusLabel(promptName)}",
                                     CurrentStep = step,
                                     TotalSteps = promptNames.Length,
                                     IsComplete = false,
@@ -2040,7 +2040,7 @@ namespace ProbuildBackend.Services
 
                     await UpdateAnalysisState(
                         jobId,
-                        $"Analyzing: {promptName.Replace(".txt", "").Replace("-", " ")}",
+                        $"Analyzing: {FormatPromptStatusLabel(promptName)}",
                         step,
                         promptNames.Length
                     );
@@ -2451,6 +2451,35 @@ namespace ProbuildBackend.Services
                 }
             }
             return dto;
+        }
+
+        private static string FormatPromptStatusLabel(string? promptKeyOrName)
+        {
+            var normalized = (promptKeyOrName ?? string.Empty).Replace(
+                ".txt",
+                string.Empty,
+                StringComparison.OrdinalIgnoreCase
+            );
+
+            normalized = Regex.Replace(
+                normalized,
+                @"^(?:prompt|renovation)-\d{1,2}-",
+                string.Empty,
+                RegexOptions.IgnoreCase
+            );
+
+            normalized = normalized.Replace("-", " ").Trim();
+
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return "Analysis";
+            }
+
+            return Regex.Replace(
+                normalized.ToLowerInvariant(),
+                @"\b[a-z]",
+                m => m.Value.ToUpperInvariant()
+            );
         }
 
         private async Task UpdateAnalysisState(
