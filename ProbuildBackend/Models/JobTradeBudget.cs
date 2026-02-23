@@ -20,5 +20,6 @@ namespace ProbuildBackend.Models
         public string? TradeName { get; set; }
 
         public decimal Budget { get; set; }
+
     }
 }

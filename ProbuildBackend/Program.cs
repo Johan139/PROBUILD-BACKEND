@@ -42,6 +42,7 @@ builder.Services.AddCors(options =>
                 origin == "https://www.app.probuildai.com" ||
                 origin == "https://probuildai.com" ||
                 origin == "http://localhost:3000" ||
+                origin == "https://probuildai-web-qa-a2cyd0eygke4gfbu.centralus-01.azurewebsites.net" ||
                 origin.EndsWith(".azurecontainerapps.io")
             )
             .AllowAnyHeader()

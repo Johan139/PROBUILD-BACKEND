@@ -46,6 +46,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<TeamMember> TeamMembers { get; set; }
     public DbSet<Permission> Permissions { get; set; }
     public DbSet<TeamMemberPermission> TeamMemberPermissions { get; set; }
+    public DbSet<WebsiteJobTrackerModel> WebsiteJobTracker { get; set; }
     public DbSet<Conversation> Conversations { get; set; }
     public DbSet<ConversationPrompt> ConversationPrompts { get; set; }
     public DbSet<UserLoginAudit> UserLoginAudit { get; set; }
