@@ -196,6 +196,15 @@ ArchivedAt = d.ArchivedAt.Value
                         profiledocument.ArchivedAt = null;
                         break;
                     }
+                    case "TRADE_PACKAGE":
+                        {
+                            var tradePackage = await _context.TradePackages.FirstOrDefaultAsync(t => t.Id == Convert.ToInt32(itemId));
+
+                            if (tradePackage == null) return false;
+
+                            tradePackage.ArchivedAt = null;
+                            break;
+                        }
                     default:
                         return false;
                 }
