@@ -213,14 +213,8 @@ namespace ProbuildBackend.Controllers
 
                 if (user.SubscriptionPackage.Contains("Trial"))
                 {
-                    var callbackUrlWelcome = $"{frontendUrl}/dashboard";
-                    var WelcomeEmail = await _emailTemplate.GetTemplateAsync("WelcomeTrialEmail");
-                    WelcomeEmail.Body = WelcomeEmail
-                        .Body.Replace("{{cta_url}}", callbackUrlWelcome)
-                        .Replace("{{first_name}}", model.FirstName + " " + model.LastName)
-                        .Replace("{{Header}}", EmailConfirmation.HeaderHtml)
-                        .Replace("{{Footer}}", EmailConfirmation.FooterHtml);
-                    await _emailSender.SendEmailAsync(WelcomeEmail, model.Email);
+
+
                 }
 
                 // Fetch the automation rule from DB
@@ -418,6 +412,14 @@ namespace ProbuildBackend.Controllers
             var result = await _userManager.ConfirmEmailAsync(user, code);
             if (result.Succeeded)
             {
+                var callbackUrlWelcome = $"{frontendUrl}/dashboard";
+                var WelcomeEmail = await _emailTemplate.GetTemplateAsync("WelcomeTrialEmail");
+                WelcomeEmail.Body = WelcomeEmail
+                    .Body.Replace("{{cta_url}}", callbackUrlWelcome)
+                    .Replace("{{first_name}}", user.FirstName + " " + user.LastName)
+                    .Replace("{{Header}}", WelcomeEmail.HeaderHtml)
+                    .Replace("{{Footer}}", WelcomeEmail.FooterHtml);
+                await _emailSender.SendEmailAsync(WelcomeEmail, user.Email);
                 return Redirect($"{frontendUrl}/login?confirmed=true");
             }
             else
@@ -776,43 +778,42 @@ namespace ProbuildBackend.Controllers
         [HttpPost("forgotpassword")]
         public async Task<IActionResult> ForgotPassword(ForgotPasswordModel model)
         {
-            var user = await _context
-                .Users.AsNoTracking()
-                .Select(u => new UserModel
-                {
-                    Id = u.Id,
-                    UserName = u.UserName,
-                    Email = u.Email,
-                    SecurityStamp = u.SecurityStamp,
-                })
+            var user = await _context.Users
+                .AsNoTracking()
                 .FirstOrDefaultAsync(u => u.Email == model.Email);
 
-            var protector = _dataProtectionProvider
-                .CreateProtector($"{user.Id}:Default:ResetPassword")
-                .ToTimeLimitedDataProtector();
-            var token = protector.Protect(
-                "ResetToken:" + Guid.NewGuid(),
-                lifetime: TimeSpan.FromMinutes(15)
-            );
+            if (user != null)
+            {
+                var protector = _dataProtectionProvider
+                    .CreateProtector($"{user.Id}:Default:ResetPassword")
+                    .ToTimeLimitedDataProtector();
 
-            var frontendBaseUrl =
-                Environment.GetEnvironmentVariable("FRONTEND_URL")
-                ?? _configuration["FrontEnd:FRONTEND_URL"];
-            ;
-            var callbackUrl =
-                $"{frontendBaseUrl}/reset-password?email={Uri.EscapeDataString(user.Email)}&token={Uri.EscapeDataString(token)}";
+                var token = protector.Protect(
+                    "ResetToken:" + Guid.NewGuid(),
+                    lifetime: TimeSpan.FromMinutes(15)
+                );
 
-            var ResetPassword = await _emailTemplate.GetTemplateAsync("PasswordResetEmail");
+                var frontendBaseUrl =
+                    Environment.GetEnvironmentVariable("FRONTEND_URL")
+                    ?? _configuration["FrontEnd:FRONTEND_URL"];
 
-            ResetPassword.Body = ResetPassword
-                .Body.Replace("{{ResetLink}}", callbackUrl)
-                .Replace("{{UserName}}", $"{user.FirstName} {user.LastName}")
-                .Replace("{{Header}}", ResetPassword.HeaderHtml)
-                .Replace("{{Footer}}", ResetPassword.FooterHtml);
+                var callbackUrl =
+                    $"{frontendBaseUrl}/reset-password?email={Uri.EscapeDataString(user.Email)}&token={Uri.EscapeDataString(token)}";
 
-            await _emailSender.SendEmailAsync(ResetPassword, user.Email);
+                var template = await _emailTemplate.GetTemplateAsync("PasswordResetEmail");
 
-            return Ok();
+                template.Body = template.Body
+                    .Replace("{{ResetLink}}", callbackUrl);
+
+                await _emailSender.SendEmailAsync(template, user.Email);
+            }
+
+            await Task.Delay(300); // prevent timing attacks
+
+            return Ok(new
+            {
+                message = "If an account exists with this email address, you will receive a password reset link."
+            });
         }
 
         public class ResetPasswordDto
