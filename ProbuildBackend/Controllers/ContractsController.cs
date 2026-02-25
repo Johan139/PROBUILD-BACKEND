@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Models;
+using ProbuildBackend.Services;
 
 namespace ProbuildBackend.Controllers
 {
@@ -10,10 +11,12 @@ namespace ProbuildBackend.Controllers
     public class ContractsController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
+        private readonly ContractService _contractService;
 
-        public ContractsController(ApplicationDbContext context)
+        public ContractsController(ApplicationDbContext context, ContractService contractService)
         {
             _context = context;
+            _contractService = contractService;
         }
 
         [HttpPost("{jobId}/generate")]
@@ -49,6 +52,90 @@ namespace ProbuildBackend.Controllers
             await _context.SaveChangesAsync();
 
             return CreatedAtAction(nameof(GenerateContract), new { id = contract.Id }, contract);
+        }
+
+        [HttpPost("{jobId}/generate-general-client-contract")]
+        public async Task<IActionResult> GenerateGeneralClientContract(int jobId)
+        {
+            var job = await _context.Jobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == jobId);
+            if (job == null)
+            {
+                return NotFound("Job not found.");
+            }
+
+            var userId = User.FindFirstValue("UserId");
+            var gcId = string.IsNullOrWhiteSpace(userId) ? job.UserId : userId;
+
+            if (string.IsNullOrWhiteSpace(gcId))
+            {
+                return BadRequest("Unable to resolve general contractor account.");
+            }
+
+            try
+            {
+                var contract = await _contractService.GenerateGeneralContractAsync(jobId, gcId);
+                return Ok(contract);
+            }
+            catch (FileNotFoundException ex)
+            {
+                return NotFound(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+        [HttpPost("{contractId}/upload-client-pdf")]
+        public async Task<IActionResult> UploadClientContractPdf(Guid contractId, [FromForm] IFormFile file)
+        {
+            if (file == null)
+            {
+                return BadRequest("No file was provided.");
+            }
+
+            var userId = User.FindFirstValue("UserId");
+
+            try
+            {
+                var updated = await _contractService.UploadClientContractAsync(contractId, file, userId);
+                return Ok(updated);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ex.Message);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+        [HttpGet("{contractId}/download-client-pdf")]
+        public async Task<IActionResult> DownloadClientContractPdf(Guid contractId)
+        {
+            try
+            {
+                var (content, contentType, fileName) =
+                    await _contractService.DownloadContractFileAsync(contractId);
+                return File(content, contentType, fileName);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ex.Message);
+            }
+            catch (FileNotFoundException ex)
+            {
+                return NotFound(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         [HttpGet("{contractId}")]
