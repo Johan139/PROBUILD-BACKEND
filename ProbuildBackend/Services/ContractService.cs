@@ -7,6 +7,26 @@ using ProbuildBackend.Models;
 
 namespace ProbuildBackend.Services
 {
+    public class GenerateGeneralClientContractOptions
+    {
+        public string? ExecutiveSummaryContext { get; set; }
+        public string? ProjectType { get; set; }
+        public bool? ConsequentialDamagesWaiverEnabled { get; set; }
+        public bool? LiabilityCapEnabled { get; set; }
+        public string? LiabilityCapBasis { get; set; }
+        public string? LiabilityCapType { get; set; }
+        public decimal? LiabilityCapFixedAmount { get; set; }
+        public string? LiabilityCapCurrency { get; set; }
+        public string? DisputeResolutionMode { get; set; }
+        public string? InsuranceLimits { get; set; }
+        public string? Markups { get; set; }
+        public string? CurePeriods { get; set; }
+        public string? LdCap { get; set; }
+        public bool? RightToRepairReviewRequired { get; set; }
+        public bool? DepositLimitReviewRequired { get; set; }
+        public bool? AntiIndemnityReviewRequired { get; set; }
+    }
+
     public class ContractService
     {
         private readonly ApplicationDbContext _context;
@@ -27,7 +47,11 @@ namespace ProbuildBackend.Services
             _promptManager = promptManager;
         }
 
-        public async Task<Contract> GenerateGeneralContractAsync(int jobId, string gcId)
+        public async Task<Contract> GenerateGeneralContractAsync(
+            int jobId,
+            string gcId,
+            GenerateGeneralClientContractOptions? options = null
+        )
         {
             var job = await _context
                 .Jobs.Include(j => j.JobAddress)
@@ -59,10 +83,56 @@ namespace ProbuildBackend.Services
                 .OrderByDescending(r => r.CreatedAt)
                 .FirstOrDefaultAsync();
 
-            var executiveSummary = ExtractExecutiveSummary(latestProcessingResult?.FullResponse);
+            var executiveSummary = string.IsNullOrWhiteSpace(options?.ExecutiveSummaryContext)
+                ? ExtractExecutiveSummary(latestProcessingResult?.FullResponse)
+                : options?.ExecutiveSummaryContext;
+
             var executiveSummaryContext = string.IsNullOrWhiteSpace(executiveSummary)
                 ? "Not available."
                 : executiveSummary;
+
+            var normalizedProjectType = NormalizeProjectType(options?.ProjectType, job.JobType);
+            var consequentialWaiverEnabled = options?.ConsequentialDamagesWaiverEnabled ?? true;
+            var liabilityCapEnabled =
+                options?.LiabilityCapEnabled ?? (normalizedProjectType == "commercial");
+            var liabilityCapType = string.Equals(
+                options?.LiabilityCapType,
+                "fixed_amount",
+                StringComparison.OrdinalIgnoreCase
+            )
+                ? "fixed_amount"
+                : "contract_sum";
+            var liabilityCapCurrency = NormalizeCurrencyCode(options?.LiabilityCapCurrency);
+            var liabilityCapFixedAmount =
+                options?.LiabilityCapFixedAmount.HasValue == true
+                    ? Math.Round(options.LiabilityCapFixedAmount!.Value, 2)
+                    : (decimal?)null;
+            var liabilityCapBasis = ResolveLiabilityCapBasis(
+                liabilityCapEnabled,
+                liabilityCapType,
+                liabilityCapFixedAmount,
+                liabilityCapCurrency,
+                options?.LiabilityCapBasis
+            );
+            var disputeResolutionMode = string.Equals(
+                options?.DisputeResolutionMode,
+                "litigation",
+                StringComparison.OrdinalIgnoreCase
+            )
+                ? "litigation"
+                : "arbitration";
+
+            var insuranceLimits = WithRequiredInputPlaceholder(
+                options?.InsuranceLimits,
+                "Insurance limits"
+            );
+            var markups = WithRequiredInputPlaceholder(options?.Markups, "Markups");
+            var curePeriods = WithRequiredInputPlaceholder(options?.CurePeriods, "Cure periods");
+            var ldCap = WithRequiredInputPlaceholder(options?.LdCap, "LD cap");
+
+            var rightToRepairReview = options?.RightToRepairReviewRequired ?? true;
+            var depositLimitReview = options?.DepositLimitReviewRequired ?? true;
+            var antiIndemnityReview = options?.AntiIndemnityReviewRequired ?? true;
 
             var contextBlock =
                 $@"
@@ -78,6 +148,38 @@ Client Email: {clientEmail}
 Contract Date: {DateTime.UtcNow:yyyy-MM-dd}
 Executive Summary Context:
 {executiveSummaryContext}
+
+[CONTRACT_ENGINE_OPTIONS]
+Project Type: {normalizedProjectType}
+Dispute Resolution Mode: {disputeResolutionMode}
+Consequential Damages Waiver Enabled: {(consequentialWaiverEnabled ? "YES" : "NO")}
+Liability Cap Enabled: {(liabilityCapEnabled ? "YES" : "NO")}
+Liability Cap Type: {liabilityCapType}
+Liability Cap Basis: {liabilityCapBasis}
+
+Mandatory Structured Inputs:
+- Insurance Limits: {insuranceLimits}
+- Markups: {markups}
+- Cure Periods: {curePeriods}
+- LD Cap: {ldCap}
+
+Compliance Flags (review-only; do NOT auto-insert statutes):
+- Right-to-Repair Review Required: {(rightToRepairReview ? "YES" : "NO")}
+- Deposit Limitation Review Required: {(depositLimitReview ? "YES" : "NO")}
+- Anti-Indemnity Review Required: {(antiIndemnityReview ? "YES" : "NO")}
+
+Mandatory Clause Policy:
+- Include formal Definitions article and keep terms consistent throughout.
+- Include Differing Site Conditions clause (default ON).
+- Include Hazardous Materials allocation clause.
+- Include Consequential Damages waiver when enabled.
+- Include Liability Cap clause only when enabled.
+- Use expanded Termination for Convenience compensation (work performed, non-returnable materials, demobilization, OH&P on executed work).
+- State that liquidated damages are a reasonable estimate and not a penalty.
+- Use expanded Force Majeure clause (events, notice, time-only relief, 60-day termination trigger).
+- Include refined payment protections (withholding grounds, late-payment interest, suspension rights).
+- Include No Waiver, Survival, and Compliance with Laws clauses.
+- Use clean, litigation-ready article structure with logical numbering.
 ";
 
             var populatedPrompt = $"{prompt}\n{contextBlock}";
@@ -134,6 +236,63 @@ Executive Summary Context:
             await _context.SaveChangesAsync();
 
             return contract;
+        }
+
+        private static string NormalizeProjectType(string? projectType, string? jobType)
+        {
+            var source = string.IsNullOrWhiteSpace(projectType) ? jobType : projectType;
+            var normalized = (source ?? string.Empty).Trim().ToLowerInvariant();
+            return normalized.Contains("commercial") ? "commercial" : "residential";
+        }
+
+        private static string ResolveLiabilityCapBasis(
+            bool liabilityCapEnabled,
+            string liabilityCapType,
+            decimal? fixedAmount,
+            string currency,
+            string? fallbackBasis
+        )
+        {
+            if (!liabilityCapEnabled)
+            {
+                return "Not Applied";
+            }
+
+            if (liabilityCapType == "fixed_amount")
+            {
+                if (fixedAmount.HasValue && fixedAmount.Value > 0)
+                {
+                    return $"Fixed Amount: {currency} {fixedAmount.Value.ToString("N2")}";
+                }
+
+                return "Fixed Amount: [REQUIRES INPUT: Liability cap amount]";
+            }
+
+            if (!string.IsNullOrWhiteSpace(fallbackBasis))
+            {
+                return fallbackBasis.Trim();
+            }
+
+            return "Contract Sum";
+        }
+
+        private static string NormalizeCurrencyCode(string? value)
+        {
+            var normalized = new string(
+                (value ?? "USD").Trim().ToUpperInvariant().Where(char.IsLetter).Take(3).ToArray()
+            );
+
+            return normalized.Length == 3 ? normalized : "USD";
+        }
+
+        private static string WithRequiredInputPlaceholder(string? value, string label)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return $"[REQUIRES INPUT: {label}]";
+            }
+
+            return value.Trim();
         }
 
         private static string SanitizeGeneratedContractText(string text)
@@ -212,8 +371,12 @@ Executive Summary Context:
                 return string.Empty;
             }
 
-            var cleanResponse = System.Text.RegularExpressions.Regex
-                .Replace(fullResponse, @"```json[\s\S]*?```", string.Empty)
+            var cleanResponse = System
+                .Text.RegularExpressions.Regex.Replace(
+                    fullResponse,
+                    @"```json[\s\S]*?```",
+                    string.Empty
+                )
                 .Trim();
 
             var startMarkerRegex = new System.Text.RegularExpressions.Regex(

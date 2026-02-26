@@ -1,6 +1,8 @@
 ﻿using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 
@@ -11,10 +13,12 @@ namespace ProbuildBackend.Controllers
     public class BidsController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
+        private readonly IAiAnalysisService _aiAnalysisService;
 
-        public BidsController(ApplicationDbContext context)
+        public BidsController(ApplicationDbContext context, IAiAnalysisService aiAnalysisService)
         {
             _context = context;
+            _aiAnalysisService = aiAnalysisService;
         }
 
         [HttpGet]
@@ -158,6 +162,132 @@ namespace ProbuildBackend.Controllers
             await _context.SaveChangesAsync();
 
             return Ok(bid);
+        }
+
+        [HttpPost("analyze-trade-package")]
+        public async Task<IActionResult> AnalyzeTradePackage(
+            [FromBody] AnalyzeTradePackageRequestDto request
+        )
+        {
+            if (request == null || request.JobId <= 0 || request.TradePackageId <= 0)
+            {
+                return BadRequest("jobId and tradePackageId are required.");
+            }
+
+            var tradePackage = await _context.TradePackages.FirstOrDefaultAsync(tp =>
+                tp.Id == request.TradePackageId && tp.JobId == request.JobId
+            );
+
+            if (tradePackage == null)
+            {
+                return NotFound("Trade package not found for the provided job.");
+            }
+
+            if (tradePackage.IsInHouse)
+            {
+                return BadRequest(
+                    new
+                    {
+                        message = "In-house packages do not support bid analysis. Upload in-house quotation instead.",
+                    }
+                );
+            }
+
+            var bids = await _context
+                .Bids.Include(b => b.User)
+                .Where(b => b.JobId == request.JobId && b.TradePackageId == request.TradePackageId)
+                .OrderBy(b => b.Amount)
+                .ToListAsync();
+
+            if (!bids.Any())
+            {
+                return NotFound("No bids found for this trade package.");
+            }
+
+            var analysisJson = await _aiAnalysisService.AnalyzeBidsAsync(
+                bids,
+                tradePackage.Category ?? "Trade",
+                tradePackage
+            );
+
+            if (string.IsNullOrWhiteSpace(analysisJson))
+            {
+                return StatusCode(500, "Analysis service returned an empty result.");
+            }
+
+            foreach (var bid in bids)
+            {
+                _context.BidAnalyses.Add(
+                    new BidAnalysis
+                    {
+                        JobId = request.JobId,
+                        BidId = bid.Id,
+                        AnalysisResult = analysisJson,
+                        CreatedAt = DateTime.UtcNow,
+                    }
+                );
+            }
+
+            await _context.SaveChangesAsync();
+
+            using var document = JsonDocument.Parse(analysisJson);
+            return Ok(document.RootElement);
+        }
+
+        [HttpPost("analyze-preview-bids")]
+        public async Task<IActionResult> AnalyzePreviewBids(
+            [FromBody] AnalyzePreviewBidsRequestDto request
+        )
+        {
+            if (request?.Bids == null || request.Bids.Count == 0)
+            {
+                return BadRequest("At least one preview bid is required.");
+            }
+
+            var previewBids = request
+                .Bids.Select(b => new BidModel
+                {
+                    Id = b.BidId,
+                    Amount = b.Amount,
+                    Status = string.IsNullOrWhiteSpace(b.Status) ? "Submitted" : b.Status,
+                    User = new UserModel
+                    {
+                        ProbuildRating = b.ProbuildRating,
+                        GoogleRating = b.GoogleRating,
+                    },
+                })
+                .ToList();
+
+            TradePackage? previewTradePackage = null;
+            if (request.TradePackage != null)
+            {
+                previewTradePackage = new TradePackage
+                {
+                    Id = request.TradePackage.Id ?? 0,
+                    TradeName = request.TradePackage.TradeName ?? "Preview Trade Package",
+                    Category = request.TradePackage.Category,
+                    ScopeOfWork = request.TradePackage.ScopeOfWork,
+                    CsiCode = request.TradePackage.CsiCode,
+                    Budget = request.TradePackage.Budget ?? 0,
+                    LaborBudget = request.TradePackage.LaborBudget ?? 0,
+                    MaterialBudget = request.TradePackage.MaterialBudget ?? 0,
+                    LaborType = request.TradePackage.LaborType,
+                };
+            }
+
+            var analysisJson = await _aiAnalysisService.AnalyzeBidsAsync(
+                previewBids,
+                request.ComparisonType ?? "Trade",
+                previewTradePackage
+            );
+
+            if (string.IsNullOrWhiteSpace(analysisJson))
+            {
+                return StatusCode(500, "Analysis service returned an empty result.");
+            }
+
+            using var document = JsonDocument.Parse(analysisJson);
+            return Ok(document.RootElement);
         }
 
         private bool BidExists(int id)

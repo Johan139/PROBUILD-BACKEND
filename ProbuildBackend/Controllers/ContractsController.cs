@@ -6,6 +6,26 @@ using ProbuildBackend.Services;
 
 namespace ProbuildBackend.Controllers
 {
+    public class GenerateGeneralClientContractRequest
+    {
+        public string? ExecutiveSummaryContext { get; set; }
+        public string? ProjectType { get; set; }
+        public bool? ConsequentialDamagesWaiverEnabled { get; set; }
+        public bool? LiabilityCapEnabled { get; set; }
+        public string? LiabilityCapBasis { get; set; }
+        public string? LiabilityCapType { get; set; }
+        public decimal? LiabilityCapFixedAmount { get; set; }
+        public string? LiabilityCapCurrency { get; set; }
+        public string? DisputeResolutionMode { get; set; }
+        public string? InsuranceLimits { get; set; }
+        public string? Markups { get; set; }
+        public string? CurePeriods { get; set; }
+        public string? LdCap { get; set; }
+        public bool? RightToRepairReviewRequired { get; set; }
+        public bool? DepositLimitReviewRequired { get; set; }
+        public bool? AntiIndemnityReviewRequired { get; set; }
+    }
+
     [ApiController]
     [Route("api/[controller]")]
     public class ContractsController : ControllerBase
@@ -55,7 +75,10 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("{jobId}/generate-general-client-contract")]
-        public async Task<IActionResult> GenerateGeneralClientContract(int jobId)
+        public async Task<IActionResult> GenerateGeneralClientContract(
+            int jobId,
+            [FromBody] GenerateGeneralClientContractRequest? request
+        )
         {
             var job = await _context.Jobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == jobId);
             if (job == null)
@@ -73,7 +96,31 @@ namespace ProbuildBackend.Controllers
 
             try
             {
-                var contract = await _contractService.GenerateGeneralContractAsync(jobId, gcId);
+                var options = new GenerateGeneralClientContractOptions
+                {
+                    ExecutiveSummaryContext = request?.ExecutiveSummaryContext,
+                    ProjectType = request?.ProjectType,
+                    ConsequentialDamagesWaiverEnabled = request?.ConsequentialDamagesWaiverEnabled,
+                    LiabilityCapEnabled = request?.LiabilityCapEnabled,
+                    LiabilityCapBasis = request?.LiabilityCapBasis,
+                    LiabilityCapType = request?.LiabilityCapType,
+                    LiabilityCapFixedAmount = request?.LiabilityCapFixedAmount,
+                    LiabilityCapCurrency = request?.LiabilityCapCurrency,
+                    DisputeResolutionMode = request?.DisputeResolutionMode,
+                    InsuranceLimits = request?.InsuranceLimits,
+                    Markups = request?.Markups,
+                    CurePeriods = request?.CurePeriods,
+                    LdCap = request?.LdCap,
+                    RightToRepairReviewRequired = request?.RightToRepairReviewRequired,
+                    DepositLimitReviewRequired = request?.DepositLimitReviewRequired,
+                    AntiIndemnityReviewRequired = request?.AntiIndemnityReviewRequired,
+                };
+
+                var contract = await _contractService.GenerateGeneralContractAsync(
+                    jobId,
+                    gcId,
+                    options
+                );
                 return Ok(contract);
             }
             catch (FileNotFoundException ex)
