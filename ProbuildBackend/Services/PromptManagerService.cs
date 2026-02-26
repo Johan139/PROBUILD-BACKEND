@@ -39,6 +39,10 @@ public class PromptManagerService : IPromptManagerService
         {
             fullBlobName = $"BudgetPrompts/{fileName}";
         }
+        else if (fileName.StartsWith("subcontractor-comparison"))
+        {
+            fullBlobName = $"ComparisonPrompts/{fileName}";
+        }
         else
         {
             // System-level prompts are in the root

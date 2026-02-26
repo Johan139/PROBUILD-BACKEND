@@ -231,7 +231,8 @@ namespace ProbuildBackend.Controllers
             await _context.SaveChangesAsync();
 
             using var document = JsonDocument.Parse(analysisJson);
-            return Ok(document.RootElement);
+            var payload = document.RootElement.Clone();
+            return Ok(payload);
         }
 
         [HttpPost("analyze-preview-bids")]
@@ -287,7 +288,8 @@ namespace ProbuildBackend.Controllers
             }
 
             using var document = JsonDocument.Parse(analysisJson);
-            return Ok(document.RootElement);
+            var payload = document.RootElement.Clone();
+            return Ok(payload);
         }
 
         private bool BidExists(int id)
