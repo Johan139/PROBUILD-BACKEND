@@ -164,6 +164,78 @@ namespace ProbuildBackend.Controllers
             return Ok(bid);
         }
 
+        [HttpPost("award-trade-package-bid")]
+        public async Task<IActionResult> AwardTradePackageBid(
+            [FromBody] AwardTradePackageBidDto request
+        )
+        {
+            if (request == null || request.JobId <= 0 || request.TradePackageId <= 0)
+            {
+                return BadRequest("jobId and tradePackageId are required.");
+            }
+
+            var tradePackage = await _context.TradePackages.FirstOrDefaultAsync(tp =>
+                tp.Id == request.TradePackageId && tp.JobId == request.JobId
+            );
+
+            if (tradePackage == null)
+            {
+                return NotFound("Trade package not found for the provided job.");
+            }
+
+            BidModel? awardedBid = null;
+            if (request.BidId.HasValue)
+            {
+                awardedBid = await _context.Bids.FirstOrDefaultAsync(b =>
+                    b.Id == request.BidId.Value
+                    && b.JobId == request.JobId
+                    && b.TradePackageId == request.TradePackageId
+                );
+
+                if (awardedBid == null)
+                {
+                    return BadRequest("Invalid bid for the selected trade package.");
+                }
+            }
+
+            var packageBids = await _context
+                .Bids.Where(b =>
+                    b.JobId == request.JobId && b.TradePackageId == request.TradePackageId
+                )
+                .ToListAsync();
+
+            if (awardedBid != null)
+            {
+                tradePackage.AwardedBidId = awardedBid.Id;
+                tradePackage.Status = tradePackage.IsInHouse ? "In House" : "Awarded";
+
+                foreach (var bid in packageBids)
+                {
+                    bid.Status = bid.Id == awardedBid.Id ? "Awarded" : "Submitted";
+                }
+            }
+            else
+            {
+                tradePackage.AwardedBidId = null;
+
+                foreach (var bid in packageBids.Where(b => b.Status == "Awarded"))
+                {
+                    bid.Status = "Submitted";
+                }
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(
+                new
+                {
+                    tradePackageId = tradePackage.Id,
+                    awardedBidId = tradePackage.AwardedBidId,
+                    status = tradePackage.Status,
+                }
+            );
+        }
+
         [HttpPost("analyze-trade-package")]
         public async Task<IActionResult> AnalyzeTradePackage(
             [FromBody] AnalyzeTradePackageRequestDto request

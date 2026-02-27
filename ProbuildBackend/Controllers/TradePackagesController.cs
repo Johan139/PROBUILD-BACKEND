@@ -88,7 +88,9 @@ namespace ProbuildBackend.Controllers
             else if (existing.IsInHouse)
             {
                 existing.PostedToMarketplace = false;
-                existing.Status = "In House";
+                existing.Status = string.IsNullOrWhiteSpace(tradePackage.Status)
+                    ? "In House"
+                    : tradePackage.Status;
             }
             else
             {
@@ -113,11 +115,10 @@ namespace ProbuildBackend.Controllers
 
             return NoContent();
         }
+
         [HttpPut("archivepackage/{id}")]
         public async Task<IActionResult> ArchivePackage(int id)
         {
-
-
             try
             {
                 var archivePackage = _context.TradePackages.Where(m => m.Id == id).FirstOrDefault();
@@ -139,6 +140,7 @@ namespace ProbuildBackend.Controllers
 
             return NoContent();
         }
+
         [HttpPost("{id}/post")]
         public async Task<IActionResult> PostToMarketplace(int id)
         {
@@ -155,7 +157,9 @@ namespace ProbuildBackend.Controllers
 
             if (tradePackage.IsInHouse)
             {
-                return BadRequest(new { message = "In-house packages cannot be posted to marketplace." });
+                return BadRequest(
+                    new { message = "In-house packages cannot be posted to marketplace." }
+                );
             }
 
             ApplyBudgetRules(tradePackage);
@@ -625,10 +629,13 @@ namespace ProbuildBackend.Controllers
             try
             {
                 var postings = await _context
-
-                    .TradePackages.Where(tp => tp.Job.UserId == userId && tp.PostedToMarketplace && tp.ArchivedAt == null && !tp.IsHidden
-                        && !tp.IsInactive)
-
+                    .TradePackages.Where(tp =>
+                        tp.Job.UserId == userId
+                        && tp.PostedToMarketplace
+                        && tp.ArchivedAt == null
+                        && !tp.IsHidden
+                        && !tp.IsInactive
+                    )
                     .Include(tp => tp.Job)
                         .ThenInclude(j => j.JobAddress)
                     .Select(tp => new
@@ -721,9 +728,10 @@ namespace ProbuildBackend.Controllers
 
             if (incomingTotal <= 0)
             {
-                incomingTotal = incomingBudget > 0
-                    ? incomingBudget
-                    : (tradePackage.LaborBudget + tradePackage.MaterialBudget);
+                incomingTotal =
+                    incomingBudget > 0
+                        ? incomingBudget
+                        : (tradePackage.LaborBudget + tradePackage.MaterialBudget);
             }
 
             if (incomingTotal < tradePackage.LaborBudget)
