@@ -433,6 +433,9 @@ namespace ProbuildBackend.Controllers
                             doc.Id,
                             doc.JobId,
                             doc.FileName,
+                            doc.Type,
+                            doc.UploadedAt,
+                            doc.BlobUrl,
                             Size = properties.Content.Length,
                         }
                     );
@@ -448,6 +451,9 @@ namespace ProbuildBackend.Controllers
                             doc.Id,
                             doc.JobId,
                             doc.FileName,
+                            doc.Type,
+                            doc.UploadedAt,
+                            doc.BlobUrl,
                             Size = 0L,
                         }
                     );
@@ -893,11 +899,12 @@ namespace ProbuildBackend.Controllers
 
                     var jobDocument = new JobDocumentModel
                     {
-                        JobId = null,
+                        JobId = jobRequest.JobId,
                         FileName = blobFileName,
                         BlobUrl = url,
                         SessionId = jobRequest.sessionId,
                         UploadedAt = DateTime.Now,
+                        Type = jobRequest.Type,
                     };
                     _context.JobDocuments.Add(jobDocument);
                 }
