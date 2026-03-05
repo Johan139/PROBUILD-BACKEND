@@ -71,6 +71,26 @@ namespace ProbuildBackend.Services
             }
         }
 
+        public async Task DeleteBlobIfExistsAsync(string blobUrl)
+        {
+            if (string.IsNullOrWhiteSpace(blobUrl))
+                return;
+
+            try
+            {
+                var blobUri = new Uri(blobUrl);
+                var blobName = Uri.UnescapeDataString(
+                    blobUri.AbsolutePath.TrimStart('/').Replace($"{_containerName}/", "")
+                );
+                var blobClient = _containerClient.GetBlobClient(blobName);
+                await blobClient.DeleteIfExistsAsync();
+            }
+            catch
+            {
+                return;
+            }
+        }
+
         public async Task<List<string>> UploadFiles(
             List<IFormFile> files,
             IHubContext<ProgressHub>? hubContext = null,
@@ -372,7 +392,7 @@ namespace ProbuildBackend.Services
                     BlobContainerName = containerName,
                     BlobName = blobName,
                     Resource = "b", // 'b' for a single blob
-                    StartsOn = DateTimeOffset.UtcNow,
+                    StartsOn = DateTimeOffset.UtcNow.AddMinutes(-5),
                     ExpiresOn = DateTimeOffset.UtcNow.AddHours(1), // Grant access for 1 hour
                 };
 
@@ -488,6 +508,56 @@ namespace ProbuildBackend.Services
 
             // ✅ THIS IS THE ONLY SAFE URL
             return blobClient.Uri.ToString();
+        }
+
+        public (string UploadUrl, string PublicUrl, string BlobName, string FileName) GenerateEmailTemplateAssetUploadSas(
+            string kind,
+            string fileName,
+            string contentType
+        )
+        {
+            if (string.IsNullOrWhiteSpace(kind))
+                throw new ArgumentException("kind is required", nameof(kind));
+
+            kind = kind.Trim().ToLowerInvariant();
+            if (kind != "header" && kind != "footer")
+                throw new ArgumentException("kind must be 'header' or 'footer'", nameof(kind));
+
+            if (string.IsNullOrWhiteSpace(fileName))
+                throw new ArgumentException("fileName is required", nameof(fileName));
+
+            string sanitizedFileName = fileName
+                .Replace(" ", "_")
+                .Replace("%", "")
+                .Replace("#", "")
+                .Replace("&", "");
+
+            string uniqueFileName = $"{Guid.NewGuid()}_{sanitizedFileName}";
+            string blobName = $"email-templates/{kind}/{uniqueFileName}";
+
+            var blobClient = _containerClient.GetBlobClient(blobName);
+            if (!blobClient.CanGenerateSasUri)
+            {
+                throw new InvalidOperationException(
+                    "BlobClient cannot generate SAS URI. Check storage account permissions."
+                );
+            }
+
+            var sasBuilder = new BlobSasBuilder
+            {
+                BlobContainerName = _containerName,
+                BlobName = blobName,
+                Resource = "b",
+                StartsOn = DateTimeOffset.UtcNow.AddMinutes(-2),
+                ExpiresOn = DateTimeOffset.UtcNow.AddMinutes(15),
+            };
+
+            sasBuilder.SetPermissions(BlobSasPermissions.Create | BlobSasPermissions.Write);
+
+            var uploadUrl = blobClient.GenerateSasUri(sasBuilder).ToString();
+            var publicUrl = blobClient.Uri.ToString();
+
+            return (uploadUrl, publicUrl, blobName, uniqueFileName);
         }
 
     }

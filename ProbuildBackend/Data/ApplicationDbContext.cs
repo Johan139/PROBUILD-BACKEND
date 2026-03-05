@@ -12,9 +12,12 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<UserModel> Users { get; set; }
     public DbSet<ClientDetailsModel> ClientDetails { get; set; }
     public DbSet<ProjectModel> Projects { get; set; }
+    public DbSet<EmailLog> EmailLogs { get; set; }
+    public DbSet<EmailLogEvent> EmailLogEvents { get; set; }
     public DbSet<EmailAutomationRuleModel> EmailAutomationRules { get; set; }
     public DbSet<JobModel> Jobs { get; set; }
     public DbSet<EmailTemplate> EmailTemplates { get; set; }
+    public DbSet<EmailTemplateAsset> EmailTemplateAssets { get; set; }
     public DbSet<JobsTermsAgreement> JobsTermsAgreement { get; set; }
     public DbSet<BidModel> Bids { get; set; }
     public DbSet<NotificationModel> Notifications { get; set; }
@@ -63,6 +66,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<Invitation> Invitations { get; set; }
     public DbSet<CompaniesModel> Companies { get; set; }
 
+    public DbSet<UserNotificationPreference> UserNotificationPreferences { get; set; }
     public DbSet<CompanyAddressModel> CompanyAddresses { get; set; }
     public DbSet<AddressTypeModel> AddressType { get; set; }
     public DbSet<CountriesModel> Countries { get; set; }
@@ -80,6 +84,26 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<NotificationView>().HasNoKey().ToView("vw_Notifications");
+
+        modelBuilder.Entity<EmailLog>(entity =>
+        {
+            entity.HasIndex(x => x.CreatedAt);
+            entity.HasIndex(x => x.ToEmail);
+            entity.HasIndex(x => x.LastEventType);
+        });
+
+        modelBuilder.Entity<EmailLogEvent>(entity =>
+        {
+            entity.HasIndex(x => x.EmailLogId);
+            entity.HasIndex(x => x.Timestamp);
+            entity.HasIndex(x => x.SgEventId).IsUnique();
+
+            entity
+                .HasOne(x => x.EmailLog)
+                .WithMany(x => x.Events)
+                .HasForeignKey(x => x.EmailLogId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
 
         modelBuilder
             .Entity<ProjectModel>()
@@ -101,6 +125,10 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .WithMany()
             .HasForeignKey(p => p.SubContractorWallStructureId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<UserNotificationPreference>()
+            .HasIndex(x => new { x.UserId, x.NotificationType, x.Channel })
+            .IsUnique();
 
         modelBuilder
             .Entity<ProjectModel>()
