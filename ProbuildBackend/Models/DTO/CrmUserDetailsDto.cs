@@ -10,7 +10,7 @@ namespace ProbuildBackend.Models.DTO
         public string? PhoneNumber { get; set; }
         public string? CountryNumberCode { get; set; }
         public string? UserType { get; set; }
-        public bool IsAdmin { get; set; }
+        public bool? IsAdmin { get; set; }
         public string? CompanyName { get; set; }
         public string? CompanyRegNo { get; set; }
         public string? VatNo { get; set; }

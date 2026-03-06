@@ -37,6 +37,9 @@ namespace ProbuildBackend.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<CrmUserDetailsDto>> GetById(string id)
         {
+            try
+            {
+
             if (string.IsNullOrWhiteSpace(id))
                 return BadRequest("Id parameter cannot be null or empty.");
 
@@ -72,6 +75,13 @@ namespace ProbuildBackend.Controllers
             };
 
             return Ok(dto);
+
+            }
+            catch (Exception ex)
+            {
+
+                throw;
+            }
         }
 
         [HttpPut("{id}")]

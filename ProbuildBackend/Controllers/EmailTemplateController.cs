@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Services;
 
@@ -11,11 +12,13 @@ namespace ProbuildBackend.Controllers
     {
         private readonly ApplicationDbContext _context;
         private readonly AzureBlobService _blobService;
+        private readonly IEmailSender _emailSender;
 
-        public EmailTemplatesController(ApplicationDbContext context, AzureBlobService blobService)
+        public EmailTemplatesController(ApplicationDbContext context, AzureBlobService blobService, IEmailSender emailSender)
         {
             _context = context;
             _blobService = blobService;
+            _emailSender = emailSender;
         }
 
         [HttpGet]
@@ -125,6 +128,48 @@ namespace ProbuildBackend.Controllers
             await _context.SaveChangesAsync();
 
             return Ok(new { templateId = template.TemplateId });
+        }
+
+        public class EmailTemplateSendTestRequestDto
+        {
+            public string ToEmail { get; set; } = string.Empty;
+            public string? Subject { get; set; }
+            public string? Body { get; set; }
+            public string? FromEmail { get; set; }
+            public string? FromName { get; set; }
+            public string? TemplateName { get; set; }
+        }
+
+        [HttpPost("{id}/send-test")]
+        public async Task<IActionResult> SendTest(int id, [FromBody] EmailTemplateSendTestRequestDto request)
+        {
+            if (request == null)
+                return BadRequest(new { error = "request is required" });
+
+            if (string.IsNullOrWhiteSpace(request.ToEmail))
+                return BadRequest(new { error = "toEmail is required" });
+
+            if (string.IsNullOrWhiteSpace(request.Body))
+                return BadRequest(new { error = "body is required" });
+
+            var dbTemplate = await _context.EmailTemplates
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => t.TemplateId == id);
+
+            var template = new EmailTemplate
+            {
+                TemplateId = id,
+                TemplateName = request.TemplateName ?? dbTemplate?.TemplateName,
+                Subject = request.Subject ?? dbTemplate?.Subject,
+                Body = request.Body,
+                FromEmail = request.FromEmail ?? dbTemplate?.FromEmail,
+                FromName = request.FromName ?? dbTemplate?.FromName,
+                IsHtml = true,
+            };
+
+            await _emailSender.SendEmailAsync(template, request.ToEmail.Trim());
+
+            return Ok(new { ok = true });
         }
 
         public class EmailTemplateAssetListItemDto
