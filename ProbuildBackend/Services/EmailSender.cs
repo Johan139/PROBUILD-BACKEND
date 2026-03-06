@@ -1,8 +1,7 @@
 ﻿using ProbuildBackend.Models;
 using SendGrid;
 using SendGrid.Helpers.Mail;
-using System.Net;
-using System.Net.Mail;
+using Microsoft.EntityFrameworkCore;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 
 namespace ProbuildBackend.Services
@@ -10,10 +9,17 @@ namespace ProbuildBackend.Services
     public class EmailSender : IEmailSender
     {
         private readonly IConfiguration _configuration;
+        private readonly ApplicationDbContext _context;
+        private readonly ILogger<EmailSender> _logger;
 
-        public EmailSender(IConfiguration configuration)
+        public EmailSender(
+            IConfiguration configuration,
+            ApplicationDbContext context,
+            ILogger<EmailSender> logger)
         {
             _configuration = configuration;
+            _context = context;
+            _logger = logger;
 
         }
 
@@ -31,6 +37,23 @@ namespace ProbuildBackend.Services
                     "SendGrid API Key is not configured."
                 );
             }
+
+            var emailLogId = Guid.NewGuid();
+            var log = new EmailLog
+            {
+                Id = emailLogId,
+                ToEmail = toEmail,
+                FromEmail = sendgridEmail,
+                Subject = emailTemplate.Subject,
+                TemplateId = emailTemplate.TemplateId,
+                TemplateName = emailTemplate.TemplateName,
+                Provider = "sendgrid",
+                CreatedAt = DateTime.UtcNow,
+            };
+
+            _context.EmailLogs.Add(log);
+            await _context.SaveChangesAsync();
+
             var client = new SendGridClient(apiKey);
             var from = new EmailAddress(sendgridEmail, "ProBuild");
             var to = new EmailAddress(toEmail);
@@ -41,6 +64,17 @@ namespace ProbuildBackend.Services
                 "",
                 emailTemplate.Body
             );
+
+            if (msg.Personalizations == null || msg.Personalizations.Count == 0)
+            {
+                msg.Personalizations = new List<Personalization> { new Personalization() };
+            }
+            msg.Personalizations[0].CustomArgs = new Dictionary<string, string>
+            {
+                { "emailLogId", emailLogId.ToString() },
+                { "templateId", emailTemplate.TemplateId.ToString() },
+            };
+
             var response = await client.SendEmailAsync(msg);
 
             if (!response.IsSuccessStatusCode)
@@ -53,6 +87,29 @@ namespace ProbuildBackend.Services
                     $"Failed to send email. Status code: {response.StatusCode}. Details: {responseBody}"
                 );
             }
+
+            var providerMessageId = response.Headers?.TryGetValues("X-Message-Id", out var values) == true
+                ? values.FirstOrDefault()
+                : null;
+
+            var sentAt = DateTime.UtcNow;
+            _context.EmailLogEvents.Add(new EmailLogEvent
+            {
+                EmailLogId = emailLogId,
+                Email = toEmail,
+                Type = "sent",
+                Timestamp = sentAt,
+                SgEventId = providerMessageId,
+            });
+
+            var existingLog = await _context.EmailLogs.FirstOrDefaultAsync(x => x.Id == emailLogId);
+            if (existingLog != null)
+            {
+                existingLog.LastEventType = "sent";
+                existingLog.LastEventAt = sentAt;
+            }
+
+            await _context.SaveChangesAsync();
         }
         public async Task SendEmailWithAttachmentAsync(
             EmailTemplate template,
@@ -73,6 +130,31 @@ namespace ProbuildBackend.Services
             msg.SetSubject(template.Subject);
             msg.AddContent(MimeType.Html, template.Body);
 
+            var emailLogId = Guid.NewGuid();
+            var log = new EmailLog
+            {
+                Id = emailLogId,
+                ToEmail = toEmail,
+                FromEmail = sendgridEmail,
+                Subject = template.Subject,
+                TemplateId = template.TemplateId,
+                TemplateName = template.TemplateName,
+                Provider = "sendgrid",
+                CreatedAt = DateTime.UtcNow,
+            };
+            _context.EmailLogs.Add(log);
+            await _context.SaveChangesAsync();
+
+            if (msg.Personalizations == null || msg.Personalizations.Count == 0)
+            {
+                msg.Personalizations = new List<Personalization> { new Personalization() };
+            }
+            msg.Personalizations[0].CustomArgs = new Dictionary<string, string>
+            {
+                { "emailLogId", emailLogId.ToString() },
+                { "templateId", template.TemplateId.ToString() },
+            };
+
             // Add the attachment
             var attachment = new SendGrid.Helpers.Mail.Attachment
             {
@@ -90,6 +172,29 @@ namespace ProbuildBackend.Services
             {
                 throw new Exception($"Failed to send email: {response.StatusCode}");
             }
+
+            var providerMessageId = response.Headers?.TryGetValues("X-Message-Id", out var values) == true
+                ? values.FirstOrDefault()
+                : null;
+
+            var sentAt = DateTime.UtcNow;
+            _context.EmailLogEvents.Add(new EmailLogEvent
+            {
+                EmailLogId = emailLogId,
+                Email = toEmail,
+                Type = "sent",
+                Timestamp = sentAt,
+                SgEventId = providerMessageId,
+            });
+
+            var existingLog = await _context.EmailLogs.FirstOrDefaultAsync(x => x.Id == emailLogId);
+            if (existingLog != null)
+            {
+                existingLog.LastEventType = "sent";
+                existingLog.LastEventAt = sentAt;
+            }
+
+            await _context.SaveChangesAsync();
         }
     }
 }

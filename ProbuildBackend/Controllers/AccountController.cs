@@ -1,7 +1,3 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
 using Elastic.Apm.Api;
 using Google.Api.Ads.AdWords.v201809;
 using Google.Apis.Auth;
@@ -16,7 +12,12 @@ using Newtonsoft.Json;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
+using ProbuildBackend.Models.Enums;
 using ProbuildBackend.Services;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using static Google.Api.Ads.AdWords.Util.Reports.v201809.PaidOrganicQueryReportReportRow;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 
@@ -188,6 +189,28 @@ namespace ProbuildBackend.Controllers
                     };
                 }
 
+
+                // ================== SEED NOTIFICATION PREFERENCES ==================
+
+                var preferenceList = new List<UserNotificationPreference>();
+
+                foreach (NotificationType type in Enum.GetValues<NotificationType>())
+                {
+                    foreach (NotificationChannel channel in Enum.GetValues<NotificationChannel>())
+                    {
+                        preferenceList.Add(new UserNotificationPreference
+                        {
+                            Id = Guid.NewGuid(),
+                            UserId = user.Id,
+                            NotificationType = type,
+                            Channel = channel,
+                            IsEnabled = true,
+                            CreatedDate = DateTime.UtcNow
+                        });
+                    }
+                }
+
+                _context.UserNotificationPreferences.AddRange(preferenceList);
                 await _context.SaveChangesAsync();
 
                 var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
@@ -211,11 +234,8 @@ namespace ProbuildBackend.Controllers
                     .Replace("{{Footer}}", EmailConfirmation.FooterHtml);
                 await _emailSender.SendEmailAsync(EmailConfirmation, model.Email);
 
-                if (user.SubscriptionPackage.Contains("Trial"))
-                {
 
 
-                }
 
                 // Fetch the automation rule from DB
                 // Schedule all active rules using their DelayHours
@@ -471,6 +491,7 @@ namespace ProbuildBackend.Controllers
                             firstName = user.FirstName,
                             lastName = user.LastName,
                             userType = user.UserType,
+                            isAdmin = user.IsAdmin,
                             email = user.Email,
                         }
                     );
@@ -758,6 +779,7 @@ namespace ProbuildBackend.Controllers
                 new Claim("FirstName", user.FirstName ?? ""),
                 new Claim("LastName", user.LastName ?? ""),
                 new Claim("CompanyName", user.CompanyName ?? ""),
+                new Claim("IsAdmin", user.IsAdmin.ToString()),
             };
 
             var JWTKEY = Environment.GetEnvironmentVariable("JWT_KEY") ?? _configuration["Jwt:Key"];
@@ -801,10 +823,13 @@ namespace ProbuildBackend.Controllers
                     $"{frontendBaseUrl}/reset-password?email={Uri.EscapeDataString(user.Email)}&token={Uri.EscapeDataString(token)}";
 
                 var template = await _emailTemplate.GetTemplateAsync("PasswordResetEmail");
-
+                    
                 template.Body = template.Body
-                    .Replace("{{ResetLink}}", callbackUrl);
-
+                    .Replace("{{ResetLink}}", callbackUrl)
+                .Replace("{{UserName}}", $"{user.FirstName} {user.LastName}")
+                .Replace("{{Header}}", template.HeaderHtml)
+                .Replace("{{Footer}}", template.FooterHtml); 
+                    
                 await _emailSender.SendEmailAsync(template, user.Email);
             }
 
