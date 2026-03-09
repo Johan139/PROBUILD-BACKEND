@@ -62,6 +62,15 @@ namespace ProbuildBackend.Controllers
             _manager = manager;
         }
 
+        public record ApiErrorResponse(string Code, string Message);
+
+        public class GoogleLoginRequest
+        {
+            public string IdToken { get; set; }
+        }
+
+        public record RefreshTokenRequest(string RefreshToken);
+
         [HttpPost("register")]
         public async Task<IActionResult> Register(RegisterDto model)
         {
@@ -485,10 +494,10 @@ namespace ProbuildBackend.Controllers
                         "Email address has not been verified. Please check your inbox and spam folder."
                     );
                     return Unauthorized(
-                        new
-                        {
-                            error = "Email address has not been verified. Please check your inbox and spam folder.",
-                        }
+                        new ApiErrorResponse(
+                            "EMAIL_NOT_VERIFIED",
+                            "Email address has not been verified. Please check your inbox and spam folder."
+                        )
                     );
                 }
                 await _logLoginInformationService.LogLoginAsync(
@@ -498,7 +507,12 @@ namespace ProbuildBackend.Controllers
                     false,
                     "Invalid login credentials. Please try again."
                 );
-                return Unauthorized(new { error = "Invalid login credentials. Please try again." });
+                return Unauthorized(
+                    new ApiErrorResponse(
+                        "INVALID_LOGIN",
+                        "Invalid login credentials. Please try again."
+                    )
+                );
             }
             catch (Exception ex)
             {
@@ -581,16 +595,9 @@ namespace ProbuildBackend.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { error = ex.Message });
+                return BadRequest(new ApiErrorResponse("GOOGLE_LOGIN_FAILED", ex.Message));
             }
         }
-
-        public class GoogleLoginRequest
-        {
-            public string IdToken { get; set; }
-        }
-
-        public record RefreshTokenRequest(string RefreshToken);
 
         [HttpPost("refresh-token")]
         public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
@@ -607,7 +614,9 @@ namespace ProbuildBackend.Controllers
                 || storedToken.Expires < DateTime.UtcNow
             )
             {
-                return Unauthorized("Invalid refresh token.");
+                return Unauthorized(
+                    new ApiErrorResponse("INVALID_REFRESH_TOKEN", "Invalid refresh token.")
+                );
             }
 
             // Revoke the old refresh token immediately
@@ -626,7 +635,12 @@ namespace ProbuildBackend.Controllers
                 var memberById = await _context.TeamMembers.FindAsync(storedToken.UserId);
                 if (memberById == null)
                 {
-                    return Unauthorized("User or team member not found for the given token.");
+                    return Unauthorized(
+                        new ApiErrorResponse(
+                            "INVALID_REFRESH_TOKEN_USER",
+                            "User or team member not found for the given token."
+                        )
+                    );
                 }
 
                 var teamMembers = await _context
@@ -637,7 +651,12 @@ namespace ProbuildBackend.Controllers
 
                 if (!teamMembers.Any())
                 {
-                    return Unauthorized("Team member not found for the given token.");
+                    return Unauthorized(
+                        new ApiErrorResponse(
+                            "INVALID_REFRESH_TOKEN_TEAM_MEMBER",
+                            "Team member not found for the given token."
+                        )
+                    );
                 }
 
                 var firstMember = teamMembers.First();
@@ -832,7 +851,7 @@ namespace ProbuildBackend.Controllers
                 .FirstOrDefaultAsync(u => u.Email == model.email);
 
             if (existingUser == null)
-                return BadRequest("User not found");
+                return BadRequest(new ApiErrorResponse("USER_NOT_FOUND", "User not found"));
 
             // Create a new instance with selected properties and merge with existing values
             var user = new UserModel
@@ -883,17 +902,20 @@ namespace ProbuildBackend.Controllers
                 unprotectedToken = protector.Unprotect(model.Token);
 
                 if (!unprotectedToken.StartsWith("ResetToken:"))
-                    return BadRequest("Invalid token.");
+                    return BadRequest(new ApiErrorResponse("INVALID_RESET_TOKEN", "Invalid token."));
             }
             catch (CryptographicException ex)
             {
                 Console.WriteLine($"Token validation failed: {ex.Message}");
-                return BadRequest(new { error = "Token has expired." });
+                return BadRequest(new ApiErrorResponse("RESET_TOKEN_EXPIRED", "Token has expired."));
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Unexpected error: {ex.Message}");
-                return StatusCode(500, new { error = "Unexpected error occurred." });
+                return StatusCode(
+                    500,
+                    new ApiErrorResponse("UNEXPECTED_ERROR", "Unexpected error occurred.")
+                );
             }
 
             // Log the state before update
@@ -936,7 +958,12 @@ namespace ProbuildBackend.Controllers
             );
 
             if (teamMember == null)
-                return BadRequest("Invalid or expired invitation token.");
+                return BadRequest(
+                    new ApiErrorResponse(
+                        "INVITATION_TOKEN_INVALID",
+                        "Invalid or expired invitation token."
+                    )
+                );
 
             // STEP 2 — Decode AFTER confirming it belongs to a valid invitation
             var protector = _dataProtectionProvider.CreateProtector("TeamMemberInvitation");
@@ -949,11 +976,15 @@ namespace ProbuildBackend.Controllers
 
                 // Optional: Safety check that decoded email = teamMember.Email
                 if (!string.Equals(email, teamMember.Email, StringComparison.OrdinalIgnoreCase))
-                    return BadRequest("Token email mismatch.");
+                    return BadRequest(
+                        new ApiErrorResponse("INVITATION_TOKEN_MISMATCH", "Token email mismatch.")
+                    );
             }
             catch
             {
-                return BadRequest("Invalid invitation token.");
+                return BadRequest(
+                    new ApiErrorResponse("INVITATION_TOKEN_INVALID", "Invalid invitation token.")
+                );
             }
 
             return Ok(
@@ -982,7 +1013,9 @@ namespace ProbuildBackend.Controllers
             }
             catch
             {
-                return BadRequest("Invalid invitation token.");
+                return BadRequest(
+                    new ApiErrorResponse("INVITATION_TOKEN_INVALID", "Invalid invitation token.")
+                );
             }
 
             var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(tm =>
@@ -990,7 +1023,12 @@ namespace ProbuildBackend.Controllers
             );
 
             if (teamMember == null)
-                return BadRequest("Invalid or expired invitation token.");
+                return BadRequest(
+                    new ApiErrorResponse(
+                        "INVITATION_TOKEN_INVALID",
+                        "Invalid or expired invitation token."
+                    )
+                );
 
             var hasher = new PasswordHasher<TeamMember>();
             teamMember.PasswordHash = hasher.HashPassword(teamMember, dto.Password);
@@ -1026,7 +1064,9 @@ namespace ProbuildBackend.Controllers
 
             if (!teamMembers.Any())
             {
-                return Unauthorized();
+                return Unauthorized(
+                    new ApiErrorResponse("INVALID_LOGIN", "Invalid login credentials. Please try again.")
+                );
             }
 
             var firstMember = teamMembers.First();
@@ -1039,7 +1079,9 @@ namespace ProbuildBackend.Controllers
 
             if (result == PasswordVerificationResult.Failed)
             {
-                return Unauthorized();
+                return Unauthorized(
+                    new ApiErrorResponse("INVALID_LOGIN", "Invalid login credentials. Please try again.")
+                );
             }
 
             var claims = new List<Claim>

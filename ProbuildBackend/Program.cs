@@ -229,7 +229,15 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddHttpClient();
 builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<WebSocketManager>();
-var signalR = builder.Services.AddSignalR();
+var signalR = builder.Services.AddSignalR(options =>
+{
+  options.KeepAliveInterval = TimeSpan.FromSeconds(15);
+  options.ClientTimeoutInterval = TimeSpan.FromSeconds(60);
+  options.HandshakeTimeout = TimeSpan.FromSeconds(15);
+#if DEBUG
+  options.EnableDetailedErrors = true;
+#endif
+});
 if (!string.IsNullOrWhiteSpace(signalrConn))
 {
   signalR.AddAzureSignalR(o =>
@@ -322,7 +330,7 @@ using (var scope = app.Services.CreateScope())
 app.MapGet("/health", () => Results.Ok("Healthy"));
 
 // Map SignalR hub
-app.MapHub<ProgressHub>("/hubs/progressHub").AllowAnonymous();
+app.MapHub<ProgressHub>("/hubs/progressHub");
 
 app.Logger.LogInformation("ProgressHub endpoint mapped at /hubs/progressHub");
 app.MapHub<NotificationHub>("/hubs/notifications");
@@ -342,9 +350,10 @@ if (app.Environment.IsDevelopment())
 }
 else
 {
-  app.UseExceptionHandler("/Home/Error");
   app.UseHsts();
 }
+
+app.UseMiddleware<ApiExceptionMiddleware>();
 
 // Bypass HTTPS redirection for /health endpoint to ensure compatibility
 app.UseWhen(
