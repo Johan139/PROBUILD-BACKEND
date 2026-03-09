@@ -1,11 +1,12 @@
-﻿using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
+using ProbuildBackend.Models.Enums;
+using System.Security.Claims;
 
 namespace ProbuildBackend.Controllers
 {
@@ -29,21 +30,48 @@ namespace ProbuildBackend.Controllers
         [HttpPost]
         public async Task<IActionResult> SendNotification([FromBody] NotificationModel notification)
         {
-            notification.SenderId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var senderId = User.FindFirstValue("UserId");
+            notification.SenderId = senderId;
             notification.Timestamp = DateTime.UtcNow;
+
+            var parsedType = Enum.TryParse<NotificationType>(notification.Type, out var notifType);
+
+            if (!parsedType)
+                return BadRequest("Invalid notification type.");
+
+            var allowedRecipients = new List<string>();
+
+            foreach (var recipientId in notification.Recipients)
+            {
+           
+
+                var isEnabled = await _context.UserNotificationPreferences
+                    .AnyAsync(p =>
+                        p.UserId == recipientId &&
+                        p.NotificationType == notifType &&
+                        p.Channel == NotificationChannel.InApp &&
+                        p.IsEnabled);
+
+                if (isEnabled)
+                    allowedRecipients.Add(recipientId);
+            }
+
+            if (!allowedRecipients.Any())
+                return Ok(new { message = "Notification blocked by user preferences." });
+
+            notification.Recipients = allowedRecipients;
 
             _context.Notifications.Add(notification);
             await _context.SaveChangesAsync();
 
-            // Send notification to each recipient
-            foreach (var recipientId in notification.Recipients)
+            foreach (var recipientId in allowedRecipients)
             {
                 await _hubContext
                     .Clients.User(recipientId)
                     .SendAsync("ReceiveNotification", notification);
             }
 
-            return Ok(new { message = "Notification sent successfully" });
+            return Ok(new { message = "Notification sent respecting preferences." });
         }
 
         [HttpGet("recent")]
@@ -206,17 +234,81 @@ namespace ProbuildBackend.Controllers
                 );
             }
         }
+        [HttpGet("preferences")]
+        public async Task<IActionResult> GetPreferences()
+        {
+            var userId = User.FindFirstValue("UserId");
 
+
+
+            var prefs = await _context.UserNotificationPreferences
+                .Where(p => p.UserId == userId)
+                .Select(p => new
+                {
+                    p.NotificationType,
+                    p.Channel,
+                    p.IsEnabled
+                })
+                .ToListAsync();
+
+            return Ok(prefs);
+        }
+        [HttpPut("preferences")]
+        public async Task<IActionResult> UpdatePreference([FromBody] UpdateNotificationPreferenceDto dto)
+        {
+            var userId = User.FindFirstValue("UserId");
+
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized();
+
+            var pref = await _context.UserNotificationPreferences
+                .FirstOrDefaultAsync(p =>
+                    p.UserId == userId &&
+                    p.NotificationType == dto.NotificationType &&
+                    p.Channel == dto.Channel);
+
+            if (pref == null)
+            {
+                // INSERT new preference
+                pref = new UserNotificationPreference
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = userId,
+                    NotificationType = dto.NotificationType,
+                    Channel = dto.Channel,
+                    IsEnabled = dto.IsEnabled,
+                    CreatedDate = DateTime.UtcNow
+                };
+
+                _context.UserNotificationPreferences.Add(pref);
+            }
+            else
+            {
+                // UPDATE existing preference
+                pref.IsEnabled = dto.IsEnabled;
+                pref.ModifiedDate = DateTime.UtcNow;
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Preference saved." });
+        }
         [HttpPost("mark-as-read/{id}")]
         public async Task<ActionResult<IActionResult>> MarkReadNotification(int id)
         {
             try
             {
                 var userId = User.FindFirstValue("UserId");
-                var notifications = _context.Notifications.Where(n => n.Id == id).FirstOrDefault();
 
-                notifications.ReadAt = DateTime.UtcNow;
-                notifications.IsRead = true;
+                var notification = await _context.NotificationViews
+                    .Where(v => v.Id == id && v.RecipientId == userId)
+                    .FirstOrDefaultAsync();
+
+                if (notification == null)
+                    return NotFound();
+
+                notification.ReadAt = DateTime.UtcNow;
+                notification.IsRead = true;
 
                 await _context.SaveChangesAsync();
 

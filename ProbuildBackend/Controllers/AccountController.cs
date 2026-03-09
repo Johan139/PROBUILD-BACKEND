@@ -1,7 +1,3 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
 using Elastic.Apm.Api;
 using Google.Api.Ads.AdWords.v201809;
 using Google.Apis.Auth;
@@ -16,7 +12,12 @@ using Newtonsoft.Json;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
+using ProbuildBackend.Models.Enums;
 using ProbuildBackend.Services;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using static Google.Api.Ads.AdWords.Util.Reports.v201809.PaidOrganicQueryReportReportRow;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 
@@ -188,6 +189,28 @@ namespace ProbuildBackend.Controllers
                     };
                 }
 
+
+                // ================== SEED NOTIFICATION PREFERENCES ==================
+
+                var preferenceList = new List<UserNotificationPreference>();
+
+                foreach (NotificationType type in Enum.GetValues<NotificationType>())
+                {
+                    foreach (NotificationChannel channel in Enum.GetValues<NotificationChannel>())
+                    {
+                        preferenceList.Add(new UserNotificationPreference
+                        {
+                            Id = Guid.NewGuid(),
+                            UserId = user.Id,
+                            NotificationType = type,
+                            Channel = channel,
+                            IsEnabled = true,
+                            CreatedDate = DateTime.UtcNow
+                        });
+                    }
+                }
+
+                _context.UserNotificationPreferences.AddRange(preferenceList);
                 await _context.SaveChangesAsync();
 
                 var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
@@ -211,17 +234,8 @@ namespace ProbuildBackend.Controllers
                     .Replace("{{Footer}}", EmailConfirmation.FooterHtml);
                 await _emailSender.SendEmailAsync(EmailConfirmation, model.Email);
 
-                if (user.SubscriptionPackage.Contains("Trial"))
-                {
-                    var callbackUrlWelcome = $"{frontendUrl}/dashboard";
-                    var WelcomeEmail = await _emailTemplate.GetTemplateAsync("WelcomeTrialEmail");
-                    WelcomeEmail.Body = WelcomeEmail
-                        .Body.Replace("{{cta_url}}", callbackUrlWelcome)
-                        .Replace("{{first_name}}", model.FirstName + " " + model.LastName)
-                        .Replace("{{Header}}", EmailConfirmation.HeaderHtml)
-                        .Replace("{{Footer}}", EmailConfirmation.FooterHtml);
-                    await _emailSender.SendEmailAsync(WelcomeEmail, model.Email);
-                }
+
+
 
                 // Fetch the automation rule from DB
                 // Schedule all active rules using their DelayHours
@@ -418,6 +432,14 @@ namespace ProbuildBackend.Controllers
             var result = await _userManager.ConfirmEmailAsync(user, code);
             if (result.Succeeded)
             {
+                var callbackUrlWelcome = $"{frontendUrl}/dashboard";
+                var WelcomeEmail = await _emailTemplate.GetTemplateAsync("WelcomeTrialEmail");
+                WelcomeEmail.Body = WelcomeEmail
+                    .Body.Replace("{{cta_url}}", callbackUrlWelcome)
+                    .Replace("{{first_name}}", user.FirstName + " " + user.LastName)
+                    .Replace("{{Header}}", WelcomeEmail.HeaderHtml)
+                    .Replace("{{Footer}}", WelcomeEmail.FooterHtml);
+                await _emailSender.SendEmailAsync(WelcomeEmail, user.Email);
                 return Redirect($"{frontendUrl}/login?confirmed=true");
             }
             else
@@ -469,6 +491,7 @@ namespace ProbuildBackend.Controllers
                             firstName = user.FirstName,
                             lastName = user.LastName,
                             userType = user.UserType,
+                            isAdmin = user.IsAdmin,
                             email = user.Email,
                         }
                     );
@@ -756,6 +779,7 @@ namespace ProbuildBackend.Controllers
                 new Claim("FirstName", user.FirstName ?? ""),
                 new Claim("LastName", user.LastName ?? ""),
                 new Claim("CompanyName", user.CompanyName ?? ""),
+                new Claim("IsAdmin", user.IsAdmin.ToString()),
             };
 
             var JWTKEY = Environment.GetEnvironmentVariable("JWT_KEY") ?? _configuration["Jwt:Key"];
@@ -776,43 +800,45 @@ namespace ProbuildBackend.Controllers
         [HttpPost("forgotpassword")]
         public async Task<IActionResult> ForgotPassword(ForgotPasswordModel model)
         {
-            var user = await _context
-                .Users.AsNoTracking()
-                .Select(u => new UserModel
-                {
-                    Id = u.Id,
-                    UserName = u.UserName,
-                    Email = u.Email,
-                    SecurityStamp = u.SecurityStamp,
-                })
+            var user = await _context.Users
+                .AsNoTracking()
                 .FirstOrDefaultAsync(u => u.Email == model.Email);
 
-            var protector = _dataProtectionProvider
-                .CreateProtector($"{user.Id}:Default:ResetPassword")
-                .ToTimeLimitedDataProtector();
-            var token = protector.Protect(
-                "ResetToken:" + Guid.NewGuid(),
-                lifetime: TimeSpan.FromMinutes(15)
-            );
+            if (user != null)
+            {
+                var protector = _dataProtectionProvider
+                    .CreateProtector($"{user.Id}:Default:ResetPassword")
+                    .ToTimeLimitedDataProtector();
 
-            var frontendBaseUrl =
-                Environment.GetEnvironmentVariable("FRONTEND_URL")
-                ?? _configuration["FrontEnd:FRONTEND_URL"];
-            ;
-            var callbackUrl =
-                $"{frontendBaseUrl}/reset-password?email={Uri.EscapeDataString(user.Email)}&token={Uri.EscapeDataString(token)}";
+                var token = protector.Protect(
+                    "ResetToken:" + Guid.NewGuid(),
+                    lifetime: TimeSpan.FromMinutes(15)
+                );
 
-            var ResetPassword = await _emailTemplate.GetTemplateAsync("PasswordResetEmail");
+                var frontendBaseUrl =
+                    Environment.GetEnvironmentVariable("FRONTEND_URL")
+                    ?? _configuration["FrontEnd:FRONTEND_URL"];
 
-            ResetPassword.Body = ResetPassword
-                .Body.Replace("{{ResetLink}}", callbackUrl)
+                var callbackUrl =
+                    $"{frontendBaseUrl}/reset-password?email={Uri.EscapeDataString(user.Email)}&token={Uri.EscapeDataString(token)}";
+
+                var template = await _emailTemplate.GetTemplateAsync("PasswordResetEmail");
+                    
+                template.Body = template.Body
+                    .Replace("{{ResetLink}}", callbackUrl)
                 .Replace("{{UserName}}", $"{user.FirstName} {user.LastName}")
-                .Replace("{{Header}}", ResetPassword.HeaderHtml)
-                .Replace("{{Footer}}", ResetPassword.FooterHtml);
+                .Replace("{{Header}}", template.HeaderHtml)
+                .Replace("{{Footer}}", template.FooterHtml); 
+                    
+                await _emailSender.SendEmailAsync(template, user.Email);
+            }
 
-            await _emailSender.SendEmailAsync(ResetPassword, user.Email);
+            await Task.Delay(300); // prevent timing attacks
 
-            return Ok();
+            return Ok(new
+            {
+                message = "If an account exists with this email address, you will receive a password reset link."
+            });
         }
 
         public class ResetPasswordDto
