@@ -64,6 +64,12 @@ namespace ProbuildBackend.Models
 
         public bool PostedToMarketplace { get; set; }
 
+        public string? Notes { get; set; }
+
+        public bool LaborBudgetVisible { get; set; } = true;
+
+        public bool MaterialBudgetVisible { get; set; } = true;
+
         public int? AwardedBidId { get; set; }
 
         [ForeignKey("AwardedBidId")]
