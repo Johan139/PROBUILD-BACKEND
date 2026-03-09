@@ -41,7 +41,11 @@ namespace ProbuildBackend.Interface
         );
         Task<string> GenerateRebuttalAsync(string conversationId, string clientQuery);
         Task<string> GenerateRevisionAsync(string conversationId, string revisionRequest);
-        Task<string> AnalyzeBidsAsync(List<BidModel> bids, string comparisonType);
+        Task<string> AnalyzeBidsAsync(
+            List<BidModel> bids,
+            string comparisonType,
+            TradePackage? tradePackage = null
+        );
         Task<string> GenerateFeedbackForUnsuccessfulBidderAsync(BidModel bid, BidModel winningBid);
         Task ParseAndSaveAiJobDetails(int jobId, string aiResponse);
         Task<PlanningDataDto> GetPlanningDataAsync(int jobId);

@@ -194,6 +194,77 @@ namespace ProbuildBackend.Controllers
             return Ok(teamMemberToInvite);
         }
 
+        [HttpPost("subcontractor-invite")]
+        public async Task<IActionResult> SendSubcontractorInvite(
+            [FromBody] SendSubcontractorInviteDto dto
+        )
+        {
+            var currentUserId = User.FindFirstValue("UserId");
+            if (currentUserId == null)
+            {
+                return Unauthorized();
+            }
+
+            var inviter = await _userManager.FindByIdAsync(currentUserId);
+            if (inviter == null)
+            {
+                return Unauthorized(new { message = "Inviter not found." });
+            }
+
+            var inviterFullName = string.IsNullOrWhiteSpace(
+                $"{inviter.FirstName} {inviter.LastName}".Trim()
+            )
+                ? inviter.Email
+                : $"{inviter.FirstName} {inviter.LastName}".Trim();
+
+            var frontendUrl =
+                Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:4200";
+            var callbackUrl = dto.JobId.HasValue
+                ? $"{frontendUrl}/find-work?jobId={dto.JobId.Value}"
+                : $"{frontendUrl}/find-work";
+
+            string categoryLabel = string.IsNullOrWhiteSpace(dto.Category)
+                ? "Trade"
+                : dto.Category!;
+            string tradeLabel = string.IsNullOrWhiteSpace(dto.TradeName)
+                ? "Trade Package"
+                : dto.TradeName!;
+            string budgetLabel = dto.Budget.HasValue ? dto.Budget.Value.ToString("C0") : "TBD";
+            string marketplaceLabel = dto.AlsoMarketplace ? "Yes" : "No";
+
+            // TODO: Replace TeamInvitationEmail with a dedicated SubcontractorDirectInviteEmail template
+            var template = await _emailTemplate.GetTemplateAsync("TeamInvitationEmail");
+            template.Subject = $"Direct invite: {tradeLabel} on ProBuild";
+            template.Body = template
+                .Body.Replace("{{inviterFullName}}", inviterFullName)
+                .Replace("{{InvitationLink}}", callbackUrl)
+                .Replace("{{Header}}", template.HeaderHtml)
+                .Replace("{{Footer}}", template.FooterHtml)
+                .Replace(
+                    "{{UserName}}",
+                    string.IsNullOrWhiteSpace(dto.ContactName) ? dto.Email : dto.ContactName
+                )
+                .Replace("{{TradeName}}", tradeLabel)
+                .Replace("{{Category}}", categoryLabel)
+                .Replace("{{ScopeOfWork}}", dto.ScopeOfWork ?? "")
+                .Replace("{{Budget}}", budgetLabel)
+                .Replace("{{AlsoMarketplace}}", marketplaceLabel);
+
+            try
+            {
+                await _emailSender.SendEmailAsync(template, dto.Email);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(
+                    $"Error sending subcontractor invite email to {dto.Email}: {ex.Message}"
+                );
+                return StatusCode(500, "Failed to send subcontractor invite email.");
+            }
+
+            return Ok(new { message = "Subcontractor invite sent." });
+        }
+
         [HttpGet("members")]
         public async Task<IActionResult> GetTeamMembers()
         {

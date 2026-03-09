@@ -13,6 +13,14 @@ namespace ProbuildBackend.Models
         public string GcSignature { get; set; }
         public string ScVendorSignature { get; set; }
         public string Status { get; set; }
+        public string? ContractType { get; set; }
+        public string? ClientName { get; set; }
+        public string? ClientEmail { get; set; }
+        public string? FileUrl { get; set; }
+        public string? FileName { get; set; }
+        public string? FileContentType { get; set; }
+        public string? GeneratedPromptFile { get; set; }
         public DateTime CreatedAt { get; set; }
+        public DateTime? UpdatedAt { get; set; }
     }
 }

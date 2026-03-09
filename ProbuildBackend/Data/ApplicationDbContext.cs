@@ -502,6 +502,12 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
                 .WithMany()
                 .HasForeignKey(e => e.LinkedTradePackageId)
                 .OnDelete(DeleteBehavior.NoAction);
+
+            entity
+                .HasOne(e => e.AwardedBid)
+                .WithMany()
+                .HasForeignKey(e => e.AwardedBidId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         base.OnModelCreating(modelBuilder);

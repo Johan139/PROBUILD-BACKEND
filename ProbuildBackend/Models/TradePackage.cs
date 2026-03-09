@@ -64,6 +64,17 @@ namespace ProbuildBackend.Models
 
         public bool PostedToMarketplace { get; set; }
 
+        public string? Notes { get; set; }
+
+        public bool LaborBudgetVisible { get; set; } = true;
+
+        public bool MaterialBudgetVisible { get; set; } = true;
+
+        public int? AwardedBidId { get; set; }
+
+        [ForeignKey("AwardedBidId")]
+        public BidModel? AwardedBid { get; set; }
+
         public DateTime? ArchivedAt { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
@@ -25,6 +26,7 @@ namespace ProbuildBackend.Services
         private const string SelectedAnalysisPersonaKey = "selected-prompt-system-persona.txt";
         private const string RenovationAnalysisPersonaKey = "ProBuildAI_Renovation_Prompt.txt";
         private const string FailureCorrectiveActionKey = "prompt-failure-corrective-action.txt";
+        private const string BidComparisonPromptKey = "subcontractor-comparison-prompt.txt";
 
         public AiAnalysisService(
             ILogger<AiAnalysisService> logger,
@@ -1731,106 +1733,63 @@ namespace ProbuildBackend.Services
             {
                 var parsedTradePackages = new List<TradePackage>();
 
-                // Regex to find all "Subcontractor Cost Breakdown" tables
-                // Should be more flexible with header formatting (e.g. bold markers)
-                var tableRegex = new Regex(
-                    @"Output 2: Subcontractor Cost Breakdown[\s\S]*?\|\s*Trade\s*\|\s*Scope of Work\s*\|[\s\S]*?(\n\n|###|$)",
-                    RegexOptions.Singleline
-                );
-
-                var matches = tableRegex.Matches(aiResponse);
-
-                foreach (Match match in matches)
+                var phaseBlocks = ExtractPhaseBlocks(aiResponse);
+                foreach (var phaseBlock in phaseBlocks)
                 {
-                    var tableContent = match.Value;
-                    var rows = tableContent.Split('\n');
+                    var outputTwoTable = ExtractMarkdownTableAfterMarker(
+                        phaseBlock,
+                        "Output 2: Subcontractor Cost Breakdown",
+                        "Trade"
+                    );
 
-                    foreach (var row in rows)
+                    if (outputTwoTable == null || !outputTwoTable.Rows.Any())
                     {
-                        if (
-                            string.IsNullOrWhiteSpace(row)
-                            || !row.Trim().StartsWith("|")
-                            || row.Contains("Trade")
-                            || row.Contains("---")
-                        )
-                            continue;
+                        continue;
+                    }
 
-                        var cols = row.Split('|')
-                            .Select(c => c.Trim())
-                            .Where(c => !string.IsNullOrEmpty(c))
-                            .ToList();
+                    var outputOneTable = ExtractMarkdownTableAfterMarker(
+                        phaseBlock,
+                        "Output 1:",
+                        "Item"
+                    );
 
-                        // Expected Columns:
-                        // 0: Trade
-                        // 1: Scope of Work
-                        // 2: Estimated Man-Hours
-                        // 3: Localized Hourly Rate
-                        // 4: Total Estimated Cost
-                        // 5: CSI MasterFormat Code
-                        // 6: Estimated Cost per Area (sq ft)
+                    var materialByCsi = ParseMaterialTotalsByCsi(outputOneTable);
+                    var tradeRows = ParseOutputTwoTradeRows(outputTwoTable);
+                    if (!tradeRows.Any())
+                    {
+                        continue;
+                    }
 
-                        if (cols.Count >= 5)
-                        {
-                            var tradeName = cols[0];
-                            if (tradeName.Contains("Total Subcontractor Cost"))
-                                continue;
+                    AllocateMaterialBudgets(tradeRows, materialByCsi);
 
-                            var scope = cols[1];
-                            var manHours = ParseMoneyLikeValue(cols[2]);
+                    foreach (var trade in tradeRows)
+                    {
+                        var laborBudget = Math.Max(0, Math.Round(trade.LaborBudget, 2));
+                        var materialBudget = Math.Max(0, Math.Round(trade.MaterialBudget, 2));
+                        var totalBudget = Math.Round(laborBudget + materialBudget, 2);
 
-                            var hourlyRate = ParseMoneyLikeValue(cols[3]);
-
-                            var totalCost = ParseMoneyLikeValue(cols[4]);
-
-                            if (totalCost <= 0)
+                        parsedTradePackages.Add(
+                            new TradePackage
                             {
-                                // Fallback: some AI outputs include trailing notes/columns where cost is shifted
-                                totalCost = cols.Select(ParseMoneyLikeValue).OrderByDescending(v => v).FirstOrDefault();
+                                JobId = jobId,
+                                TradeName = trade.TradeName,
+                                ScopeOfWork = trade.ScopeOfWork,
+                                EstimatedManHours = trade.EstimatedManHours,
+                                HourlyRate = trade.HourlyRate,
+                                LaborBudget = laborBudget,
+                                MaterialBudget = materialBudget,
+                                TotalBudget = totalBudget,
+                                EffectiveBudget = totalBudget,
+                                Budget = totalBudget,
+                                CsiCode = trade.CsiCode,
+                                Category = trade.Category,
+                                LaborType = "Labor and Materials",
+                                Status = "Draft",
+                                PostedToMarketplace = false,
+                                SourceType = "AI",
+                                EstimatedDuration = "TBD",
                             }
-
-                            var csiCode = cols.Count > 5 ? cols[5] : null;
-
-                            // Determine category based on keywords or default to Trade
-                            var category = "Trade";
-                            if (tradeName.Contains("Supplier") || tradeName.Contains("Provider"))
-                                category = "Supplier";
-                            if (tradeName.Contains("Rental") || tradeName.Contains("Equipment"))
-                                category = "Equipment";
-
-                            var laborBudget = Math.Round(manHours * hourlyRate, 2);
-                            if (laborBudget <= 0 && totalCost > 0)
-                            {
-                                // Conservative fallback split when labor columns are malformed
-                                laborBudget = Math.Round(totalCost * 0.6m, 2);
-                            }
-                            var materialBudget = Math.Max(
-                                0,
-                                Math.Round(totalCost - laborBudget, 2)
-                            );
-
-                            parsedTradePackages.Add(
-                                new TradePackage
-                                {
-                                    JobId = jobId,
-                                    TradeName = tradeName,
-                                    ScopeOfWork = scope,
-                                    EstimatedManHours = manHours,
-                                    HourlyRate = hourlyRate,
-                                    LaborBudget = laborBudget,
-                                    MaterialBudget = materialBudget,
-                                    TotalBudget = totalCost,
-                                    EffectiveBudget = totalCost,
-                                    Budget = totalCost,
-                                    CsiCode = csiCode,
-                                    Category = category,
-                                    LaborType = "Labor and Materials",
-                                    Status = "Draft",
-                                    PostedToMarketplace = false,
-                                    SourceType = "AI",
-                                    EstimatedDuration = "TBD", // Could parse timeline if needed
-                                }
-                            );
-                        }
+                        );
                     }
                 }
 
@@ -1880,7 +1839,13 @@ namespace ProbuildBackend.Services
                             continue;
                         }
 
-                        if (existing.IsAutoGenerated || IsAiSource(existing))
+                        var isSystemLinked = string.Equals(
+                            existing.SourceType,
+                            "SYSTEM_LINKED",
+                            StringComparison.OrdinalIgnoreCase
+                        );
+
+                        if ((existing.IsAutoGenerated || IsAiSource(existing)) && !isSystemLinked)
                         {
                             existing.IsInactive = true;
                             existing.IsHidden = true;
@@ -1902,6 +1867,370 @@ namespace ProbuildBackend.Services
             {
                 _logger.LogError(ex, $"Failed to parse Trade Packages for Job {jobId}");
             }
+        }
+
+        private sealed class ParsedTradeRow
+        {
+            public string TradeName { get; init; } = string.Empty;
+            public string ScopeOfWork { get; init; } = string.Empty;
+            public decimal EstimatedManHours { get; init; }
+            public decimal HourlyRate { get; init; }
+            public decimal LaborBudget { get; init; }
+            public decimal MaterialBudget { get; set; }
+            public string? CsiCode { get; init; }
+            public string Category { get; init; } = "Trade";
+        }
+
+        private sealed class MarkdownTable
+        {
+            public List<string> Headers { get; init; } = new();
+            public List<List<string>> Rows { get; init; } = new();
+        }
+
+        private static List<string> ExtractPhaseBlocks(string aiResponse)
+        {
+            var phaseRegex = new Regex(
+                @"###\s*\*{0,2}Phase\s+\d+:[\s\S]*?(?=###\s*\*{0,2}Phase\s+\d+:|$)",
+                RegexOptions.IgnoreCase | RegexOptions.Singleline
+            );
+
+            var blocks = phaseRegex.Matches(aiResponse).Select(m => m.Value).ToList();
+            return blocks.Any() ? blocks : new List<string> { aiResponse };
+        }
+
+        private static MarkdownTable? ExtractMarkdownTableAfterMarker(
+            string block,
+            string marker,
+            string requiredHeaderContains
+        )
+        {
+            var markerIndex = block.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (markerIndex < 0)
+            {
+                return null;
+            }
+
+            var tail = block.Substring(markerIndex);
+            var lines = tail.Split('\n');
+
+            var headerIndex = -1;
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i].Trim();
+                if (!line.StartsWith("|"))
+                {
+                    continue;
+                }
+
+                if (line.Contains(requiredHeaderContains, StringComparison.OrdinalIgnoreCase))
+                {
+                    headerIndex = i;
+                    break;
+                }
+            }
+
+            if (headerIndex < 0)
+            {
+                return null;
+            }
+
+            var header = ParseMarkdownRow(lines[headerIndex]);
+            var rows = new List<List<string>>();
+
+            for (var i = headerIndex + 1; i < lines.Length; i++)
+            {
+                var current = lines[i].Trim();
+                if (!current.StartsWith("|"))
+                {
+                    if (rows.Count > 0)
+                    {
+                        break;
+                    }
+
+                    continue;
+                }
+
+                if (current.Contains("---"))
+                {
+                    continue;
+                }
+
+                var parsed = ParseMarkdownRow(current);
+                if (!parsed.Any())
+                {
+                    continue;
+                }
+
+                rows.Add(parsed);
+            }
+
+            return new MarkdownTable { Headers = header, Rows = rows };
+        }
+
+        private static List<string> ParseMarkdownRow(string row)
+        {
+            return row.Split('|')
+                .Select(c => c.Trim().Replace("**", string.Empty))
+                .Where(c => !string.IsNullOrWhiteSpace(c))
+                .ToList();
+        }
+
+        private static Dictionary<string, decimal> ParseMaterialTotalsByCsi(MarkdownTable? table)
+        {
+            var totals = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+            if (table == null || !table.Rows.Any())
+            {
+                return totals;
+            }
+
+            var totalCostIdx = FindHeaderIndex(table.Headers, "Total Item Cost", "Total Cost");
+            var csiIdx = FindHeaderIndex(table.Headers, "CSI MasterFormat Code", "CSI");
+            var itemIdx = FindHeaderIndex(table.Headers, "Item");
+
+            if (totalCostIdx < 0 || csiIdx < 0)
+            {
+                return totals;
+            }
+
+            foreach (var row in table.Rows)
+            {
+                var item = itemIdx >= 0 && itemIdx < row.Count ? row[itemIdx] : string.Empty;
+                if (item.Contains("TOTAL", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var csi = csiIdx < row.Count ? NormalizeCsiCode(row[csiIdx]) : string.Empty;
+                if (string.IsNullOrWhiteSpace(csi))
+                {
+                    continue;
+                }
+
+                var cost = totalCostIdx < row.Count ? ParseMoneyLikeValue(row[totalCostIdx]) : 0;
+                if (cost <= 0)
+                {
+                    continue;
+                }
+
+                totals[csi] = totals.TryGetValue(csi, out var existing)
+                    ? Math.Round(existing + cost, 2)
+                    : Math.Round(cost, 2);
+            }
+
+            return totals;
+        }
+
+        private static List<ParsedTradeRow> ParseOutputTwoTradeRows(MarkdownTable table)
+        {
+            var rows = new List<ParsedTradeRow>();
+
+            var tradeIdx = FindHeaderIndex(table.Headers, "Trade");
+            var scopeIdx = FindHeaderIndex(table.Headers, "Scope of Work");
+            var hoursIdx = FindHeaderIndex(table.Headers, "Estimated Man-Hours", "Man-Hours");
+            var rateIdx = FindHeaderIndex(
+                table.Headers,
+                "Localized Hourly Rate",
+                "Hourly Rate",
+                "Rate"
+            );
+            var totalIdx = FindHeaderIndex(table.Headers, "Total Estimated Cost", "Total Cost");
+            var csiIdx = FindHeaderIndex(table.Headers, "CSI MasterFormat Code", "CSI");
+
+            foreach (var row in table.Rows)
+            {
+                if (tradeIdx < 0 || tradeIdx >= row.Count)
+                {
+                    continue;
+                }
+
+                var tradeName = row[tradeIdx].Trim();
+                if (
+                    string.IsNullOrWhiteSpace(tradeName)
+                    || tradeName.Contains("TOTAL", StringComparison.OrdinalIgnoreCase)
+                )
+                {
+                    continue;
+                }
+
+                var scope = scopeIdx >= 0 && scopeIdx < row.Count ? row[scopeIdx] : string.Empty;
+                var manHours =
+                    hoursIdx >= 0 && hoursIdx < row.Count ? ParseMoneyLikeValue(row[hoursIdx]) : 0;
+                var hourlyRate =
+                    rateIdx >= 0 && rateIdx < row.Count ? ParseMoneyLikeValue(row[rateIdx]) : 0;
+                var totalCost =
+                    totalIdx >= 0 && totalIdx < row.Count ? ParseMoneyLikeValue(row[totalIdx]) : 0;
+                var csi = csiIdx >= 0 && csiIdx < row.Count ? NormalizeCsiCode(row[csiIdx]) : null;
+
+                var laborBudget = totalCost > 0 ? totalCost : Math.Round(manHours * hourlyRate, 2);
+                if (laborBudget <= 0)
+                {
+                    continue;
+                }
+
+                var category = "Trade";
+                if (
+                    tradeName.Contains("Supplier", StringComparison.OrdinalIgnoreCase)
+                    || tradeName.Contains("Provider", StringComparison.OrdinalIgnoreCase)
+                )
+                {
+                    category = "Supplier";
+                }
+
+                if (
+                    tradeName.Contains("Rental", StringComparison.OrdinalIgnoreCase)
+                    || tradeName.Contains("Equipment", StringComparison.OrdinalIgnoreCase)
+                )
+                {
+                    category = "Equipment";
+                }
+
+                rows.Add(
+                    new ParsedTradeRow
+                    {
+                        TradeName = tradeName,
+                        ScopeOfWork = scope,
+                        EstimatedManHours = Math.Round(manHours, 2),
+                        HourlyRate = Math.Round(hourlyRate, 2),
+                        LaborBudget = Math.Round(laborBudget, 2),
+                        MaterialBudget = 0,
+                        CsiCode = csi,
+                        Category = category,
+                    }
+                );
+            }
+
+            return rows;
+        }
+
+        private static void AllocateMaterialBudgets(
+            List<ParsedTradeRow> tradeRows,
+            Dictionary<string, decimal> materialByCsi
+        )
+        {
+            if (!tradeRows.Any() || !materialByCsi.Any())
+            {
+                return;
+            }
+
+            decimal unmatchedMaterial = 0;
+
+            foreach (var materialEntry in materialByCsi)
+            {
+                var csi = materialEntry.Key;
+                var materialTotal = materialEntry.Value;
+                if (materialTotal <= 0)
+                {
+                    continue;
+                }
+
+                var matchingTrades = tradeRows
+                    .Where(t => NormalizeCsiCode(t.CsiCode) == csi)
+                    .ToList();
+
+                if (!matchingTrades.Any())
+                {
+                    unmatchedMaterial += materialTotal;
+                    continue;
+                }
+
+                var laborSum = matchingTrades.Sum(t => Math.Max(0, t.LaborBudget));
+                if (laborSum <= 0)
+                {
+                    var evenShare = Math.Round(materialTotal / matchingTrades.Count, 2);
+                    foreach (var trade in matchingTrades)
+                    {
+                        trade.MaterialBudget += evenShare;
+                    }
+
+                    continue;
+                }
+
+                decimal allocated = 0;
+                for (var i = 0; i < matchingTrades.Count; i++)
+                {
+                    var trade = matchingTrades[i];
+                    if (i == matchingTrades.Count - 1)
+                    {
+                        trade.MaterialBudget += Math.Round(materialTotal - allocated, 2);
+                        continue;
+                    }
+
+                    var share = Math.Round(materialTotal * (trade.LaborBudget / laborSum), 2);
+                    trade.MaterialBudget += share;
+                    allocated += share;
+                }
+            }
+
+            if (unmatchedMaterial <= 0)
+            {
+                return;
+            }
+
+            var fallbackTrades = tradeRows
+                .Where(t => string.Equals(t.Category, "Trade", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (!fallbackTrades.Any())
+            {
+                fallbackTrades = tradeRows;
+            }
+
+            if (!fallbackTrades.Any())
+            {
+                return;
+            }
+
+            var fallbackLabor = fallbackTrades.Sum(t => Math.Max(0, t.LaborBudget));
+            if (fallbackLabor <= 0)
+            {
+                var evenShare = Math.Round(unmatchedMaterial / fallbackTrades.Count, 2);
+                foreach (var trade in fallbackTrades)
+                {
+                    trade.MaterialBudget += evenShare;
+                }
+
+                return;
+            }
+
+            decimal distributed = 0;
+            for (var i = 0; i < fallbackTrades.Count; i++)
+            {
+                var trade = fallbackTrades[i];
+                if (i == fallbackTrades.Count - 1)
+                {
+                    trade.MaterialBudget += Math.Round(unmatchedMaterial - distributed, 2);
+                    continue;
+                }
+
+                var share = Math.Round(unmatchedMaterial * (trade.LaborBudget / fallbackLabor), 2);
+                trade.MaterialBudget += share;
+                distributed += share;
+            }
+        }
+
+        private static int FindHeaderIndex(List<string> headers, params string[] keys)
+        {
+            for (var i = 0; i < headers.Count; i++)
+            {
+                var header = headers[i];
+                if (keys.Any(k => header.Contains(k, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private static string NormalizeCsiCode(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return string.Empty;
+            }
+
+            var cleaned = Regex.Replace(raw, @"\s+", " ").Trim();
+            return cleaned.ToUpperInvariant();
         }
 
         private static void MergeParsedPackageIntoExisting(
@@ -2152,90 +2481,355 @@ namespace ProbuildBackend.Services
             }
         }
 
-        public async Task<string> AnalyzeBidsAsync(List<BidModel> bids, string comparisonType)
+        public async Task<string> AnalyzeBidsAsync(
+            List<BidModel> bids,
+            string comparisonType,
+            TradePackage? tradePackage = null
+        )
         {
-            //_keepAliveService.StartPinging();
-            //try
-            //{
-            //    string promptKey = comparisonType.Equals(
-            //        "Vendor",
-            //        StringComparison.OrdinalIgnoreCase
-            //    )
-            //        ? "vendor-comparison-prompt.txt"
-            //        : "subcontractor-comparison-prompt.txt";
+            if (bids == null || bids.Count == 0)
+            {
+                return JsonSerializer.Serialize(
+                    new
+                    {
+                        summary = "No bids were available for analysis.",
+                        recommendedBidId = (int?)null,
+                        reasons = new[] { "No bids submitted for this package." },
+                        topCandidates = Array.Empty<object>(),
+                    }
+                );
+            }
 
-            //    var prompt = await _promptManager.GetPromptAsync("ComparisonPrompts/", promptKey);
+            var submittedBids = bids.Where(b =>
+                    !string.Equals(b.Status, "Withdrawn", StringComparison.OrdinalIgnoreCase)
+                )
+                .ToList();
 
-            //    var bidsDetails = new List<object>();
-            //    foreach (var bid in bids)
-            //    {
-            //        string quoteText = bid.Task ?? "No detailed quote text provided.";
-            //        if (!string.IsNullOrEmpty(bid.QuoteId))
-            //        {
-            //            var quote = await _context.Quotes
-            //         .Include(q => q.Versions)
-            //             .ThenInclude(v => v.Rows)
-            //         .Include(q => q.Versions)
-            //             .ThenInclude(v => v.ExtraCosts)
-            //         .FirstOrDefaultAsync(q => q.Id == bid.QuoteId);
+            if (!submittedBids.Any())
+            {
+                return JsonSerializer.Serialize(
+                    new
+                    {
+                        summary = "No active bids were available for analysis.",
+                        recommendedBidId = (int?)null,
+                        reasons = new[] { "All bids are currently withdrawn." },
+                        topCandidates = Array.Empty<object>(),
+                    }
+                );
+            }
 
-            //            if (quote != null)
-            //            {
-            //                quoteText = JsonSerializer.Serialize(quote);
-            //            }
-            //        }
-            //        else if (!string.IsNullOrEmpty(bid.DocumentUrl))
-            //        {
-            //            try
-            //            {
-            //                var (contentStream, _, _) = await _azureBlobService.GetBlobContentAsync(
-            //                    bid.DocumentUrl
-            //                );
-            //                quoteText = await _pdfTextExtractionService.ExtractTextAsync(
-            //                    contentStream
-            //                );
-            //            }
-            //            catch (Exception ex)
-            //            {
-            //                _logger.LogError(
-            //                    ex,
-            //                    "Failed to extract text from PDF for bid {BidId}",
-            //                    bid.Id
-            //                );
-            //                quoteText = "Error extracting text from PDF.";
-            //            }
-            //        }
+            var lowestAmount = submittedBids.Min(b => b.Amount <= 0 ? decimal.MaxValue : b.Amount);
+            if (lowestAmount == decimal.MaxValue)
+            {
+                lowestAmount = submittedBids.Min(b => b.Amount);
+            }
 
-            //        bidsDetails.Add(
-            //            new
-            //            {
-            //                bid.Id,
-            //                bid.Amount,
-            //                bid.User?.ProbuildRating,
-            //                bid.User?.GoogleRating,
-            //                bid.User?.JobPreferences,
-            //                QuoteDetails = quoteText,
-            //            }
-            //        );
-            //    }
+            var lane = string.IsNullOrWhiteSpace(comparisonType) ? "Trade" : comparisonType;
+            var promptPayload = BuildBidComparisonPayload(
+                submittedBids,
+                lane,
+                tradePackage,
+                lowestAmount
+            );
 
-            //    var bidsJson = JsonSerializer.Serialize(bidsDetails);
-            //    var fullPrompt = $"{prompt}\n\nBids:\n{bidsJson}";
+            try
+            {
+                var systemPersonaPrompt = await _promptManager.GetPromptAsync(
+                    null,
+                    BidComparisonPromptKey
+                );
 
-            //    var (analysisResult, _) = await _aiService.StartMultimodalConversationAsync(
-            //        "system-user",
-            //        null,
-            //        fullPrompt,
-            //        $"Analyze the provided {comparisonType} bids and return the top 3 candidates."
-            //    );
+                var (analysisResult, _) = await _aiService.StartTextConversationAsync(
+                    "system-user",
+                    systemPersonaPrompt,
+                    promptPayload
+                );
 
-            //    return analysisResult;
-            //}
-            //finally
-            //{
-            //    _keepAliveService.StopPinging();
-            //}
-            return null;
+                if (!string.IsNullOrWhiteSpace(analysisResult))
+                {
+                    var parsedFromAi = TryParseBidComparisonJson(analysisResult, submittedBids);
+                    if (parsedFromAi != null)
+                    {
+                        return JsonSerializer.Serialize(parsedFromAi);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "AI bid comparison failed; falling back to deterministic scoring for lane {Lane}.",
+                    lane
+                );
+            }
+
+            var scored = submittedBids
+                .Select(bid =>
+                {
+                    var probuildRating = (double)(bid.User?.ProbuildRating ?? 0);
+                    var googleRating = (double)(bid.User?.GoogleRating ?? 0);
+                    var blendedRating = Math.Max(
+                        0,
+                        Math.Min(5, (probuildRating * 0.6) + (googleRating * 0.4))
+                    );
+
+                    var amount = bid.Amount <= 0 ? 1 : bid.Amount;
+                    var priceScore = lowestAmount <= 0 ? 0 : (double)(lowestAmount / amount);
+                    var normalizedPrice = Math.Max(0, Math.Min(1, priceScore));
+                    var normalizedRating = blendedRating / 5.0;
+
+                    var score = (normalizedPrice * 0.7) + (normalizedRating * 0.3);
+                    return new
+                    {
+                        Bid = bid,
+                        Score = Math.Round(score, 4),
+                        BlendedRating = Math.Round(blendedRating, 2),
+                    };
+                })
+                .OrderByDescending(x => x.Score)
+                .ThenBy(x => x.Bid.Amount)
+                .ToList();
+
+            var recommended = scored.First();
+            var recommendedAmount = recommended.Bid.Amount;
+            var pctVsLowest =
+                lowestAmount > 0
+                    ? Math.Round(((recommendedAmount - lowestAmount) / lowestAmount) * 100m, 1)
+                    : 0;
+
+            var reasons = new List<string>
+            {
+                $"Best combined score for {lane} selection using cost competitiveness and rating.",
+                $"Quoted amount: {recommendedAmount:C0}; market low: {lowestAmount:C0} ({pctVsLowest:+0.0;-0.0;0.0}% vs low).",
+                $"Blended contractor rating: {recommended.BlendedRating:0.0}/5.",
+            };
+
+            var topCandidates = scored
+                .Take(3)
+                .Select(x =>
+                {
+                    var delta =
+                        lowestAmount > 0
+                            ? Math.Round(((x.Bid.Amount - lowestAmount) / lowestAmount) * 100m, 1)
+                            : 0;
+
+                    return new
+                    {
+                        bidId = x.Bid.Id,
+                        score = x.Score,
+                        amount = x.Bid.Amount,
+                        rating = x.BlendedRating,
+                        reason = $"{x.Bid.Amount:C0} ({delta:+0.0;-0.0;0.0}% vs low), rating {x.BlendedRating:0.0}/5, status {x.Bid.Status}.",
+                    };
+                })
+                .ToList();
+
+            var response = new
+            {
+                summary = $"Recommended bid #{recommended.Bid.Id} based on weighted price and rating for {lane.ToLowerInvariant()} comparison.",
+                recommendedBidId = recommended.Bid.Id,
+                reasons,
+                topCandidates,
+            };
+
+            return JsonSerializer.Serialize(response);
+        }
+
+        private string BuildBidComparisonPayload(
+            List<BidModel> bids,
+            string comparisonType,
+            TradePackage? tradePackage,
+            decimal lowestAmount
+        )
+        {
+            var payload = new
+            {
+                comparisonType,
+                tradePackage = tradePackage == null
+                    ? null
+                    : new
+                    {
+                        tradePackage.Id,
+                        tradePackage.TradeName,
+                        tradePackage.Category,
+                        tradePackage.ScopeOfWork,
+                        tradePackage.CsiCode,
+                        tradePackage.LaborType,
+                        tradePackage.Budget,
+                        tradePackage.LaborBudget,
+                        tradePackage.MaterialBudget,
+                    },
+                bids = bids.Select(b => new
+                {
+                    bidId = b.Id,
+                    amount = b.Amount,
+                    status = b.Status,
+                    bidderName = b.User?.CompanyName
+                        ?? string.Join(
+                            " ",
+                            new[] { b.User?.FirstName, b.User?.LastName }.Where(x =>
+                                !string.IsNullOrWhiteSpace(x)
+                            )
+                        )
+                        ?? b.User?.UserName
+                        ?? $"Bidder #{b.Id}",
+                    ratings = new
+                    {
+                        probuild = b.User?.ProbuildRating ?? 0,
+                        google = b.User?.GoogleRating ?? 0,
+                    },
+                    deltaVsLowestPct = lowestAmount > 0
+                        ? Math.Round(((b.Amount - lowestAmount) / lowestAmount) * 100m, 1)
+                        : 0,
+                }),
+                expectedOutput = new
+                {
+                    summary = "string",
+                    recommendedBidId = "number",
+                    reasons = new[] { "string" },
+                    topCandidates = new[]
+                    {
+                        new
+                        {
+                            bidId = 0,
+                            score = 0.0,
+                            reason = "string",
+                        },
+                    },
+                },
+                instructions = "Return valid JSON only. Do not include markdown. Choose recommendedBidId from supplied bidId values.",
+            };
+
+            return JsonSerializer.Serialize(payload);
+        }
+
+        private object? TryParseBidComparisonJson(string aiResponse, List<BidModel> bids)
+        {
+            try
+            {
+                var start = aiResponse.IndexOf('{');
+                var end = aiResponse.LastIndexOf('}');
+                if (start < 0 || end <= start)
+                {
+                    return null;
+                }
+
+                var json = aiResponse.Substring(start, end - start + 1);
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                if (!root.TryGetProperty("recommendedBidId", out var recommendedEl))
+                {
+                    return null;
+                }
+
+                var recommendedId =
+                    recommendedEl.ValueKind == JsonValueKind.Number ? recommendedEl.GetInt32()
+                    : int.TryParse(recommendedEl.GetString(), out var parsed) ? parsed
+                    : 0;
+
+                if (!bids.Any(b => b.Id == recommendedId))
+                {
+                    return null;
+                }
+
+                var summary = root.TryGetProperty("summary", out var summaryEl)
+                    ? (summaryEl.GetString() ?? "Analysis complete.")
+                    : "Analysis complete.";
+
+                var reasons = new List<string>();
+                if (
+                    root.TryGetProperty("reasons", out var reasonsEl)
+                    && reasonsEl.ValueKind == JsonValueKind.Array
+                )
+                {
+                    foreach (var reason in reasonsEl.EnumerateArray())
+                    {
+                        if (reason.ValueKind == JsonValueKind.String)
+                        {
+                            var text = reason.GetString();
+                            if (!string.IsNullOrWhiteSpace(text))
+                            {
+                                reasons.Add(text);
+                            }
+                        }
+                    }
+                }
+
+                var topCandidates = new List<object>();
+                if (
+                    root.TryGetProperty("topCandidates", out var candidatesEl)
+                    && candidatesEl.ValueKind == JsonValueKind.Array
+                )
+                {
+                    foreach (var candidate in candidatesEl.EnumerateArray())
+                    {
+                        if (candidate.ValueKind != JsonValueKind.Object)
+                        {
+                            continue;
+                        }
+
+                        var bidId =
+                            candidate.TryGetProperty("bidId", out var bidIdEl)
+                            && bidIdEl.ValueKind == JsonValueKind.Number
+                                ? bidIdEl.GetInt32()
+                                : 0;
+
+                        if (!bids.Any(b => b.Id == bidId))
+                        {
+                            continue;
+                        }
+
+                        var score =
+                            candidate.TryGetProperty("score", out var scoreEl)
+                            && scoreEl.ValueKind == JsonValueKind.Number
+                                ? scoreEl.GetDouble()
+                                : 0d;
+
+                        var reason = candidate.TryGetProperty("reason", out var reasonEl)
+                            ? (reasonEl.GetString() ?? string.Empty)
+                            : string.Empty;
+
+                        topCandidates.Add(
+                            new
+                            {
+                                bidId,
+                                score,
+                                reason,
+                            }
+                        );
+                    }
+                }
+
+                if (!topCandidates.Any())
+                {
+                    topCandidates = bids.Take(3)
+                        .Select(b =>
+                            (object)
+                                new
+                                {
+                                    bidId = b.Id,
+                                    score = 0d,
+                                    reason = "Candidate",
+                                }
+                        )
+                        .ToList();
+                }
+
+                return new
+                {
+                    summary,
+                    recommendedBidId = recommendedId,
+                    reasons = reasons.Any()
+                        ? reasons.ToArray()
+                        : ["AI selected the strongest overall quote."],
+                    topCandidates,
+                };
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         public async Task<string> GenerateFeedbackForUnsuccessfulBidderAsync(
