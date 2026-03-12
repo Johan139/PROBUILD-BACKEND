@@ -52,7 +52,7 @@ namespace ProbuildBackend.Services
             };
 
             _context.EmailLogs.Add(log);
-            await _context.SaveChangesAsync();
+            //await _context.SaveChangesAsync();
 
             var client = new SendGridClient(apiKey);
             var from = new EmailAddress(sendgridEmail, "ProBuild");
@@ -109,7 +109,7 @@ namespace ProbuildBackend.Services
                 existingLog.LastEventAt = sentAt;
             }
 
-            await _context.SaveChangesAsync();
+           // await _context.SaveChangesAsync();
         }
         public async Task SendEmailWithAttachmentAsync(
             EmailTemplate template,

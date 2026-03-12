@@ -92,6 +92,30 @@ namespace ProbuildBackend.Services
                 _context.DocumentProcessingResults.Add(processingResult);
                 await _context.SaveChangesAsync();
 
+                job.Status = "PRELIMINARY";
+
+                var analysisState = await _context.JobAnalysisStates
+                    .FirstOrDefaultAsync(s => s.JobId == jobId);
+
+                if (analysisState == null)
+                {
+                    analysisState = new JobAnalysisState
+                    {
+                        JobId = jobId,
+                    };
+                    _context.JobAnalysisStates.Add(analysisState);
+                }
+
+                analysisState.StatusMessage = "Analysis complete.";
+                analysisState.CurrentStep = 1;
+                analysisState.TotalSteps = 1;
+                analysisState.IsComplete = true;
+                analysisState.HasFailed = false;
+                analysisState.ErrorMessage = null;
+                analysisState.LastUpdated = DateTime.UtcNow;
+
+                await _context.SaveChangesAsync();
+
                 if (isFrontEnd == true && !string.IsNullOrEmpty(ipAddress))
                 {
                     var existing = await _context.WebsiteJobTracker
@@ -206,6 +230,25 @@ namespace ProbuildBackend.Services
                 {
                     job.Status = "FAILED";
                 }
+
+                var analysisState = await _context.JobAnalysisStates
+                    .FirstOrDefaultAsync(s => s.JobId == jobId);
+
+                if (analysisState == null)
+                {
+                    analysisState = new JobAnalysisState
+                    {
+                        JobId = jobId,
+                    };
+                    _context.JobAnalysisStates.Add(analysisState);
+                }
+
+                analysisState.StatusMessage = "Analysis failed.";
+                analysisState.IsComplete = false;
+                analysisState.HasFailed = true;
+                analysisState.ErrorMessage = ex.Message;
+                analysisState.LastUpdated = DateTime.UtcNow;
+
                 await _context.SaveChangesAsync();
 
                 if (!string.IsNullOrEmpty(connectionId))
