@@ -1,10 +1,15 @@
 ﻿using System.Security.Claims;
 using System.Text.Json;
+using System.Linq;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
+using ProbuildBackend.Services;
+using System.IO.Compression;
+using ProbuildBackend.Helpers;
 
 namespace ProbuildBackend.Controllers
 {
@@ -14,11 +19,23 @@ namespace ProbuildBackend.Controllers
     {
         private readonly ApplicationDbContext _context;
         private readonly IAiAnalysisService _aiAnalysisService;
+        private readonly AzureBlobService _azureBlobService;
+        private readonly SubscriptionService _subscriptionService;
+        private readonly ILogger<BidsController> _logger;
 
-        public BidsController(ApplicationDbContext context, IAiAnalysisService aiAnalysisService)
+        public BidsController(
+            ApplicationDbContext context,
+            IAiAnalysisService aiAnalysisService,
+            AzureBlobService azureBlobService,
+            SubscriptionService subscriptionService,
+            ILogger<BidsController> logger
+        )
         {
             _context = context;
             _aiAnalysisService = aiAnalysisService;
+            _azureBlobService = azureBlobService;
+            _subscriptionService = subscriptionService;
+            _logger = logger;
         }
 
         [HttpGet]
@@ -31,7 +48,8 @@ namespace ProbuildBackend.Controllers
         public async Task<ActionResult<BidModel>> GetBid(int id)
         {
             var bid = await _context
-                .Bids.Include(b => b.Job)
+                .Bids.AsNoTracking()
+                .Include(b => b.Job)
                 .Include(b => b.User)
                 .FirstOrDefaultAsync(b => b.Id == id);
 
@@ -40,16 +58,191 @@ namespace ProbuildBackend.Controllers
                 return NotFound();
             }
 
+            if (!string.IsNullOrWhiteSpace(bid.DocumentUrl))
+            {
+                bid.DocumentUrl = Url.Action(
+                    nameof(DownloadBidDocument),
+                    "Bids",
+                    new { id = bid.Id },
+                    protocol: Request.Scheme
+                );
+            }
+
             return bid;
         }
 
-        [HttpGet("job/{jobId}")]
-        public async Task<ActionResult<IEnumerable<BidModel>>> GetBidsForJob(int jobId)
+        [HttpGet("{id}/document")]
+        public async Task<IActionResult> DownloadBidDocument(int id)
         {
-            return await _context
+            var bid = await _context
+                .Bids.AsNoTracking()
+                .FirstOrDefaultAsync(b => b.Id == id);
+
+            if (bid == null)
+            {
+                return NotFound("Bid not found.");
+            }
+
+            if (string.IsNullOrWhiteSpace(bid.DocumentUrl))
+            {
+                return NotFound("No quote document is available for this bid.");
+            }
+
+            try
+            {
+                var (contentStream, contentType, originalFileName) =
+                    await _azureBlobService.GetBlobContentAsync(bid.DocumentUrl);
+
+                if (contentType == "application/gzip")
+                {
+                    var decompressedStream = new MemoryStream();
+                    using (var gzipStream = new GZipStream(contentStream, CompressionMode.Decompress))
+                    {
+                        await gzipStream.CopyToAsync(decompressedStream);
+                    }
+                    decompressedStream.Position = 0;
+
+                    var inferredContentType = FileHelpers.GetContentTypeFromFileName(originalFileName);
+                    return File(decompressedStream, inferredContentType, originalFileName);
+                }
+
+                return File(contentStream, contentType, originalFileName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to download bid quote document for bidId {BidId}", id);
+                return StatusCode(500, "Failed to download bid quote document.");
+            }
+        }
+
+        [HttpGet("job/{jobId}")]
+        public async Task<ActionResult<IEnumerable<object>>> GetBidsForJob(int jobId)
+        {
+            try
+            {
+
+     
+            var bids = await _context
                 .Bids.Where(b => b.JobId == jobId)
+                .AsNoTracking()
                 .Include(b => b.User)
                 .ToListAsync();
+
+            var userIds = bids
+                .Select(b => b.UserId)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct()
+                .ToList();
+
+            var companiesByOwnerId = await _context.Companies
+                .AsNoTracking()
+                .Where(c => userIds.Contains(c.OwnerUserId))
+                .ToDictionaryAsync(c => c.OwnerUserId);
+
+            var result = bids.Select(b =>
+            {
+                var u = b.User;
+                var company = b.UserId != null && companiesByOwnerId.TryGetValue(b.UserId, out var found)
+                    ? found
+                    : null;
+
+                var documentUrl = !string.IsNullOrWhiteSpace(b.DocumentUrl)
+                    ? Url.Action(
+                        nameof(DownloadBidDocument),
+                        "Bids",
+                        new { id = b.Id },
+                        protocol: Request.Scheme
+                    )
+                    : null;
+
+                var first = u?.FirstName ?? string.Empty;
+                var last = u?.LastName ?? string.Empty;
+                var fullName = string.Join(" ", new[] { first, last }.Where(x => !string.IsNullOrWhiteSpace(x))).Trim();
+
+                var locationParts = new[] { u?.City, u?.State, u?.Country }
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .Select(x => x!.Trim())
+                    .ToArray();
+                var location = locationParts.Length > 0 ? string.Join(", ", locationParts) : "N/A";
+
+                var probuildRating = u?.ProbuildRating ?? 0;
+                var googleRating = u?.GoogleRating ?? 0;
+
+                var companyName =
+                    !string.IsNullOrWhiteSpace(u?.CompanyName)
+                        ? u!.CompanyName!
+                        : (!string.IsNullOrWhiteSpace(company?.Name)
+                            ? company!.Name!
+                            : fullName);
+
+                var email = !string.IsNullOrWhiteSpace(u?.Email)
+                    ? u!.Email!
+                    : (company?.Email ?? "N/A");
+                var phone = !string.IsNullOrWhiteSpace(u?.PhoneNumber)
+                    ? u!.PhoneNumber!
+                    : (company?.PhoneNumber ?? "N/A");
+
+                var yearsText = !string.IsNullOrWhiteSpace(u?.YearsOfOperation)
+                    ? u!.YearsOfOperation
+                    : company?.YearsOfOperation;
+
+                var yearsParsed = 0;
+                if (!string.IsNullOrWhiteSpace(yearsText))
+                {
+                    int.TryParse(yearsText.Trim(), out yearsParsed);
+                }
+
+                var specialty = !string.IsNullOrWhiteSpace(u?.Trade)
+                    ? u!.Trade!
+                    : (company?.Trade ?? "General Trade");
+
+                var licenseNo = !string.IsNullOrWhiteSpace(u?.CompanyRegNo)
+                    ? u!.CompanyRegNo!
+                    : (company?.CompanyRegNo ?? "N/A");
+
+                return new
+                {
+                    id = b.Id,
+                    userId = b.UserId,
+                    amount = b.Amount,
+                    inclusions = b.Inclusions,
+                    exclusions = b.Exclusions,
+                    biddingRound = b.BiddingRound,
+                    isFinalist = b.IsFinalist,
+                    status = b.Status,
+                    submittedAt = b.SubmittedAt,
+                    jobId = b.JobId,
+                    task = b.Task,
+                    duration = b.Duration,
+                    documentUrl,
+                    quoteId = b.QuoteId,
+                    tradePackageId = b.TradePackageId,
+
+                    companyName,
+                    contact = !string.IsNullOrWhiteSpace(fullName) ? fullName : "N/A",
+                    phone,
+                    email,
+                    yearsInBusiness = yearsParsed,
+                    specialty,
+                    location,
+
+                    licenseNo,
+
+                    rating = probuildRating,
+                    proBuildRating = probuildRating,
+                    proBuildReviews = 0,
+                    googleRating,
+                    googleReviews = 0,
+                };
+            }).ToList();
+
+            return Ok(result);
+            }
+            catch (Exception)
+            {
+
+                throw;
+            }
         }
 
         [HttpPost("upload")]
@@ -67,10 +260,44 @@ namespace ProbuildBackend.Controllers
                 JobId = bidRequest.JobId,
                 TradePackageId = bidRequest.TradePackageId,
                 DocumentUrl = bidRequest.DocumentUrl,
+                Amount = bidRequest.Amount ?? 0,
+                Inclusions = bidRequest.Inclusions,
+                Exclusions = bidRequest.Exclusions,
+                QuoteId = bidRequest.QuoteId,
                 UserId = userId,
                 Status = "Submitted",
                 SubmittedAt = DateTime.UtcNow,
             };
+
+            if (bidRequest.QuoteId.HasValue)
+            {
+                var jobOwnerId = await _context
+                    .Jobs.AsNoTracking()
+                    .Where(j => j.Id == bidRequest.JobId)
+                    .Select(j => j.UserId)
+                    .FirstOrDefaultAsync();
+
+                if (!string.IsNullOrWhiteSpace(jobOwnerId))
+                {
+                    var quote = await _context.Quotes.FirstOrDefaultAsync(q => q.Id == bidRequest.QuoteId.Value);
+                    if (quote != null)
+                    {
+                        quote.SentTo = jobOwnerId;
+
+                        if (quote.Status == "Draft")
+                        {
+                            var canSubmit = await _subscriptionService.CanSubmitQuote(quote.CreatedID);
+                            if (!canSubmit)
+                            {
+                                return BadRequest("Quote submission limit reached.");
+                            }
+
+                            quote.Status = "Submitted";
+                            await _subscriptionService.IncrementQuoteCount(quote.CreatedID);
+                        }
+                    }
+                }
+            }
 
             _context.Bids.Add(bid);
             await _context.SaveChangesAsync();

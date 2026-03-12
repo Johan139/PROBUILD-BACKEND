@@ -1825,6 +1825,51 @@ namespace ProbuildBackend.Controllers
             }
             _context.Notifications.Add(quoteNotification);
             quote.Status = status;
+
+            var normalizedStatus = (status ?? string.Empty).Trim();
+            if (normalizedStatus == "Approved" || normalizedStatus == "Rejected")
+            {
+                var relatedBids = await _context.Bids
+                    .Where(b => b.QuoteId == quoteId)
+                    .ToListAsync();
+
+                if (relatedBids.Count > 0)
+                {
+                    foreach (var bid in relatedBids)
+                    {
+                        if (normalizedStatus == "Approved")
+                        {
+                            bid.Status = "Awarded";
+
+                            if (bid.JobId > 0 && bid.TradePackageId.HasValue && bid.TradePackageId.Value > 0)
+                            {
+                                var tradePackage = await _context.TradePackages
+                                    .FirstOrDefaultAsync(tp => tp.Id == bid.TradePackageId.Value && tp.JobId == bid.JobId);
+
+                                if (tradePackage != null)
+                                {
+                                    tradePackage.AwardedBidId = bid.Id;
+                                    tradePackage.Status = tradePackage.IsInHouse ? "In House" : "Awarded";
+
+                                    var packageBids = await _context.Bids
+                                        .Where(b => b.JobId == bid.JobId && b.TradePackageId == bid.TradePackageId)
+                                        .ToListAsync();
+
+                                    foreach (var packageBid in packageBids)
+                                    {
+                                        packageBid.Status = packageBid.Id == bid.Id ? "Awarded" : "Submitted";
+                                    }
+                                }
+                            }
+                        }
+                        else
+                        {
+                            bid.Status = "Rejected";
+                        }
+                    }
+                }
+            }
+
             await _context.SaveChangesAsync();
 
             return Ok();

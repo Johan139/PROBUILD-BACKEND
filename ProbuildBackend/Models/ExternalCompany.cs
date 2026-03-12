@@ -7,16 +7,14 @@ namespace ProbuildBackend.Models
         [Key]
         public int Id { get; set; }
 
-        [Required]
         [MaxLength(50)]
-        public string Source { get; set; } = "Apollo";
+        public string? Source { get; set; } = "Apollo";
 
         [MaxLength(200)]
         public string? ExternalId { get; set; }
 
-        [Required]
         [MaxLength(300)]
-        public string Name { get; set; } = string.Empty;
+        public string? Name { get; set; } = string.Empty;
 
         [MaxLength(300)]
         public string? Domain { get; set; }
@@ -39,11 +37,20 @@ namespace ProbuildBackend.Models
         [MaxLength(150)]
         public string? Country { get; set; }
 
+        public decimal? Latitude { get; set; }
+
+        public decimal? Longitude { get; set; }
+
         [MaxLength(1000)]
         public string? Description { get; set; }
 
         [MaxLength(200)]
         public string? Industry { get; set; }
+
+        public string? Email { get; set; }
+
+        [MaxLength(50)]
+        public string? EmailConfidence { get; set; }
 
         public int? EmployeeCount { get; set; }
 

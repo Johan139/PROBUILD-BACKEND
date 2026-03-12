@@ -25,6 +25,7 @@ namespace ProbuildBackend.Controllers
         private readonly ApplicationDbContext _context;
         private readonly IHubContext<ProgressHub> _hubContext;
         private readonly AzureBlobService _azureBlobservice;
+        private readonly ILogger<JobsController> _logger;
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly IDocumentProcessorService _documentProcessorService;
         private readonly IEmailSender _emailService;
@@ -38,6 +39,7 @@ namespace ProbuildBackend.Controllers
             ApplicationDbContext context,
             AzureBlobService azureBlobservice,
             IHubContext<ProgressHub> hubContext,
+            ILogger<JobsController> logger,
             IHttpContextAccessor httpContextAccessor,
             IDocumentProcessorService documentProcessorService,
             IEmailSender emailService,
@@ -53,6 +55,7 @@ namespace ProbuildBackend.Controllers
             _context = context;
             _azureBlobservice = azureBlobservice;
             _hubContext = hubContext;
+            _logger = logger;
             _documentProcessorService = documentProcessorService;
             _emailService = emailService ?? throw new ArgumentNullException(nameof(emailService));
             _httpClientFactory =
@@ -95,96 +98,135 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpGet("public")]
-        public async Task<ActionResult<IEnumerable<JobDto>>> GetPublicJobs()
+        public async Task<ActionResult<IEnumerable<object>>> GetPublicJobs()
         {
             try
             {
-                var jobs = await _context
-                    .Jobs.Where(j => j.BiddingType == "PUBLIC" && j.Status == "BIDDING")
-                    .Include(j => j.TradeBudgets)
-                    .Join(
-                        _context.JobAddresses,
-                        j => j.Id,
-                        a => a.JobId,
-                        (j, a) => new { Job = j, Address = a }
+                var postings = await _context
+                    .TradePackages.Where(tp =>
+                        tp.PostedToMarketplace
+                        && tp.ArchivedAt == null
+                        && !tp.IsHidden
+                        && !tp.IsInactive
+                        && !tp.IsInHouse
+                        && tp.Job != null
+                        && tp.Job.ArchivedAt == null
                     )
+                    .AsNoTracking()
+                    .Include(tp => tp.Job)
+                        .ThenInclude(j => j.JobAddress)
                     .ToListAsync();
 
-                var jobDtos = new List<JobDto>();
+                _logger.LogInformation("GetPublicJobs: postings fetched {Count}", postings.Count);
 
-                foreach (var item in jobs)
-                {
-                    var TradePackage = _context.TradePackages.Where(jb => jb.JobId == item.Job.Id).FirstOrDefault();
-                    if (TradePackage != null)
+                var userIds = postings
+                    .Select(p => p.Job != null ? p.Job.UserId : null)
+                    .Where(id => !string.IsNullOrWhiteSpace(id))
+                    .Distinct()
+                    .ToList();
+
+                _logger.LogInformation("GetPublicJobs: distinct userIds {Count}", userIds.Count);
+
+                var users = await _context.Users
+                    .Where(u => userIds.Contains(u.Id))
+                    .ToDictionaryAsync(u => u.Id);
+
+                var ratingsByUser = await _context.Ratings
+                    .Where(r => userIds.Contains(r.RatedUserId))
+                    .GroupBy(r => r.RatedUserId)
+                    .Select(g => new { UserId = g.Key, Avg = g.Average(r => r.RatingValue) })
+                    .ToDictionaryAsync(g => g.UserId, g => g.Avg);
+
+                var result = postings
+                    .Select(tp =>
                     {
-                        if (TradePackage.ArchivedAt != null)
+                        var job = tp.Job;
+                        var address = job?.JobAddress;
+
+                        var displayBudget = tp.EffectiveBudget > 0
+                            ? tp.EffectiveBudget
+                            : (tp.TotalBudget > 0 ? tp.TotalBudget : tp.Budget);
+
+                        var displayEstimatedManHours = tp.EstimatedManHours > 0
+                            ? tp.EstimatedManHours
+                            : (
+                                tp.LaborBudget > 0 && tp.HourlyRate > 0
+                                    ? Math.Round(tp.LaborBudget / tp.HourlyRate, 2)
+                                    : 0
+                            );
+
+                        var displayEstimatedDuration = !string.IsNullOrWhiteSpace(tp.EstimatedDuration)
+                            ? tp.EstimatedDuration
+                            : "TBD";
+
+                        var user = job != null && !string.IsNullOrWhiteSpace(job.UserId)
+                            ? users.GetValueOrDefault(job.UserId)
+                            : null;
+                        var clientRating = job != null && !string.IsNullOrWhiteSpace(job.UserId)
+                            ? ratingsByUser.GetValueOrDefault(job.UserId, 0)
+                            : 0;
+
+                        var formattedAddress = job?.Address
+                            ?? (address != null ? address.FormattedAddress : "");
+
+                        return new
                         {
-                            continue;
-                        }
-                    }
-                    var subtasks = await _context
-                        .JobSubtasks.Where(s => s.JobId == item.Job.Id && !s.Deleted)
-                        .ToListAsync();
+                            jobId = tp.JobId,
+                            tradePackageId = tp.Id,
+                            projectName = job != null ? job.ProjectName : string.Empty,
+                            jobType = !string.IsNullOrWhiteSpace(tp.Category)
+                                ? tp.Category
+                                : (job != null ? job.JobType : string.Empty),
+                            status = !string.IsNullOrWhiteSpace(tp.Status) ? tp.Status : "Posted",
+                            address = formattedAddress,
+                            streetNumber = address != null ? address.StreetNumber : string.Empty,
+                            streetName = address != null ? address.StreetName : string.Empty,
+                            city = address != null ? address.City : string.Empty,
+                            state = address != null ? address.State : string.Empty,
+                            postalCode = address != null ? address.PostalCode : string.Empty,
+                            country = address != null ? address.Country : string.Empty,
+                            latitude = address != null && address.Latitude.HasValue
+                                ? address.Latitude.Value.ToString()
+                                : "0",
+                            longitude = address != null && address.Longitude.HasValue
+                                ? address.Longitude.Value.ToString()
+                                : "0",
+                            googlePlaceId = address != null ? address.GooglePlaceId : string.Empty,
+                            description = tp.ScopeOfWork ?? string.Empty,
+                            title = tp.TradeName,
+                            biddingType = tp.LaborType ?? "Labor and Materials",
+                            trades = new[] { tp.TradeName },
+                            tradeBudgets = new[]
+                            {
+                                new
+                                {
+                                    tradeName = tp.TradeName,
+                                    budget = (double)displayBudget,
+                                },
+                            },
+                            potentialStartDate = tp.StartDate,
+                            biddingStartDate = tp.BidDeadline ?? tp.CreatedAt,
+                            createdAt = tp.CreatedAt,
+                            clientName = user != null ? $"{user.FirstName} {user.LastName}" : string.Empty,
+                            clientCompanyName = user?.CompanyName,
+                            clientRating = clientRating,
+                            tradePackageLaborBudgetVisible = tp.LaborBudgetVisible,
+                            tradePackageMaterialBudgetVisible = tp.MaterialBudgetVisible,
+                            tradePackageEstimatedManHours = displayEstimatedManHours,
+                            tradePackageEstimatedDuration = displayEstimatedDuration,
+                        };
+                    })
+                    .OrderByDescending(r => r.createdAt)
+                    .ToList();
 
-                    var potentialStartDate = subtasks.Any()
-                        ? subtasks.Min(s => s.StartDate)
-                        : DateTime.MinValue;
-                    var potentialEndDate = subtasks.Any()
-                        ? subtasks.Max(s => s.EndDate)
-                        : DateTime.MinValue;
-                    var durationInDays = subtasks.Any()
-                        ? (potentialEndDate - potentialStartDate).Days
-                        : 0;
-                    var numberOfBids = await _context.Bids.CountAsync(b => b.JobId == item.Job.Id);
-                    var user = await _context.Users.FindAsync(item.Job.UserId);
-                    var ratings = await _context
-                        .Ratings.Where(r => r.RatedUserId == item.Job.UserId)
-                        .ToListAsync();
-                    double clientRating = ratings.Any() ? ratings.Average(r => r.RatingValue) : 0;
+                _logger.LogInformation("GetPublicJobs: returning {Count} records", result.Count);
 
-                    jobDtos.Add(
-                        new JobDto
-                        {
-                            JobId = item.Job.Id,
-                            ProjectName = item.Job.ProjectName,
-                            JobType = item.Job.JobType,
-                            Status = item.Job.Status,
-                            Address = item.Address.FormattedAddress,
-                            StreetNumber = item.Address.StreetNumber,
-                            StreetName = item.Address.StreetName,
-                            City = item.Address.City,
-                            State = item.Address.State,
-                            PostalCode = item.Address.PostalCode,
-                            Country = item.Address.Country,
-                            Latitude = item.Address.Latitude.ToString(),
-                            Longitude = item.Address.Longitude.ToString(),
-                            GooglePlaceId = item.Address.GooglePlaceId,
-                            Trades = item.Job.RequiredSubcontractorTypes,
-                            TradeBudgets = item.Job.TradeBudgets?.ToList(),
-                            PotentialStartDate = potentialStartDate,
-                            PotentialEndDate = potentialEndDate,
-                            DurationInDays = durationInDays,
-                            Subtasks = subtasks,
-                            NumberOfBids = numberOfBids,
-                            ClientName = $"{user.FirstName} {user.LastName}",
-                            ClientCompanyName = user.CompanyName,
-                            ClientRating = clientRating,
-                            CreatedAt = item.Job.CreatedAt,
-                            BiddingStartDate = item.Job.BiddingStartDate,
-                            ThumbnailUrl = !string.IsNullOrEmpty(item.Job.ThumbnailUrl)
-                                ? _azureBlobservice.GenerateTemporaryPublicUrl(
-                                    item.Job.ThumbnailUrl
-                                )
-                                : null,
-                        }
-                    );
-                }
-
-                return Ok(jobDtos);
+                return Ok(result);
             }
             catch (Exception ex)
             {
-                throw;
+                _logger.LogError(ex, "GetPublicJobs failed");
+                return StatusCode(500, new { error = "GetPublicJobs failed", details = ex.Message });
             }
         }
 
@@ -278,6 +320,10 @@ namespace ProbuildBackend.Controllers
                     ClientName = user != null ? $"{user.FirstName} {user.LastName}" : "",
                     ClientCompanyName = user?.CompanyName,
                     ClientRating = clientRating,
+                    FirstName = user?.FirstName,
+                    LastName = user?.LastName,
+                    Email = user?.Email,
+                    Phone = user?.PhoneNumber,
                     PotentialStartDate = potentialStartDate,
                     PotentialEndDate = potentialEndDate,
                     DurationInDays = durationInDays,

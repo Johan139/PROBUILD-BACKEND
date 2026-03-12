@@ -28,6 +28,8 @@ namespace ProbuildBackend.Models
         public UserModel? User { get; set; }
 
         public decimal Amount { get; set; }
+        public string? Inclusions { get; set; }
+        public string? Exclusions { get; set; }
         public int BiddingRound { get; set; }
         public bool IsFinalist { get; set; }
         public string Status { get; set; }
