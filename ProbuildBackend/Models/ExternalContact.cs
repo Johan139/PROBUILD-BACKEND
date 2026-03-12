@@ -8,9 +8,8 @@ namespace ProbuildBackend.Models
         [Key]
         public int Id { get; set; }
 
-        [Required]
         [MaxLength(50)]
-        public string Source { get; set; } = "Apollo";
+        public string? Source { get; set; } = "Apollo";
 
         [MaxLength(200)]
         public string? ExternalId { get; set; }

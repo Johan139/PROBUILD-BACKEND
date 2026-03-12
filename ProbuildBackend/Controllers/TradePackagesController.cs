@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -36,6 +37,143 @@ namespace ProbuildBackend.Controllers
         public async Task<ActionResult<IEnumerable<TradePackage>>> GetTradePackages(int jobId)
         {
             return await _context.TradePackages.Where(tp => tp.JobId == jobId).ToListAsync();
+        }
+
+        [HttpGet("job/{jobId}/bid-invites/counts")]
+        public async Task<IActionResult> GetBidInviteCountsForJob(int jobId)
+        {
+            var counts = await _context.TradePackageBidInvites
+                .Where(i => i.JobId == jobId)
+                .GroupBy(i => i.TradePackageId)
+                .Select(g => new { tradePackageId = g.Key, invitedCount = g.Count() })
+                .ToListAsync();
+
+            return Ok(counts);
+        }
+
+        [HttpGet("public")]
+        public async Task<ActionResult<IEnumerable<object>>> GetPublicMarketplacePostings()
+        {
+            try
+            {
+                var postings = await _context
+                    .TradePackages.Where(tp =>
+                        tp.PostedToMarketplace
+                        && tp.ArchivedAt == null
+                        && !tp.IsHidden
+                        && !tp.IsInactive
+                        && !tp.IsInHouse
+                        && tp.Job != null
+                        && tp.Job.ArchivedAt == null
+                    )
+                    .Include(tp => tp.Job)
+                        .ThenInclude(j => j.JobAddress)
+                    .ToListAsync();
+
+                var userIds = postings
+                    .Select(p => p.Job != null ? p.Job.UserId : null)
+                    .Where(id => !string.IsNullOrWhiteSpace(id))
+                    .Distinct()
+                    .ToList();
+
+                var users = await _context.Users
+                    .Where(u => userIds.Contains(u.Id))
+                    .ToDictionaryAsync(u => u.Id);
+
+                var ratingsByUser = await _context.Ratings
+                    .Where(r => userIds.Contains(r.RatedUserId))
+                    .GroupBy(r => r.RatedUserId)
+                    .Select(g => new { UserId = g.Key, Avg = g.Average(r => r.RatingValue) })
+                    .ToDictionaryAsync(g => g.UserId, g => g.Avg);
+
+                var result = postings
+                    .Select(tp =>
+                    {
+                        var job = tp.Job;
+                        var address = job?.JobAddress;
+
+                        var displayBudget = tp.EffectiveBudget > 0
+                            ? tp.EffectiveBudget
+                            : (tp.TotalBudget > 0 ? tp.TotalBudget : tp.Budget);
+
+                        var displayEstimatedManHours = tp.EstimatedManHours > 0
+                            ? tp.EstimatedManHours
+                            : (
+                                tp.LaborBudget > 0 && tp.HourlyRate > 0
+                                    ? Math.Round(tp.LaborBudget / tp.HourlyRate, 2)
+                                    : 0
+                            );
+
+                        var displayEstimatedDuration = !string.IsNullOrWhiteSpace(tp.EstimatedDuration)
+                            ? tp.EstimatedDuration
+                            : "TBD";
+
+                        var user = job != null && !string.IsNullOrWhiteSpace(job.UserId)
+                            ? users.GetValueOrDefault(job.UserId)
+                            : null;
+                        var clientRating = job != null && !string.IsNullOrWhiteSpace(job.UserId)
+                            ? ratingsByUser.GetValueOrDefault(job.UserId, 0)
+                            : 0;
+
+                        var formattedAddress = job?.Address
+                            ?? (address != null ? address.FormattedAddress : "");
+
+                        return new
+                        {
+                            tradePackageId = tp.Id,
+                            jobId = tp.JobId,
+                            projectName = job != null ? job.ProjectName : string.Empty,
+                            jobType = !string.IsNullOrWhiteSpace(tp.Category)
+                                ? tp.Category
+                                : (job != null ? job.JobType : string.Empty),
+                            status = !string.IsNullOrWhiteSpace(tp.Status) ? tp.Status : "Posted",
+                            address = formattedAddress,
+                            streetNumber = address != null ? address.StreetNumber : string.Empty,
+                            streetName = address != null ? address.StreetName : string.Empty,
+                            city = address != null ? address.City : string.Empty,
+                            state = address != null ? address.State : string.Empty,
+                            postalCode = address != null ? address.PostalCode : string.Empty,
+                            country = address != null ? address.Country : string.Empty,
+                            latitude = address != null && address.Latitude.HasValue
+                                ? address.Latitude.Value.ToString()
+                                : "0",
+                            longitude = address != null && address.Longitude.HasValue
+                                ? address.Longitude.Value.ToString()
+                                : "0",
+                            googlePlaceId = address != null ? address.GooglePlaceId : string.Empty,
+                            description = tp.ScopeOfWork ?? string.Empty,
+                            title = tp.TradeName,
+                            biddingType = tp.LaborType ?? "Labor and Materials",
+                            trades = new[] { tp.TradeName },
+                            tradeBudgets = new[]
+                            {
+                                new
+                                {
+                                    tradeName = tp.TradeName,
+                                    budget = (double)displayBudget,
+                                },
+                            },
+                            potentialStartDate = tp.StartDate,
+                            biddingStartDate = tp.BidDeadline ?? tp.CreatedAt,
+                            createdAt = tp.CreatedAt,
+                            clientName = user != null ? $"{user.FirstName} {user.LastName}" : string.Empty,
+                            clientCompanyName = user?.CompanyName,
+                            clientRating = clientRating,
+                            tradePackageLaborBudgetVisible = tp.LaborBudgetVisible,
+                            tradePackageMaterialBudgetVisible = tp.MaterialBudgetVisible,
+                            tradePackageEstimatedManHours = displayEstimatedManHours,
+                            tradePackageEstimatedDuration = displayEstimatedDuration,
+                        };
+                    })
+                    .OrderByDescending(r => r.createdAt)
+                    .ToList();
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to fetch public marketplace postings", details = ex.Message });
+            }
         }
 
         [HttpPut("{id}")]
@@ -117,6 +255,75 @@ namespace ProbuildBackend.Controllers
             }
 
             return NoContent();
+        }
+
+        [HttpPost("{id}/bid-invites")]
+        public async Task<IActionResult> SaveBidInvites(int id, [FromBody] SaveTradePackageBidInvitesRequestDto request)
+        {
+            if (request == null || request.JobId <= 0 || request.TradePackageId <= 0)
+            {
+                return BadRequest("jobId and tradePackageId are required.");
+            }
+
+            if (request.TradePackageId != id)
+            {
+                return BadRequest("TradePackageId does not match route id.");
+            }
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var userId = User.FindFirstValue("UserId");
+
+            var tradePackage = await _context.TradePackages.FirstOrDefaultAsync(tp =>
+                tp.Id == request.TradePackageId && tp.JobId == request.JobId
+            );
+            if (tradePackage == null)
+            {
+                return NotFound("Trade package not found for the provided job.");
+            }
+
+            foreach (var row in request.Invitees)
+            {
+                var email = (row.Email ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(email))
+                {
+                    continue;
+                }
+
+                var existing = await _context.TradePackageBidInvites.FirstOrDefaultAsync(i =>
+                    i.TradePackageId == request.TradePackageId && i.Email == email
+                );
+
+                if (existing == null)
+                {
+                    existing = new TradePackageBidInvite
+                    {
+                        JobId = request.JobId,
+                        TradePackageId = request.TradePackageId,
+                        Email = email,
+                        CreatedAt = DateTime.UtcNow,
+                        CreatedByUserId = userId,
+                        Status = "Selected",
+                    };
+                    _context.TradePackageBidInvites.Add(existing);
+                }
+
+                existing.ExternalCompanyId = row.ExternalCompanyId;
+                existing.ExternalContactId = row.ExternalContactId;
+                existing.ContactName = row.ContactName;
+                existing.CompanyName = row.CompanyName;
+            }
+
+            await _context.SaveChangesAsync();
+
+            var saved = await _context.TradePackageBidInvites
+                .Where(i => i.TradePackageId == request.TradePackageId)
+                .ToListAsync();
+
+            return Ok(saved);
         }
 
         [HttpPut("archivepackage/{id}")]
@@ -643,9 +850,15 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
+                var assignedJobIds = await _context
+                    .JobAssignments.Where(ja => ja.UserId == userId)
+                    .Select(ja => ja.JobId)
+                    .Distinct()
+                    .ToListAsync();
+
                 var postings = await _context
                     .TradePackages.Where(tp =>
-                        tp.Job.UserId == userId
+                        (tp.Job.UserId == userId || assignedJobIds.Contains(tp.JobId))
                         && tp.PostedToMarketplace
                         && tp.ArchivedAt == null
                         && !tp.IsHidden

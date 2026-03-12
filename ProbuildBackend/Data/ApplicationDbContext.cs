@@ -79,6 +79,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<JobAnalysisState> JobAnalysisStates { get; set; }
     public DbSet<ExternalCompany> ExternalCompanies { get; set; }
     public DbSet<ExternalContact> ExternalContacts { get; set; }
+    public DbSet<TradePackageBidInvite> TradePackageBidInvites { get; set; }
     public DbSet<NoteModel> Notes { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -451,6 +452,15 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
                 .WithMany(c => c.Contacts)
                 .HasForeignKey(e => e.ExternalCompanyId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<TradePackageBidInvite>(entity =>
+        {
+            entity.ToTable("TradePackageBidInvites");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.TradePackageId, e.Email }).IsUnique();
+            entity.HasIndex(e => e.JobId);
+            entity.HasIndex(e => e.TradePackageId);
         });
 
         modelBuilder.Entity<NoteModel>(entity =>

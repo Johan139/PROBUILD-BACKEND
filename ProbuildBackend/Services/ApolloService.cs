@@ -1,6 +1,8 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ProbuildBackend.Interface;
@@ -41,44 +43,12 @@ namespace ProbuildBackend.Services
                 30
             );
 
-            var searchKeywords = BuildSearchKeywords(request);
-
-            var payload = new
-            {
-                q_keywords = searchKeywords,
-                page = 1,
-                per_page = normalizedLimit,
-            };
-
-            JsonDocument? searchDoc = null;
-
-            try
-            {
-                searchDoc = await PostApolloAsync(
-                    "/mixed_companies/search",
-                    payload,
-                    cancellationToken
-                );
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Apollo search call failed for {Keywords}", searchKeywords);
-            }
-
-            var companiesFromSearch = searchDoc is null
-                ? new List<ExternalCompanyWithContactsDto>()
-                : await ParseAndPersistSearchResultsAsync(searchDoc, cancellationToken);
-
-            if (companiesFromSearch.Count == 0)
-            {
-                return await QueryCachedByTradeAndLocationAsync(
-                    request,
-                    normalizedLimit,
-                    cancellationToken
-                );
-            }
-
-            return companiesFromSearch;
+            var cachedFirst = await QueryCachedRankedAsync(
+                request,
+                normalizedLimit,
+                cancellationToken
+            );
+            return cachedFirst;
         }
 
         public async Task<ExternalCompanyWithContactsDto?> EnrichGeneralContractorAsync(
@@ -233,25 +203,45 @@ namespace ProbuildBackend.Services
             };
         }
 
-        private async Task<List<ExternalCompanyWithContactsDto>> QueryCachedByTradeAndLocationAsync(
+        private async Task<List<ExternalCompanyWithContactsDto>> QueryCachedRankedAsync(
             SubcontractorDiscoveryRequestDto request,
             int limit,
             CancellationToken cancellationToken
         )
         {
-            var trade = request.TradeName.Trim();
+            var trade = (request.TradeName ?? string.Empty).Trim();
             var city = request.City?.Trim();
             var state = request.State?.Trim();
+            var searchText = request.SearchText?.Trim();
 
-            var query = _context
-                .ExternalCompanies.Include(c => c.Contacts)
-                .Where(c => c.Source == "Apollo")
-                .AsQueryable();
+            decimal? jobLat = null;
+            decimal? jobLng = null;
+            if (request.JobId.HasValue)
+            {
+                var job = await _context.Jobs
+                    .Include(j => j.JobAddress)
+                    .FirstOrDefaultAsync(j => j.Id == request.JobId.Value, cancellationToken);
+                jobLat = job?.JobAddress?.Latitude;
+                jobLng = job?.JobAddress?.Longitude;
+            }
+
+            var keywords = BuildTradeKeywords(trade, searchText);
+            if (keywords.Count == 0)
+            {
+                keywords.AddRange(ExtractTokens(trade));
+            }
+
+            var query = _context.ExternalCompanies.Include(c => c.Contacts).AsQueryable();
 
             query = query.Where(c =>
-                (c.Industry != null && c.Industry.Contains(trade))
-                || (c.Description != null && c.Description.Contains(trade))
-                || c.Name.Contains(trade)
+                (c.Email != null && c.Email != "")
+                || c.Contacts.Any(ct => ct.Email != null && ct.Email != "")
+            );
+
+            query = query.Where(c =>
+                (c.Email != null && c.Email != "")
+                && c.EmailConfidence != null
+                && c.EmailConfidence == "High"
             );
 
             if (!string.IsNullOrWhiteSpace(city))
@@ -259,18 +249,217 @@ namespace ProbuildBackend.Services
                 query = query.Where(c => c.City != null && c.City == city);
             }
 
-            if (!string.IsNullOrWhiteSpace(state))
+            var hasJobCoordinates = jobLat.HasValue && jobLng.HasValue;
+
+            if (!hasJobCoordinates && !string.IsNullOrWhiteSpace(state))
             {
                 query = query.Where(c => c.State != null && c.State == state);
             }
 
-            var cached = await query
+            // Coarse filter in SQL to keep the dataset small, then do proper scoring in-memory.
+            if (keywords.Count > 0)
+            {
+                query = query.Where(c =>
+                    keywords.Any(k =>
+                        (c.Name != null && c.Name.Contains(k))
+                        || (c.Industry != null && c.Industry.Contains(k))
+                        || (c.Description != null && c.Description.Contains(k))
+                        || (c.Domain != null && c.Domain.Contains(k))
+                    )
+                );
+            }
+
+            var fetchCount = Math.Clamp(limit * 8, 25, 300);
+            var candidates = await query
                 .OrderByDescending(c => c.LastEnrichedAt)
                 .ThenByDescending(c => c.UpdatedAt)
-                .Take(limit)
+                .Take(fetchCount)
                 .ToListAsync(cancellationToken);
 
-            return cached.Select(MapToWithContactsDto).ToList();
+            if (jobLat.HasValue && jobLng.HasValue)
+            {
+                candidates = candidates
+                    .Where(c =>
+                        c.Latitude.HasValue
+                        && c.Longitude.HasValue
+                        && HaversineDistanceKm(jobLat.Value, jobLng.Value, c.Latitude.Value, c.Longitude.Value) <= 100d
+                    )
+                    .ToList();
+            }
+
+            var ranked = candidates
+                .Select(c => new { Company = c, Score = ScoreCompany(c, trade, keywords) })
+                .OrderByDescending(x => x.Score)
+                .ThenByDescending(x => x.Company.LastEnrichedAt)
+                .ThenByDescending(x => x.Company.UpdatedAt)
+                .Take(limit)
+                .Select(x => MapToWithContactsDto(x.Company))
+                .ToList();
+
+            return ranked;
+        }
+
+        private static List<string> BuildTradeKeywords(string tradeName, string? searchText)
+        {
+            var tokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var t in ExtractTokens(tradeName))
+            {
+                tokens.Add(t);
+            }
+
+            if (!string.IsNullOrWhiteSpace(searchText))
+            {
+                foreach (var t in ExtractTokens(searchText))
+                {
+                    tokens.Add(t);
+                }
+            }
+
+            // Expand common construction synonyms.
+            var normalized = NormalizeForMatch(tradeName);
+            if (normalized.Contains("excavat"))
+            {
+                tokens.Add("excavation");
+                tokens.Add("excavating");
+                tokens.Add("earthwork");
+                tokens.Add("grading");
+                tokens.Add("sitework");
+            }
+            if (normalized.Contains("concret"))
+            {
+                tokens.Add("concrete");
+                tokens.Add("cement");
+                tokens.Add("flatwork");
+                tokens.Add("foundation");
+            }
+            if (normalized.Contains("plumb"))
+            {
+                tokens.Add("plumbing");
+                tokens.Add("pipe");
+                tokens.Add("piping");
+            }
+            if (normalized.Contains("electric"))
+            {
+                tokens.Add("electrical");
+                tokens.Add("electrician");
+                tokens.Add("wiring");
+            }
+            if (normalized.Contains("hvac") || normalized.Contains("heating") || normalized.Contains("cooling"))
+            {
+                tokens.Add("hvac");
+                tokens.Add("heating");
+                tokens.Add("cooling");
+                tokens.Add("air conditioning");
+                tokens.Add("ventilation");
+            }
+            if (normalized.Contains("roof"))
+            {
+                tokens.Add("roofing");
+                tokens.Add("roofer");
+                tokens.Add("waterproofing");
+            }
+            if (normalized.Contains("paint"))
+            {
+                tokens.Add("painting");
+                tokens.Add("painter");
+            }
+
+            return tokens
+                .Where(t => !string.IsNullOrWhiteSpace(t))
+                .Select(t => t.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private static List<string> ExtractTokens(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return new List<string>();
+            }
+
+            var cleaned = NormalizeForMatch(value);
+            var parts = Regex.Split(cleaned, "[^a-z0-9]+").Where(p => p.Length >= 3);
+
+            var stop = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "and",
+                "the",
+                "for",
+                "with",
+                "service",
+                "services",
+                "company",
+                "co",
+                "inc",
+                "llc",
+                "ltd",
+                "contractor",
+                "contractors",
+                "construction",
+            };
+
+            return parts.Where(p => !stop.Contains(p)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        private static string NormalizeForMatch(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            return value.Trim().ToLowerInvariant();
+        }
+
+        private static int ScoreCompany(ExternalCompany company, string tradeName, List<string> keywords)
+        {
+            var text = NormalizeForMatch(
+                string.Join(
+                    ' ',
+                    new[]
+                    {
+                        company.Name,
+                        company.Industry,
+                        company.Description,
+                        company.Domain,
+                    }.Where(x => !string.IsNullOrWhiteSpace(x))
+                )
+            );
+
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return 0;
+            }
+
+            var score = 0;
+            var tradeNorm = NormalizeForMatch(tradeName);
+
+            if (!string.IsNullOrWhiteSpace(tradeNorm) && text.Contains(tradeNorm))
+            {
+                score += 50;
+            }
+
+            foreach (var k in keywords)
+            {
+                var kn = NormalizeForMatch(k);
+                if (string.IsNullOrWhiteSpace(kn)) continue;
+
+                if (text.Contains(kn))
+                {
+                    score += 12;
+                    if (!string.IsNullOrWhiteSpace(company.Name) && NormalizeForMatch(company.Name).Contains(kn))
+                    {
+                        score += 8;
+                    }
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(company.City)) score += 2;
+            if (!string.IsNullOrWhiteSpace(company.State)) score += 2;
+            if (!string.IsNullOrWhiteSpace(company.WebsiteUrl) || !string.IsNullOrWhiteSpace(company.Domain)) score += 2;
+
+            return score;
         }
 
         private async Task<ExternalCompanyWithContactsDto?> FallbackCompanyLookupAsync(
@@ -357,6 +546,8 @@ namespace ProbuildBackend.Services
             company.City = GetString(node, "city");
             company.State = GetString(node, "state", "region");
             company.Country = GetString(node, "country");
+            company.Latitude = GetDecimal(node, "latitude", "lat", "organization_latitude", "organizationLatitude", "location_latitude", "locationLatitude") ?? company.Latitude;
+            company.Longitude = GetDecimal(node, "longitude", "lng", "lon", "organization_longitude", "organizationLongitude", "location_longitude", "locationLongitude") ?? company.Longitude;
             company.Description = GetString(node, "short_description", "description");
             company.Industry = GetString(node, "industry", "industry_category");
             company.EmployeeCount = GetInt(node, "estimated_num_employees", "employee_count");
@@ -572,16 +763,20 @@ namespace ProbuildBackend.Services
             return new ExternalCompanyDto
             {
                 Id = company.Id,
-                Source = company.Source,
+                Source = string.IsNullOrWhiteSpace(company.Source) ? "Apollo" : company.Source,
                 ExternalId = company.ExternalId,
-                Name = company.Name,
+                Name = company.Name ?? string.Empty,
                 Domain = company.Domain,
                 WebsiteUrl = company.WebsiteUrl,
                 LinkedinUrl = company.LinkedinUrl,
+                Email = company.Email,
+                EmailConfidence = company.EmailConfidence,
                 Phone = company.Phone,
                 City = company.City,
                 State = company.State,
                 Country = company.Country,
+                Latitude = company.Latitude,
+                Longitude = company.Longitude,
                 Description = company.Description,
                 Industry = company.Industry,
                 EmployeeCount = company.EmployeeCount,
@@ -594,7 +789,7 @@ namespace ProbuildBackend.Services
             return new ExternalContactDto
             {
                 Id = contact.Id,
-                Source = contact.Source,
+                Source = string.IsNullOrWhiteSpace(contact.Source) ? "Apollo" : contact.Source,
                 ExternalId = contact.ExternalId,
                 ExternalCompanyId = contact.ExternalCompanyId,
                 FirstName = contact.FirstName,
@@ -652,6 +847,57 @@ namespace ProbuildBackend.Services
             }
 
             return null;
+        }
+
+        private static decimal? GetDecimal(JsonElement node, params string[] propertyNames)
+        {
+            foreach (var propertyName in propertyNames)
+            {
+                if (!node.TryGetProperty(propertyName, out var property))
+                {
+                    continue;
+                }
+
+                if (property.ValueKind == JsonValueKind.Number && property.TryGetDecimal(out var number))
+                {
+                    return number;
+                }
+
+                if (
+                    property.ValueKind == JsonValueKind.String
+                    && decimal.TryParse(
+                        property.GetString(),
+                        NumberStyles.Float,
+                        CultureInfo.InvariantCulture,
+                        out var parsed
+                    )
+                )
+                {
+                    return parsed;
+                }
+            }
+
+            return null;
+        }
+
+        private static double HaversineDistanceKm(decimal lat1, decimal lon1, decimal lat2, decimal lon2)
+        {
+            const double r = 6371d;
+            var dLat = DegreesToRadians((double)(lat2 - lat1));
+            var dLon = DegreesToRadians((double)(lon2 - lon1));
+
+            var a =
+                Math.Pow(Math.Sin(dLat / 2d), 2d)
+                + Math.Cos(DegreesToRadians((double)lat1))
+                    * Math.Cos(DegreesToRadians((double)lat2))
+                    * Math.Pow(Math.Sin(dLon / 2d), 2d);
+            var c = 2d * Math.Asin(Math.Min(1d, Math.Sqrt(a)));
+            return r * c;
+        }
+
+        private static double DegreesToRadians(double degrees)
+        {
+            return degrees * (Math.PI / 180d);
         }
 
         private static string? GetString(JsonElement node, params string[] propertyNames)

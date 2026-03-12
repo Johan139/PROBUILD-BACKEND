@@ -2299,8 +2299,9 @@ namespace ProbuildBackend.Services
             {
                 return 0;
             }
-
+          
             var cleaned = Regex.Replace(raw, @"[^0-9\.-]", "");
+            cleaned = cleaned.Replace(".", ",");
             if (decimal.TryParse(cleaned, out var parsed))
             {
                 return parsed;
