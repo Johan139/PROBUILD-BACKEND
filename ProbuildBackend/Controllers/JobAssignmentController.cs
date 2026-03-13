@@ -47,6 +47,38 @@ namespace ProbuildBackend.Controllers
                     }
                 }
 
+                var alreadyAssigned = await _context.JobAssignments.AnyAsync(ja =>
+                    ja.UserId == assignmentData.UserId && ja.JobId == assignmentData.JobId
+                );
+
+                if (alreadyAssigned)
+                {
+                    var existingAssignment = new JobAssignmentDto
+                    {
+                        Id = job.Id,
+                        ProjectName = job.ProjectName,
+                        Address = job.Address,
+                        Status = job.Status,
+                        Stories = job.Stories,
+                        BuildingSize = job.BuildingSize,
+                        JobUser = new List<JobUser>
+                        {
+                            new JobUser
+                            {
+                                Id = user?.Id ?? teamMember.Id,
+                                FirstName = user?.FirstName ?? teamMember.FirstName,
+                                LastName = user?.LastName ?? teamMember.LastName,
+                                PhoneNumber = user?.PhoneNumber ?? teamMember.PhoneNumber,
+                                Email = user?.Email ?? teamMember.Email,
+                                JobRole = assignmentData.JobRole,
+                                UserType = user?.UserType ?? teamMember.Role,
+                            },
+                        },
+                    };
+
+                    return Ok(existingAssignment);
+                }
+
                 var jobAssignment = new JobAssignmentModel
                 {
                     UserId = assignmentData.UserId,
@@ -84,10 +116,10 @@ namespace ProbuildBackend.Controllers
             }
             catch (DbUpdateException ex)
             {
-                return BadRequest(
+                return Conflict(
                     new
                     {
-                        message = "Failed to assign job. Check for duplicate assignments or invalid data.",
+                        message = "This user is already assigned to this job.",
                         error = ex.Message,
                     }
                 );
