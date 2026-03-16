@@ -139,20 +139,27 @@ var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY") ?? builder.Configurat
 
 var configuration = builder.Configuration;
 
+builder.Services.AddSingleton<SlowQueryCommandInterceptor>();
+
 // Configure DbContext with retry policy to handle rate-limiting
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlServer(
-        connectionString,
-        sqlServerOptions =>
-            sqlServerOptions
-                .UseNetTopologySuite()
-                .EnableRetryOnFailure(
-                    maxRetryCount: 3, // Reduced number of retries
-                    maxRetryDelay: TimeSpan.FromSeconds(5), // Increased delay between retries
-                    errorNumbersToAdd: null
-                )
-    )
-);
+builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
+{
+  var interceptor = sp.GetRequiredService<SlowQueryCommandInterceptor>();
+
+  options
+      .UseSqlServer(
+          connectionString,
+          sqlServerOptions =>
+              sqlServerOptions
+                  .UseNetTopologySuite()
+                  .EnableRetryOnFailure(
+                      maxRetryCount: 3, // Reduced number of retries
+                      maxRetryDelay: TimeSpan.FromSeconds(5), // Increased delay between retries
+                      errorNumbersToAdd: null
+                  )
+      )
+      .AddInterceptors(interceptor);
+});
 
 builder.Services.AddScoped<ContractService>();
 builder
@@ -221,6 +228,7 @@ builder.Services.AddSingleton<IProgressService, ProgressService>();
 builder.Services.AddScoped<EmailAutomationManager>();
 builder.Services.AddScoped<PaymentService>();
 builder.Services.AddScoped<SubscriptionService>();
+builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<
     Microsoft.AspNetCore.SignalR.IUserIdProvider,
     UserIdFromClaimProvider
@@ -372,6 +380,7 @@ if (elasticEnabled)
 }
 
 app.UseRouting();
+app.UseMiddleware<RequestTimingMiddleware>();
 app.UseCors("AllowAngularApp"); // Apply the named CORS policy after health endpoint
 app.UseWebSockets();
 app.UseAuthentication();

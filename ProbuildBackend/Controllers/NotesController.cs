@@ -193,24 +193,19 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var assignedNotes = await _context
-                    .SubtaskNoteUser.Where(link => link.UserId == userId)
-                    .Select(link => link.SubtaskNoteId)
-                    .ToListAsync();
-
-                if (!assignedNotes.Any())
-                    return NotFound("No notes assigned to this user.");
-
-                var notes = await (
-                    from note in _context.SubtaskNote
+                var rows = await (
+                    from link in _context.SubtaskNoteUser
+                    join note in _context.SubtaskNote on link.SubtaskNoteId equals note.Id
                     join job in _context.Jobs on note.JobId equals job.Id
-                    where assignedNotes.Contains(note.Id) && !note.Archived
+                    join subtask in _context.JobSubtasks on note.JobSubtaskId equals subtask.Id
+                    where link.UserId == userId && !note.Archived
                     select new
                     {
                         note.Id,
                         note.JobId,
                         job.ProjectName,
                         note.JobSubtaskId,
+                        SubtaskName = subtask.Task,
                         note.NoteText,
                         note.CreatedByUserId,
                         note.CreatedAt,
@@ -219,33 +214,36 @@ namespace ProbuildBackend.Controllers
                         note.Rejected,
                         note.Archived,
                     }
-                ).ToListAsync();
+                ).AsNoTracking().ToListAsync();
 
-                var groupedNotes = (
-                    from note in notes
-                    join subtask in _context.JobSubtasks on note.JobSubtaskId equals subtask.Id
-                    group new { note, subtask } by new { note.JobId, note.JobSubtaskId } into g
-                    select new
+                if (!rows.Any())
+                {
+                    return NotFound("No notes assigned to this user.");
+                }
+
+                var groupedNotes = rows
+                    .GroupBy(r => new { r.JobId, r.JobSubtaskId })
+                    .Select(g => new
                     {
                         JobId = g.Key.JobId,
                         JobSubtaskId = g.Key.JobSubtaskId,
-                        ProjectName = g.First().note.ProjectName,
-                        CreatedAt = g.Min(x => x.note.CreatedAt),
-                        SubtaskName = g.First().subtask.Task,
+                        ProjectName = g.First().ProjectName,
+                        CreatedAt = g.Min(x => x.CreatedAt),
+                        SubtaskName = g.First().SubtaskName,
                         Notes = g.Select(x => new
                             {
-                                x.note.Id,
-                                x.note.NoteText,
-                                x.note.CreatedByUserId,
-                                x.note.CreatedAt,
-                                x.note.ModifiedAt,
-                                x.note.Approved,
-                                x.note.Rejected,
-                                x.note.Archived,
+                                x.Id,
+                                x.NoteText,
+                                x.CreatedByUserId,
+                                x.CreatedAt,
+                                x.ModifiedAt,
+                                x.Approved,
+                                x.Rejected,
+                                x.Archived,
                             })
                             .ToList(),
-                    }
-                ).ToList();
+                    })
+                    .ToList();
 
                 return Ok(groupedNotes);
             }

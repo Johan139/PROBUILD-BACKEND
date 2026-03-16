@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using ProbuildBackend.Helpers;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
@@ -34,6 +35,7 @@ namespace ProbuildBackend.Controllers
         private readonly WebSocketManager _webSocketManager;
         private readonly UserManager<UserModel> _userManager;
         private readonly IAiAnalysisService _aiAnalysisService;
+        private readonly IMemoryCache _cache;
 
         public JobsController(
             ApplicationDbContext context,
@@ -47,7 +49,8 @@ namespace ProbuildBackend.Controllers
             IConfiguration config,
             WebSocketManager webSocketManager,
             UserManager<UserModel> userManager,
-            IAiAnalysisService aiAnalysisService
+            IAiAnalysisService aiAnalysisService,
+            IMemoryCache cache
         )
         {
             _httpContextAccessor =
@@ -64,6 +67,7 @@ namespace ProbuildBackend.Controllers
             _webSocketManager = webSocketManager;
             _aiAnalysisService = aiAnalysisService;
             _userManager = userManager;
+            _cache = cache;
         }
 
         [HttpGet("{jobId}/planning-data")]
@@ -1336,51 +1340,62 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                // 1. Get IDs of jobs the user is assigned to
-                var assignedJobIds = await _context
-                    .JobAssignments.Where(ja => ja.UserId == userId)
-                    .Select(ja => ja.JobId)
-                    .Distinct()
-                    .ToListAsync();
-
-                // 2. Fetch all relevant jobs (Owned OR Assigned) and NOT Archived
                 var jobs = await _context
-                    .Jobs.Where(j =>
-                        (j.UserId == userId || assignedJobIds.Contains(j.Id))
-                        && j.ArchivedAt == null
+                    .Jobs.AsNoTracking()
+                    .Where(j =>
+                        j.ArchivedAt == null
+                        && (
+                            j.UserId == userId
+                            || _context.JobAssignments.Any(ja =>
+                                ja.UserId == userId && ja.JobId == j.Id
+                            )
+                        )
                     )
-                    .Include(j => j.JobAddress)
+                    .Select(j => new
+                    {
+                        j.Id,
+                        j.ProjectName,
+                        j.Address,
+                        JobAddressFormattedAddress = j.JobAddress.FormattedAddress,
+                        j.Status,
+                        j.ThumbnailUrl,
+                        j.CreatedAt,
+                        OwnerId = j.UserId,
+                    })
                     .ToListAsync();
 
-                if (jobs == null || !jobs.Any())
+                if (!jobs.Any())
                 {
                     return Ok(new List<DashboardProjectDto>());
                 }
 
                 var jobIds = jobs.Select(j => j.Id).ToList();
 
-                // 3. Fetch Subtasks for all these jobs to calculate progress
-                var allSubtasks = await _context
-                    .JobSubtasks.Where(st => jobIds.Contains(st.JobId) && !st.Deleted)
-                    .Select(st => new
+                var progressByJobId = await _context
+                    .JobSubtasks.AsNoTracking()
+                    .Where(st => jobIds.Contains(st.JobId) && !st.Deleted)
+                    .GroupBy(st => st.JobId)
+                    .Select(g => new
                     {
-                        st.JobId,
-                        st.Status,
-                        st.Days,
+                        JobId = g.Key,
+                        TotalDays = g.Sum(x => x.Days),
+                        CompletedDays = g
+                            .Where(x => x.Status != null && (x.Status == "Completed" || x.Status == "completed"))
+                            .Sum(x => x.Days),
                     })
-                    .ToListAsync();
+                    .ToDictionaryAsync(x => x.JobId);
 
-                // 4. Fetch JobAssignments count for all these jobs (Team Size)
                 var teamCounts = await _context
-                    .JobAssignments.Where(ja => jobIds.Contains(ja.JobId))
+                    .JobAssignments.AsNoTracking()
+                    .Where(ja => jobIds.Contains(ja.JobId))
                     .GroupBy(ja => ja.JobId)
                     .Select(g => new { JobId = g.Key, Count = g.Count() })
                     .ToDictionaryAsync(x => x.JobId, x => x.Count);
 
-                // 5. Fetch Owner Details
-                var ownerIds = jobs.Select(j => j.UserId).Distinct().ToList();
+                var ownerIds = jobs.Select(j => j.OwnerId).Distinct().ToList();
                 var owners = await _context
-                    .Users.Where(u => ownerIds.Contains(u.Id))
+                    .Users.AsNoTracking()
+                    .Where(u => ownerIds.Contains(u.Id))
                     .Select(u => new
                     {
                         u.Id,
@@ -1389,56 +1404,52 @@ namespace ProbuildBackend.Controllers
                     })
                     .ToDictionaryAsync(u => u.Id);
 
-                var dashboardProjects = new List<DashboardProjectDto>();
+                var dashboardProjects = jobs
+                    .Select(job =>
+                    {
+                        var progressRow = progressByJobId.TryGetValue(job.Id, out var p)
+                            ? p
+                            : null;
 
-                foreach (var job in jobs)
-                {
-                    // Calculate Progress
-                    var jobSubtasks = allSubtasks.Where(st => st.JobId == job.Id).ToList();
-                    var totalDays = jobSubtasks.Sum(st => st.Days);
-                    var completedDays = jobSubtasks
-                        .Where(st => st.Status?.ToLower() == "completed")
-                        .Sum(st => st.Days);
+                        var totalDays = progressRow?.TotalDays ?? 0;
+                        var completedDays = progressRow?.CompletedDays ?? 0;
+                        var progress =
+                            totalDays > 0
+                                ? (int)Math.Round((double)completedDays / totalDays * 100)
+                                : 0;
 
-                    var progress =
-                        totalDays > 0
-                            ? (int)Math.Round((double)completedDays / totalDays * 100)
+                        var teamSize = teamCounts.TryGetValue(job.Id, out var team)
+                            ? team
                             : 0;
 
-                    // Get Team Size
-                    var teamSize = teamCounts.ContainsKey(job.Id) ? teamCounts[job.Id] : 0;
+                        var clientName = "";
+                        if (owners.TryGetValue(job.OwnerId, out var owner))
+                        {
+                            clientName = !string.IsNullOrEmpty(owner.CompanyName)
+                                ? owner.CompanyName
+                                : owner.FullName;
+                        }
 
-                    // Get Client Name
-                    var clientName = "";
-                    if (owners.ContainsKey(job.UserId))
-                    {
-                        var owner = owners[job.UserId];
-                        clientName = !string.IsNullOrEmpty(owner.CompanyName)
-                            ? owner.CompanyName
-                            : owner.FullName;
-                    }
+                        var thumbnailUrl = !string.IsNullOrEmpty(job.ThumbnailUrl)
+                            ? _azureBlobservice.GenerateTemporaryPublicUrl(job.ThumbnailUrl)
+                            : null;
 
-                    // Generate Thumbnail URL
-                    var thumbnailUrl = !string.IsNullOrEmpty(job.ThumbnailUrl)
-                        ? _azureBlobservice.GenerateTemporaryPublicUrl(job.ThumbnailUrl)
-                        : null;
-
-                    dashboardProjects.Add(
-                        new DashboardProjectDto
+                        return new DashboardProjectDto
                         {
                             JobId = job.Id,
                             ProjectName = job.ProjectName,
-                            Address = job.Address ?? (job.JobAddress?.FormattedAddress),
+                            Address = job.Address ?? job.JobAddressFormattedAddress,
                             Status = job.Status,
                             ThumbnailUrl = thumbnailUrl,
                             Progress = progress,
                             Team = teamSize,
                             ClientName = clientName,
                             CreatedAt = job.CreatedAt,
-                        }
-                    );
-                }
-                dashboardProjects = dashboardProjects.OrderByDescending(p => p.CreatedAt).ToList();
+                        };
+                    })
+                    .OrderByDescending(p => p.CreatedAt)
+                    .ToList();
+
                 return Ok(dashboardProjects);
             }
             catch (Exception ex)
@@ -1687,6 +1698,12 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
+                var cacheKey = $"weather-forecast:{lat}:{lon}";
+                if (_cache.TryGetValue(cacheKey, out string cachedJson))
+                {
+                    return Content(cachedJson, "application/json");
+                }
+
                 lat = lat.Replace(',', '.');
                 decimal latitude = decimal.Parse(lat, CultureInfo.InvariantCulture);
                 lon = lon.Replace(',', '.');
@@ -1702,6 +1719,11 @@ namespace ProbuildBackend.Controllers
 
                 var response = await client.GetAsync(url);
                 var content = await response.Content.ReadAsStringAsync();
+
+                if (response.IsSuccessStatusCode)
+                {
+                    _cache.Set(cacheKey, content, TimeSpan.FromMinutes(10));
+                }
 
                 return Content(content, "application/json");
             }

@@ -304,9 +304,9 @@ namespace ProbuildBackend.Controllers
                                 if (user != null)
                                 {
                                     var template =
-                                        await _context.EmailTemplates.FirstOrDefaultAsync(t =>
-                                            t.TemplateName == "ProWelcomeSetup"
-                                        );
+                                        await _context.EmailTemplates
+                                            .AsNoTracking()
+                                            .FirstOrDefaultAsync(t => t.TemplateName == "ProWelcomeSetup");
 
                                     if (template != null)
                                     {
