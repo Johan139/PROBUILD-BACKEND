@@ -51,10 +51,7 @@ public class GeminiAiService : IAiService
         var conversation = await GetOrCreateConversation(conversationId, userId, userPrompt);
         conversationId = conversation.Id;
 
-        if (!isAnalysis)
-        {
-            await CompactHistoryIfRequiredAsync(conversation);
-        }
+        await CompactHistoryIfRequiredAsync(conversation);
         var updatedConv =
             await _conversationRepo.GetConversationAsync(conversationId) ?? conversation;
 

@@ -79,7 +79,7 @@ namespace ProbuildBackend.Controllers
         {
             var userId = User.FindFirstValue("UserId");
             var notifications = await _context
-                .NotificationViews.Where(n => n.RecipientId == userId)
+                .NotificationViews.AsNoTracking().Where(n => n.RecipientId == userId)
                 .OrderByDescending(n => n.Timestamp)
                 .Take(5)
                 .Select(n => new NotificationDto
@@ -120,7 +120,7 @@ namespace ProbuildBackend.Controllers
             if (pageSize > 100)
                 pageSize = 100;
 
-            var query = _context.NotificationViews.Where(n => n.RecipientId == userId);
+            var query = _context.NotificationViews.AsNoTracking().Where(n => n.RecipientId == userId);
 
             var totalCount = await query.CountAsync();
 

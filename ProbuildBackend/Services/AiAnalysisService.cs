@@ -2466,8 +2466,10 @@ namespace ProbuildBackend.Services
         public async Task RefreshTradePackagesAsync(int jobId)
         {
             var processingResult = await _context
-                .DocumentProcessingResults.OrderByDescending(r => r.CreatedAt)
-                .FirstOrDefaultAsync(r => r.JobId == jobId);
+                .DocumentProcessingResults.AsNoTracking()
+                .Where(r => r.JobId == jobId)
+                .OrderByDescending(r => r.CreatedAt)
+                .FirstOrDefaultAsync();
 
             if (processingResult != null && !string.IsNullOrEmpty(processingResult.FullResponse))
             {

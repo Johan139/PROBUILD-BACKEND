@@ -276,13 +276,13 @@ namespace ProbuildBackend.Services
         }
 
         // ---------------------------------------------------------------------
-        // SENDING TEMPLATE (unchanged)
+        // SENDING TEMPLATE
         // ---------------------------------------------------------------------
         private async Task SendFromTemplate(UserModel user, EmailAutomationRuleModel rule)
         {
-            var template = await _db.EmailTemplates.FirstOrDefaultAsync(t =>
-                t.TemplateId == rule.TemplateId
-            );
+            var template = await _db.EmailTemplates
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => t.TemplateId == rule.TemplateId);
 
             if (template == null)
             {

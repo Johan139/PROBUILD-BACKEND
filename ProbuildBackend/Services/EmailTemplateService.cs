@@ -15,9 +15,9 @@ namespace ProbuildBackend.Services
 
         public async Task<EmailTemplate> GetTemplateAsync(string templateName)
         {
-            return await _context.EmailTemplates.FirstOrDefaultAsync(t =>
-                t.TemplateName == templateName && t.IsActive
-            );
+            return await _context.EmailTemplates
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => t.TemplateName == templateName && t.IsActive);
         }
     }
 }
