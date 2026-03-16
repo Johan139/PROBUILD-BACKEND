@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Models;
 
 namespace ProbuildBackend.Controllers
@@ -59,6 +60,43 @@ namespace ProbuildBackend.Controllers
             await _context.SaveChangesAsync();
 
             return CreatedAtAction(nameof(UploadInvoice), new { id = invoice.Id }, invoice);
+        }
+
+        [HttpGet("job/{jobId}")]
+        public async Task<ActionResult<IEnumerable<Invoice>>> GetInvoicesForJob(int jobId)
+        {
+            var invoices = await _context.Invoices
+                .AsNoTracking()
+                .Where(i => i.JobId == jobId && i.Status == "Approved")
+                .OrderByDescending(i => i.UploadedAt)
+                .ToListAsync();
+
+            return Ok(invoices);
+        }
+
+        public class UpdateInvoiceStatusRequest
+        {
+            public string Status { get; set; }
+        }
+
+        [HttpPut("{invoiceId}/status")]
+        public async Task<IActionResult> UpdateInvoiceStatus(Guid invoiceId, [FromBody] UpdateInvoiceStatusRequest request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.Status))
+            {
+                return BadRequest("Status is required.");
+            }
+
+            var invoice = await _context.Invoices.FindAsync(invoiceId);
+            if (invoice == null)
+            {
+                return NotFound();
+            }
+
+            invoice.Status = request.Status;
+            await _context.SaveChangesAsync();
+
+            return Ok(invoice);
         }
     }
 }

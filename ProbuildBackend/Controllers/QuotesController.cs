@@ -391,6 +391,32 @@ namespace ProbuildBackend.Controllers
         }
 
         // ======================================================
+        // LIST JOB INVOICES (LATEST ONLY)
+        // ======================================================
+        [HttpGet("job/{jobId}/invoices")]
+        public async Task<IActionResult> GetJobInvoices(int jobId)
+        {
+            var invoices = await _context
+                .Quotes.Where(q => q.JobID == jobId && q.DocumentType == "INVOICE" && q.ArchivedAt == null && q.Status == "Approved")
+                .OrderByDescending(q => q.CreatedDate)
+                .Select(q => new
+                {
+                    id = q.Id,
+                    jobId = q.JobID,
+                    number = q.Number,
+                    status = q.Status,
+                    createdDate = q.CreatedDate,
+                    total = _context
+                        .QuoteVersions.Where(v => v.QuoteId == q.Id && v.Version == q.CurrentVersion - 1)
+                        .Select(v => v.Total)
+                        .FirstOrDefault(),
+                })
+                .ToListAsync();
+
+            return Ok(invoices);
+        }
+
+        // ======================================================
         // UPLOAD LOGO
         // ======================================================
         [HttpPost("logo/{userId}")]
