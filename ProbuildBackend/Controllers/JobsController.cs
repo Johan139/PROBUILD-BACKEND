@@ -255,8 +255,7 @@ namespace ProbuildBackend.Controllers
                 }
                 catch (Exception ex)
                 {
-                    // Log the exception to see what's wrong
-                    Console.WriteLine($"Error fetching address: {ex.Message}");
+                    _logger.LogWarning(ex, "Error fetching address for Job {JobId}", id);
                     address = null; // Set to null if query fails
                 }
                 var user = await _context.Users.FindAsync(job.UserId);
@@ -492,8 +491,10 @@ namespace ProbuildBackend.Controllers
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine(
-                        $"Error fetching properties for blob {doc.BlobUrl}: {ex.Message}"
+                    _logger.LogWarning(
+                        ex,
+                        "Error fetching properties for blob {BlobUrl}",
+                        doc.BlobUrl
                     );
                     documentDetails.Add(
                         new
@@ -929,8 +930,6 @@ namespace ProbuildBackend.Controllers
                     ?? _httpContextAccessor.HttpContext?.Connection.Id
                     ?? throw new InvalidOperationException("No valid connectionId provided.");
 
-                Console.WriteLine($"Received connectionId from client: {connectionId}");
-
                 uploadedFileUrls = await _azureBlobservice.UploadFiles(
                     jobRequest.Blueprint,
                     _hubContext,
@@ -942,10 +941,6 @@ namespace ProbuildBackend.Controllers
                 )
                 {
                     string blobFileName = Path.GetFileName(new Uri(url).LocalPath);
-
-                    Console.WriteLine($"Original file.FileName: {file.FileName}");
-                    Console.WriteLine($"Blob URL from Azure: {url}");
-                    Console.WriteLine($"Extracted Blob FileName: {blobFileName}");
 
                     var jobDocument = new JobDocumentModel
                     {
@@ -1454,7 +1449,7 @@ namespace ProbuildBackend.Controllers
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error in GetUserDashboard: {ex.Message}");
+                _logger.LogError(ex, "Error in GetUserDashboard");
                 return StatusCode(500, "Internal server error fetching dashboard projects.");
             }
         }
@@ -1729,7 +1724,7 @@ namespace ProbuildBackend.Controllers
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Weather API Error: {ex.Message}");
+                _logger.LogError(ex, "Weather API Error");
                 throw;
             }
         }

@@ -24,7 +24,7 @@ namespace ProbuildBackend.Controllers
         }
 
         // GET: api/Projects/5
-        [HttpGet("{id}")]
+        [HttpGet("{id:int}")]
         public async Task<ActionResult<ProjectModel>> GetProject(int id)
         {
             var project = await _context.Projects.FindAsync(id);
@@ -328,13 +328,13 @@ namespace ProbuildBackend.Controllers
             return _context.Projects.Any(e => e.Id == id);
         }
 
-        [HttpGet("{userId}")]
+        [HttpGet("{userId:guid}")]
         public async Task<ActionResult<IEnumerable<ProjectModel>>> GetProjectsByUserId(
-            string userId
+            Guid userId
         )
         {
             var projects = await _context
-                .Projects.Where(project => project.UserId == userId)
+                .Projects.Where(project => project.UserId == userId.ToString())
                 .ToListAsync();
 
             if (projects == null || !projects.Any())

@@ -261,8 +261,6 @@ namespace ProbuildBackend.Controllers
             }
             catch (Exception ex)
             {
-                // Optional: Log the exception before rethrowing
-                Console.WriteLine("Error during registration: " + ex.Message);
                 throw;
             }
         }
@@ -628,7 +626,7 @@ namespace ProbuildBackend.Controllers
                 || storedToken.Expires < DateTime.UtcNow
             )
             {
-                return Unauthorized("Invalid refresh token.");
+                return Unauthorized(new { error = "Invalid refresh token." });
             }
 
             // Revoke the old refresh token immediately
@@ -647,7 +645,9 @@ namespace ProbuildBackend.Controllers
                 var memberById = await _context.TeamMembers.FindAsync(storedToken.UserId);
                 if (memberById == null)
                 {
-                    return Unauthorized("User or team member not found for the given token.");
+                    return Unauthorized(
+                        new { error = "User or team member not found for the given token." }
+                    );
                 }
 
                 var teamMembers = await _context
@@ -658,7 +658,7 @@ namespace ProbuildBackend.Controllers
 
                 if (!teamMembers.Any())
                 {
-                    return Unauthorized("Team member not found for the given token.");
+                    return Unauthorized(new { error = "Team member not found for the given token." });
                 }
 
                 var firstMember = teamMembers.First();
@@ -912,21 +912,15 @@ namespace ProbuildBackend.Controllers
             }
             catch (CryptographicException ex)
             {
-                Console.WriteLine($"Token validation failed: {ex.Message}");
                 return BadRequest(new { error = "Token has expired." });
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Unexpected error: {ex.Message}");
                 return StatusCode(500, new { error = "Unexpected error occurred." });
             }
 
-            // Log the state before update
-            Console.WriteLine($"Before Update - Availability: {user.Availability ?? "null"}");
-
             // Set Availability to empty string (optional, based on your intent)
             user.Availability = "";
-            Console.WriteLine($"After Setting - Availability: {user.Availability}");
 
             // Manually update the password
             var hasher = new PasswordHasher<UserModel>();

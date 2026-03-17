@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+
 namespace ProbuildBackend.Services
 {
     public class TokenCleanupService(IServiceProvider services, ILogger<TokenCleanupService> logger)
@@ -29,13 +31,15 @@ namespace ProbuildBackend.Services
 
             var tokensToRemove = context
                 .RefreshTokens.Where(rt => rt.Expires < DateTime.UtcNow || rt.Revoked != null)
-                .ToList();
+                .ToListAsync(stoppingToken);
 
-            if (tokensToRemove.Count != 0)
+            var tokens = await tokensToRemove;
+
+            if (tokens.Count != 0)
             {
-                context.RefreshTokens.RemoveRange(tokensToRemove);
+                context.RefreshTokens.RemoveRange(tokens);
                 await context.SaveChangesAsync(stoppingToken);
-                _logger.LogInformation($"Cleaned up {tokensToRemove.Count} refresh token(s).");
+                _logger.LogInformation($"Cleaned up {tokens.Count} refresh token(s).");
             }
             else
             {
