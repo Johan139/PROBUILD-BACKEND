@@ -268,7 +268,11 @@ namespace ProbuildBackend.Controllers
         [HttpGet("resend-email-verification/{email}")]
         public async Task<ActionResult> ResendEmailLink(string email)
         {
-            var user = _context.Users.Where(p => p.Email == email).FirstOrDefault();
+            var user = await _context.Users.Where(p => p.Email == email).FirstOrDefaultAsync();
+            if (user == null)
+            {
+                return NotFound(new { error = "User not found" });
+            }
             var code = await _userManager.GenerateEmailConfirmationTokenAsync(user);
             var frontendUrl =
                 Environment.GetEnvironmentVariable("FRONTEND_URL")

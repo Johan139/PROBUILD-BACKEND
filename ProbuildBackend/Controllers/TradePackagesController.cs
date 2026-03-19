@@ -331,8 +331,12 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var archivePackage = _context.TradePackages.Where(m => m.Id == id).FirstOrDefault();
-                archivePackage.ArchivedAt = DateTime.Now;
+                var archivePackage = await _context.TradePackages.Where(m => m.Id == id).FirstOrDefaultAsync();
+                if (archivePackage == null)
+                {
+                    return NotFound();
+                }
+                archivePackage.ArchivedAt = DateTime.UtcNow;
 
                 await _context.SaveChangesAsync();
             }

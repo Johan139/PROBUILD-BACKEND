@@ -1,5 +1,7 @@
 ﻿using System.Text.Json;
 using System.Web;
+using Hangfire;
+using Hangfire.Storage;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Interface;
@@ -42,6 +44,8 @@ namespace ProbuildBackend.Services
             _emailTemplate = emailTemplate;
         }
 
+        [AutomaticRetry(Attempts = 3, OnAttemptsExceeded = AttemptsExceededAction.Fail)]
+        [DisableConcurrentExecution(timeoutInSeconds: 60 * 60)]
         public async Task ProcessDocumentsForJobAsync(
             int jobId,
             List<string> documentUrls,
@@ -54,6 +58,9 @@ namespace ProbuildBackend.Services
             string? ipAddress = null
         )
         {
+            using var distributedLock = JobStorage.Current
+                .GetConnection()
+                .AcquireDistributedLock($"analysis:comprehensive:job:{jobId}", TimeSpan.FromHours(1));
             try
             {
                 var job = await _context.Jobs.FindAsync(jobId);
@@ -146,10 +153,10 @@ namespace ProbuildBackend.Services
                         "ProjectAnalysisReadyEmail"
                     );
 
-                    var jobAddress = _context
+                    var jobAddress = await _context
                         .JobAddresses.Where(j => j.JobId == job.Id)
-                        .FirstOrDefault();
-                    var jobDocument = _context.JobDocuments.Where(d => d.JobId == job.Id).ToList();
+                        .FirstOrDefaultAsync();
+                    var jobDocument = await _context.JobDocuments.Where(d => d.JobId == job.Id).ToListAsync();
                     var frontendUrl =
                         Environment.GetEnvironmentVariable("FRONTEND_URL")
                         ?? "http://localhost:4200";
@@ -192,7 +199,14 @@ namespace ProbuildBackend.Services
                     {
                         await _emailService.SendEmailAsync(ProjectAnalysisEmail, user.Email);
 
-  
+                        await MarkEmailSentAsync(jobId);
+
+                        if (!string.IsNullOrEmpty(connectionId))
+                        {
+                            await _hubContext
+                                .Clients.Client(connectionId)
+                                .SendAsync("AnalysisEmailSent", new { JobId = jobId });
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -264,6 +278,8 @@ namespace ProbuildBackend.Services
             }
         }
 
+        [AutomaticRetry(Attempts = 3, OnAttemptsExceeded = AttemptsExceededAction.Fail)]
+        [DisableConcurrentExecution(timeoutInSeconds: 60 * 60)]
         public async Task ProcessSelectedAnalysisForJobAsync(
             int jobId,
             List<string> documentUrls,
@@ -331,10 +347,10 @@ namespace ProbuildBackend.Services
                         "ProjectAnalysisReadyEmail"
                     );
 
-                    var jobAddress = _context
+                    var jobAddress = await _context
                         .JobAddresses.Where(j => j.JobId == job.Id)
-                        .FirstOrDefault();
-                    var jobDocument = _context.JobDocuments.Where(d => d.JobId == job.Id).ToList();
+                        .FirstOrDefaultAsync();
+                    var jobDocument = await _context.JobDocuments.Where(d => d.JobId == job.Id).ToListAsync();
                     var frontendUrl =
                         Environment.GetEnvironmentVariable("FRONTEND_URL")
                         ?? "http://localhost:4200";
@@ -377,6 +393,15 @@ namespace ProbuildBackend.Services
                     try
                     {
                         await _emailService.SendEmailAsync(ProjectAnalysisEmail, user.Email);
+
+                        await MarkEmailSentAsync(jobId);
+
+                        if (!string.IsNullOrEmpty(connectionId))
+                        {
+                            await _hubContext
+                                .Clients.Client(connectionId)
+                                .SendAsync("AnalysisEmailSent", new { JobId = jobId });
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -443,6 +468,8 @@ namespace ProbuildBackend.Services
             return contextBuilder.ToString();
         }
 
+        [AutomaticRetry(Attempts = 3, OnAttemptsExceeded = AttemptsExceededAction.Fail)]
+        [DisableConcurrentExecution(timeoutInSeconds: 60 * 60)]
         public async Task ProcessRenovationAnalysisForJobAsync(
             int jobId,
             List<string> documentUrls,
@@ -497,10 +524,10 @@ namespace ProbuildBackend.Services
                         "ProjectAnalysisReadyEmail"
                     );
 
-                    var jobAddress = _context
+                    var jobAddress = await _context
                         .JobAddresses.Where(j => j.JobId == job.Id)
-                        .FirstOrDefault();
-                    var jobDocuments = _context.JobDocuments.Where(d => d.JobId == job.Id).ToList();
+                        .FirstOrDefaultAsync();
+                    var jobDocuments = await _context.JobDocuments.Where(d => d.JobId == job.Id).ToListAsync();
                     var frontendUrl =
                         Environment.GetEnvironmentVariable("FRONTEND_URL")
                         ?? "http://localhost:4200";
@@ -543,6 +570,15 @@ namespace ProbuildBackend.Services
                     try
                     {
                         await _emailService.SendEmailAsync(ProjectAnalysisEmail, user.Email);
+
+                        await MarkEmailSentAsync(jobId);
+
+                        if (!string.IsNullOrEmpty(connectionId))
+                        {
+                            await _hubContext
+                                .Clients.Client(connectionId)
+                                .SendAsync("AnalysisEmailSent", new { JobId = jobId });
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -562,6 +598,54 @@ namespace ProbuildBackend.Services
                 await _hubContext
                     .Clients.Client(connectionId)
                     .SendAsync("AnalysisFailed", jobId, "Renovation analysis failed.");
+            }
+        }
+
+        private async Task MarkEmailSentAsync(int jobId)
+        {
+             var emailSentAtIso = DateTime.UtcNow.ToString("O");
+            var rows = await _context.Database.ExecuteSqlInterpolatedAsync($@"
+UPDATE [JobAnalysisStates]
+SET [ExtractedDataJson] = JSON_MODIFY(
+        JSON_MODIFY(
+            COALESCE(NULLIF([ExtractedDataJson], ''), '{{}}'),
+            '$.emailSent',
+            CAST(1 AS bit)
+        ),
+        '$.emailSentAt',
+        {emailSentAtIso}
+    ),
+    [LastUpdated] = SYSUTCDATETIME()
+WHERE [JobId] = {jobId};
+");
+
+            if (rows == 0)
+            {
+                // If state row doesn't exist yet, fall back to creating it and retry once.
+                _context.JobAnalysisStates.Add(
+                    new JobAnalysisState
+                    {
+                        JobId = jobId,
+                        ExtractedDataJson = "{}",
+                        LastUpdated = DateTime.UtcNow
+                    }
+                );
+                await _context.SaveChangesAsync();
+
+                await _context.Database.ExecuteSqlInterpolatedAsync($@"
+UPDATE [JobAnalysisStates]
+SET [ExtractedDataJson] = JSON_MODIFY(
+        JSON_MODIFY(
+            COALESCE(NULLIF([ExtractedDataJson], ''), '{{}}'),
+            '$.emailSent',
+            CAST(1 AS bit)
+        ),
+        '$.emailSentAt',
+        {emailSentAtIso}
+    ),
+    [LastUpdated] = SYSUTCDATETIME()
+WHERE [JobId] = {jobId};
+");
             }
         }
     }

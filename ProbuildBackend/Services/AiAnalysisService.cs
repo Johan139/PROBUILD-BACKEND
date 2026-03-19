@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Linq;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -151,9 +152,25 @@ namespace ProbuildBackend.Services
                     .ToList();
                 orderedPrompts.Add(dailyPlanPromptKey);
 
-                int step = 1;
+                var completedPrompts = await GetCompletedPromptNames(job.Id);
+                var savedModelPrompts = await GetSavedModelPromptNames(job.Id);
+                foreach (var promptName in savedModelPrompts)
+                {
+                    if (!completedPrompts.Contains(promptName))
+                    {
+                        await MarkPromptCompleted(job.Id, promptName);
+                        completedPrompts.Add(promptName);
+                    }
+                }
+
+                int step = completedPrompts.Count + 1;
                 foreach (var promptKey in orderedPrompts)
                 {
+                    if (completedPrompts.Contains(promptKey))
+                    {
+                        continue;
+                    }
+
                     if (!string.IsNullOrEmpty(connectionId))
                     {
                         await _hubContext
@@ -181,10 +198,14 @@ namespace ProbuildBackend.Services
                     );
 
                     var subPrompt = await _promptManager.GetPromptAsync(null, promptKey);
+                    var phasePrefix = BuildPhaseInstructionPrefix(
+                        step,
+                        FormatPromptStatusLabel(promptKey)
+                    );
                     var (analysisResult, _) = await _aiService.ContinueConversationAsync(
                         conversationId,
                         userId,
-                        subPrompt,
+                        $"{phasePrefix}\n\n{subPrompt}",
                         requestDto.DocumentUrls,
                         true,
                         personaWithoutJson
@@ -196,7 +217,11 @@ namespace ProbuildBackend.Services
                         Content = analysisResult,
                         Timestamp = DateTime.UtcNow,
                     };
-                    await _conversationRepo.AddMessageAsync(message);
+                    await _conversationRepo.AddMessageIfNotExistsAsync(message);
+
+                    await MarkModelPromptSaved(job.Id, promptKey);
+                    await MarkPromptCompleted(job.Id, promptKey);
+                    completedPrompts.Add(promptKey);
                     reportBuilder.Append("\n\n---\n\n");
                     reportBuilder.Append(analysisResult);
 
@@ -380,14 +405,33 @@ namespace ProbuildBackend.Services
                 );
 
                 _logger.LogInformation("Calling StartMultimodalConversationAsync.");
-                var (initialResponse, conversationId) =
-                    await _aiService.StartMultimodalConversationAsync(
-                        userId,
-                        documentUris,
-                        systemPersonaPrompt,
-                        initialUserPrompt,
-                        jobDetails.ConversationId
+                var existingConversationId = jobDetails.ConversationId;
+                var completedPrompts = await GetCompletedPromptNames(jobDetails.Id);
+
+                if (!string.IsNullOrWhiteSpace(existingConversationId) && completedPrompts.Count > 0)
+                {
+                    _logger.LogInformation(
+                        "Resuming analysis for Job {JobId} using existing conversation {ConversationId}.",
+                        jobDetails.Id,
+                        existingConversationId
                     );
+
+                    return await ExecuteSequentialPromptsAsync(
+                        existingConversationId,
+                        userId,
+                        string.Empty,
+                        jobDetails.Id,
+                        connectionId
+                    );
+                }
+
+                var (initialResponse, conversationId) = await _aiService.StartMultimodalConversationAsync(
+                    userId,
+                    documentUris,
+                    systemPersonaPrompt,
+                    initialUserPrompt,
+                    existingConversationId
+                );
                 _logger.LogInformation(
                     "Started multimodal conversation {ConversationId} for user {UserId}. Initial response length: {Length}",
                     conversationId,
@@ -533,13 +577,33 @@ namespace ProbuildBackend.Services
                 _logger.LogInformation(
                     "Calling StartMultimodalConversationAsync for renovation analysis."
                 );
+
+                var existingConversationId = jobDetails.ConversationId;
+                var completedPrompts = await GetCompletedPromptNames(jobDetails.Id);
+                if (!string.IsNullOrWhiteSpace(existingConversationId) && completedPrompts.Count > 0)
+                {
+                    _logger.LogInformation(
+                        "Resuming renovation analysis for Job {JobId} using existing conversation {ConversationId}.",
+                        jobDetails.Id,
+                        existingConversationId
+                    );
+
+                    return await ExecuteSequentialRenovationPromptsAsync(
+                        existingConversationId,
+                        userId,
+                        string.Empty,
+                        jobDetails.Id,
+                        connectionId
+                    );
+                }
+
                 var (initialResponse, conversationId) =
                     await _aiService.StartMultimodalConversationAsync(
                         userId,
                         documentUris,
                         personaPrompt,
                         initialUserPrompt,
-                        jobDetails.ConversationId
+                        existingConversationId
                     );
                 _logger.LogInformation(
                     "Started multimodal conversation {ConversationId} for user {UserId}. Initial response length: {Length}",
@@ -763,9 +827,28 @@ namespace ProbuildBackend.Services
             try
             {
                 string lastResponse;
-                int step = 1;
+                var completedPrompts = await GetCompletedPromptNames(jobId);
+                var savedModelPrompts = await GetSavedModelPromptNames(jobId);
+
+                foreach (var promptName in savedModelPrompts)
+                {
+                    if (!completedPrompts.Contains(promptName))
+                    {
+                        await MarkPromptCompleted(jobId, promptName);
+                        completedPrompts.Add(promptName);
+                    }
+                }
+
+                int completedCount = promptNames.Count(p => completedPrompts.Contains(p));
                 foreach (var promptName in promptNames)
                 {
+                    if (completedPrompts.Contains(promptName))
+                    {
+                        continue;
+                    }
+
+                    var step = completedCount + 1;
+
                     _logger.LogInformation(
                         "Executing step {Step} of {TotalSteps}: {PromptName} for conversation {ConversationId}",
                         step,
@@ -801,15 +884,19 @@ namespace ProbuildBackend.Services
                     );
 
                     var promptText = await _promptManager.GetPromptAsync("", $"{promptName}.txt");
+                    var phasePrefix = BuildPhaseInstructionPrefix(
+                        step,
+                        FormatPromptStatusLabel(promptName)
+                    );
                     (lastResponse, _) = await _aiService.ContinueConversationAsync(
                         conversationId,
                         userId,
-                        promptText,
+                        $"{phasePrefix}\n\n{promptText}",
                         null,
                         true
                     );
 
-                    await _conversationRepo.AddMessageAsync(
+                    await _conversationRepo.AddMessageIfNotExistsAsync(
                         new Message
                         {
                             ConversationId = conversationId,
@@ -817,6 +904,8 @@ namespace ProbuildBackend.Services
                             Content = lastResponse,
                         }
                     );
+
+                    await MarkModelPromptSaved(jobId, promptName);
 
                     stringBuilder.Append("\n\n---\n\n");
                     stringBuilder.Append(lastResponse);
@@ -831,7 +920,8 @@ namespace ProbuildBackend.Services
                         );
                     }
 
-                    step++;
+                    await MarkPromptCompleted(jobId, promptName);
+                    completedCount++;
                 }
 
                 var job = await _context.Jobs.FindAsync(jobId);
@@ -863,7 +953,7 @@ namespace ProbuildBackend.Services
                     "Full sequential analysis completed successfully for conversation {ConversationId}",
                     conversationId
                 );
-                return stringBuilder.ToString();
+                return await BuildFullReportFromConversation(conversationId);
             }
             catch (Exception ex)
             {
@@ -889,6 +979,258 @@ namespace ProbuildBackend.Services
                         );
                 }
                 throw;
+            }
+        }
+
+        private async Task<string> BuildFullReportFromConversation(string conversationId)
+        {
+            var messages = await _conversationRepo.GetMessagesAsync(conversationId, includeSummarized: true);
+            var modelMessages = messages
+                .Where(m =>
+                    string.Equals(m.Role, "model", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(m.Role, "assistant", StringComparison.OrdinalIgnoreCase)
+                )
+                .Select(m => m.Content)
+                .Where(c => !string.IsNullOrWhiteSpace(c))
+                .ToList();
+
+            if (!modelMessages.Any())
+            {
+                return string.Empty;
+            }
+
+            return string.Join("\n\n---\n\n", modelMessages);
+        }
+
+        private async Task<HashSet<string>> GetCompletedPromptNames(int jobId)
+        {
+            var state = await _context.JobAnalysisStates.AsNoTracking()
+                .FirstOrDefaultAsync(s => s.JobId == jobId);
+
+            if (state == null || string.IsNullOrWhiteSpace(state.ExtractedDataJson))
+            {
+                return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            try
+            {
+                var payload = JsonSerializer.Deserialize<Dictionary<string, object>>(state.ExtractedDataJson);
+                if (payload == null)
+                {
+                    return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                }
+
+                if (!payload.TryGetValue("completedPrompts", out var raw) || raw == null)
+                {
+                    return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                }
+
+                if (raw is JsonElement element && element.ValueKind == JsonValueKind.Array)
+                {
+                    var items = new List<string>();
+                    foreach (var item in element.EnumerateArray())
+                    {
+                        if (item.ValueKind == JsonValueKind.String)
+                        {
+                            var value = item.GetString();
+                            if (!string.IsNullOrWhiteSpace(value))
+                            {
+                                items.Add(value);
+                            }
+                        }
+                    }
+
+                    return new HashSet<string>(items, StringComparer.OrdinalIgnoreCase);
+                }
+            }
+            catch
+            {
+            }
+
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        private async Task<HashSet<string>> GetSavedModelPromptNames(int jobId)
+        {
+            var state = await _context.JobAnalysisStates.AsNoTracking()
+                .FirstOrDefaultAsync(s => s.JobId == jobId);
+            if (state == null || string.IsNullOrWhiteSpace(state.ExtractedDataJson))
+            {
+                return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            try
+            {
+                var payload = JsonSerializer.Deserialize<Dictionary<string, object>>(state.ExtractedDataJson);
+                if (payload == null)
+                {
+                    return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                }
+
+                if (!payload.TryGetValue("savedModelPrompts", out var raw) || raw == null)
+                {
+                    return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                }
+
+                if (raw is JsonElement element && element.ValueKind == JsonValueKind.Array)
+                {
+                    var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var item in element.EnumerateArray())
+                    {
+                        if (item.ValueKind == JsonValueKind.String)
+                        {
+                            var value = item.GetString();
+                            if (!string.IsNullOrWhiteSpace(value))
+                            {
+                                set.Add(value);
+                            }
+                        }
+                    }
+                    return set;
+                }
+            }
+            catch
+            {
+            }
+
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        private async Task MarkModelPromptSaved(int jobId, string promptName)
+        {
+            var state = await _context.JobAnalysisStates.AsNoTracking()
+                .FirstOrDefaultAsync(s => s.JobId == jobId);
+
+            var payload = new Dictionary<string, object>();
+            if (state != null && !string.IsNullOrWhiteSpace(state.ExtractedDataJson))
+            {
+                try
+                {
+                    payload = JsonSerializer.Deserialize<Dictionary<string, object>>(state.ExtractedDataJson)
+                        ?? new Dictionary<string, object>();
+                }
+                catch
+                {
+                    payload = new Dictionary<string, object>();
+                }
+            }
+
+            var saved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (payload.TryGetValue("savedModelPrompts", out var existing) && existing is JsonElement element && element.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in element.EnumerateArray())
+                {
+                    if (item.ValueKind == JsonValueKind.String)
+                    {
+                        var value = item.GetString();
+                        if (!string.IsNullOrWhiteSpace(value))
+                        {
+                            saved.Add(value);
+                        }
+                    }
+                }
+            }
+
+            saved.Add(promptName);
+            var savedJson = JsonSerializer.Serialize(saved.ToArray());
+
+            var rows = await _context.Database.ExecuteSqlInterpolatedAsync($@"
+UPDATE [JobAnalysisStates]
+SET [ExtractedDataJson] = JSON_MODIFY(
+        COALESCE(NULLIF([ExtractedDataJson], ''), '{{}}'),
+        '$.savedModelPrompts',
+        JSON_QUERY({savedJson})
+    ),
+    [LastUpdated] = SYSUTCDATETIME()
+WHERE [JobId] = {jobId};
+");
+
+            if (rows == 0)
+            {
+                _context.JobAnalysisStates.Add(
+                    new JobAnalysisState { JobId = jobId, ExtractedDataJson = "{}", LastUpdated = DateTime.UtcNow }
+                );
+                await _context.SaveChangesAsync();
+
+                await _context.Database.ExecuteSqlInterpolatedAsync($@"
+UPDATE [JobAnalysisStates]
+SET [ExtractedDataJson] = JSON_MODIFY(
+        COALESCE(NULLIF([ExtractedDataJson], ''), '{{}}'),
+        '$.savedModelPrompts',
+        JSON_QUERY({savedJson})
+    ),
+    [LastUpdated] = SYSUTCDATETIME()
+WHERE [JobId] = {jobId};
+");
+            }
+        }
+
+        private async Task MarkPromptCompleted(int jobId, string promptName)
+        {
+            var state = await _context.JobAnalysisStates.AsNoTracking()
+                .FirstOrDefaultAsync(s => s.JobId == jobId);
+
+            var payload = new Dictionary<string, object>();
+            if (state != null && !string.IsNullOrWhiteSpace(state.ExtractedDataJson))
+            {
+                try
+                {
+                    payload = JsonSerializer.Deserialize<Dictionary<string, object>>(state.ExtractedDataJson)
+                        ?? new Dictionary<string, object>();
+                }
+                catch
+                {
+                    payload = new Dictionary<string, object>();
+                }
+            }
+
+            var completed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (payload.TryGetValue("completedPrompts", out var existing) && existing is JsonElement element && element.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in element.EnumerateArray())
+                {
+                    if (item.ValueKind == JsonValueKind.String)
+                    {
+                        var value = item.GetString();
+                        if (!string.IsNullOrWhiteSpace(value))
+                        {
+                            completed.Add(value);
+                        }
+                    }
+                }
+            }
+
+            completed.Add(promptName);
+            var completedJson = JsonSerializer.Serialize(completed.ToArray());
+
+            var rows = await _context.Database.ExecuteSqlInterpolatedAsync($@"
+UPDATE [JobAnalysisStates]
+SET [ExtractedDataJson] = JSON_MODIFY(
+        COALESCE(NULLIF([ExtractedDataJson], ''), '{{}}'),
+        '$.completedPrompts',
+        JSON_QUERY({completedJson})
+    ),
+    [LastUpdated] = SYSUTCDATETIME()
+WHERE [JobId] = {jobId};
+");
+
+            if (rows == 0)
+            {
+                _context.JobAnalysisStates.Add(
+                    new JobAnalysisState { JobId = jobId, ExtractedDataJson = "{}", LastUpdated = DateTime.UtcNow }
+                );
+                await _context.SaveChangesAsync();
+
+                await _context.Database.ExecuteSqlInterpolatedAsync($@"
+UPDATE [JobAnalysisStates]
+SET [ExtractedDataJson] = JSON_MODIFY(
+        COALESCE(NULLIF([ExtractedDataJson], ''), '{{}}'),
+        '$.completedPrompts',
+        JSON_QUERY({completedJson})
+    ),
+    [LastUpdated] = SYSUTCDATETIME()
+WHERE [JobId] = {jobId};
+");
             }
         }
 
@@ -2338,9 +2680,27 @@ namespace ProbuildBackend.Services
             try
             {
                 string lastResponse;
-                int step = 1;
+                var completedPrompts = await GetCompletedPromptNames(jobId);
+                var savedModelPrompts = await GetSavedModelPromptNames(jobId);
+
+                foreach (var promptName in savedModelPrompts)
+                {
+                    if (!completedPrompts.Contains(promptName))
+                    {
+                        await MarkPromptCompleted(jobId, promptName);
+                        completedPrompts.Add(promptName);
+                    }
+                }
+
+                int completedCount = promptNames.Count(p => completedPrompts.Contains(p));
                 foreach (var promptName in promptNames)
                 {
+                    if (completedPrompts.Contains(promptName))
+                    {
+                        continue;
+                    }
+
+                    var step = completedCount + 1;
                     _logger.LogInformation(
                         "Executing step {Step} of {TotalSteps}: {PromptName} for conversation {ConversationId}",
                         step,
@@ -2379,15 +2739,19 @@ namespace ProbuildBackend.Services
                         "RenovationPrompts/",
                         $"{promptName}.txt"
                     );
+                    var phasePrefix = BuildPhaseInstructionPrefix(
+                        step,
+                        FormatPromptStatusLabel(promptName)
+                    );
                     (lastResponse, _) = await _aiService.ContinueConversationAsync(
                         conversationId,
                         userId,
-                        promptText,
+                        $"{phasePrefix}\n\n{promptText}",
                         null,
                         true
                     );
 
-                    await _conversationRepo.AddMessageAsync(
+                    await _conversationRepo.AddMessageIfNotExistsAsync(
                         new Message
                         {
                             ConversationId = conversationId,
@@ -2395,6 +2759,8 @@ namespace ProbuildBackend.Services
                             Content = lastResponse,
                         }
                     );
+
+                    await MarkModelPromptSaved(jobId, promptName);
 
                     stringBuilder.Append("\n\n---\n\n");
                     stringBuilder.Append(lastResponse);
@@ -2409,7 +2775,8 @@ namespace ProbuildBackend.Services
                         );
                     }
 
-                    step++;
+                    await MarkPromptCompleted(jobId, promptName);
+                    completedCount++;
                 }
 
                 if (!string.IsNullOrEmpty(connectionId))
@@ -2434,7 +2801,7 @@ namespace ProbuildBackend.Services
                     "Full sequential renovation analysis completed successfully for conversation {ConversationId}",
                     conversationId
                 );
-                return stringBuilder.ToString();
+                return await BuildFullReportFromConversation(conversationId);
             }
             catch (Exception ex)
             {
@@ -3079,6 +3446,19 @@ namespace ProbuildBackend.Services
             );
         }
 
+        private static string BuildPhaseInstructionPrefix(int phaseNumber, string phaseTitle)
+        {
+            var safePhase = Math.Max(1, phaseNumber);
+            var safeTitle = string.IsNullOrWhiteSpace(phaseTitle) ? "Analysis" : phaseTitle.Trim();
+            return $@"CRITICAL INSTRUCTION (follow exactly):
+- You are now producing output for Phase {safePhase}: {safeTitle}.
+- Do NOT output any JSON metadata block in this response.
+- Do NOT repeat any earlier phases.
+- Start your response with the exact title line: ### Phase {safePhase}: {safeTitle}
+- Continue with the requested content immediately after that title.
+";
+        }
+
         private async Task UpdateAnalysisState(
             int jobId,
             string statusMessage,
@@ -3120,34 +3500,40 @@ namespace ProbuildBackend.Services
         {
             try
             {
-                var state = await _context.JobAnalysisStates.FirstOrDefaultAsync(s =>
-                    s.JobId == jobId
-                );
-                if (state == null)
+                var existing = await _context.JobAnalysisStates.AsNoTracking()
+                    .FirstOrDefaultAsync(s => s.JobId == jobId);
+
+                if (existing == null)
                 {
-                    state = new JobAnalysisState { JobId = jobId };
-                    _context.JobAnalysisStates.Add(state);
+                    _context.JobAnalysisStates.Add(
+                        new JobAnalysisState
+                        {
+                            JobId = jobId,
+                            ExtractedDataJson = "{}",
+                            LastUpdated = DateTime.UtcNow
+                        }
+                    );
+                    await _context.SaveChangesAsync();
                 }
 
-                var currentData = new Dictionary<string, object>();
-                if (!string.IsNullOrEmpty(state.ExtractedDataJson))
-                {
-                    try
-                    {
-                        currentData =
-                            JsonSerializer.Deserialize<Dictionary<string, object>>(
-                                state.ExtractedDataJson
-                            ) ?? new Dictionary<string, object>();
-                    }
-                    catch { }
-                }
+                var jsonValue = JsonSerializer.Serialize(data);
+                var path = dataType.All(c => char.IsLetterOrDigit(c) || c == '_')
+                    ? $"$.{dataType}"
+                    : $"$[\"{dataType}\"]";
 
-                currentData[dataType] = data;
-
-                state.ExtractedDataJson = JsonSerializer.Serialize(currentData);
-                state.LastUpdated = DateTime.UtcNow;
-
-                await _context.SaveChangesAsync();
+                await _context.Database.ExecuteSqlInterpolatedAsync($@"
+UPDATE [JobAnalysisStates]
+SET [ExtractedDataJson] = JSON_MODIFY(
+        COALESCE(NULLIF([ExtractedDataJson], ''), '{{}}'),
+        {path},
+        CASE
+            WHEN LEFT(LTRIM({jsonValue}), 1) IN ('{{', '[') THEN JSON_QUERY({jsonValue})
+            ELSE {jsonValue}
+        END
+    ),
+    [LastUpdated] = SYSUTCDATETIME()
+WHERE [JobId] = {jobId};
+");
             }
             catch (Exception ex)
             {

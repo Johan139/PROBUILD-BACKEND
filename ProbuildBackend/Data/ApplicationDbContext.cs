@@ -520,6 +520,11 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
                 .OnDelete(DeleteBehavior.SetNull);
         });
 
+        modelBuilder.Entity<JobAnalysisState>(entity =>
+        {
+            entity.HasIndex(e => e.JobId);
+        });
+
         base.OnModelCreating(modelBuilder);
     }
 }

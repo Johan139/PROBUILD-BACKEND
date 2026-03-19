@@ -34,7 +34,9 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpPost("create-checkout-session")]
-        public ActionResult CreateCheckoutSession([FromBody] SubscriptionPaymentRequestDTO request)
+        public async Task<ActionResult> CreateCheckoutSession(
+            [FromBody] SubscriptionPaymentRequestDTO request
+        )
         {
             string stripePriceId = string.Empty;
             // Validate input
@@ -43,18 +45,18 @@ namespace ProbuildBackend.Controllers
                 return BadRequest("UserId and PackageName are required.");
             }
 
-            var teamMemberUserId = (
+            var teamMemberUserId = await (
                 from tm in _context.TeamMembers
                 join u in _context.Users on tm.Email equals u.Email
                 where tm.Id == request.AssignedUser
                 select u.Id
-            ).SingleOrDefault();
+            ).SingleOrDefaultAsync();
 
             StripeConfiguration.ApiKey =
                 Environment.GetEnvironmentVariable("StripeAPIKey")
                 ?? _configuration["StripeAPI:StripeKey"];
 
-            StripeModel stripeModel = GetPriceIdForPackage(request.PackageName); // Implement this to map package to Price ID
+            StripeModel stripeModel = await GetPriceIdForPackageAsync(request.PackageName); // Implement this to map package to Price ID
 
             if (string.IsNullOrEmpty(stripeModel.StripeProductId))
             {
@@ -80,6 +82,7 @@ namespace ProbuildBackend.Controllers
             {
                 metadata["assignedUser"] = teamMemberUserId;
             }
+            var customerId = await GetOrCreateCustomerAsync(request.UserId);
             var options = new SessionCreateOptions
             {
                 PaymentMethodTypes = new List<string> { "card" },
@@ -96,14 +99,14 @@ namespace ProbuildBackend.Controllers
 
                 SuccessUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["FrontEnd:FRONTEND_URL"] + $"/payment-success?source={request.Source}",
                 CancelUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["FrontEnd:FRONTEND_URL"] + "/payment-cancel",
-                Customer = GetOrCreateCustomer(request.UserId), // Ensure this returns a valid Customer ID
+                Customer = customerId, // Ensure this returns a valid Customer ID
                 AutomaticTax = new SessionAutomaticTaxOptions { Enabled = false },
             };
 
             try
             {
                 var service = new SessionService();
-                Session session = service.Create(options);
+                Session session = await service.CreateAsync(options);
                 return Ok(new { url = session.Url });
             }
             catch (StripeException ex)
@@ -114,12 +117,12 @@ namespace ProbuildBackend.Controllers
         }
 
         // Helper method to map package name to Stripe Price ID
-        private StripeModel GetPriceIdForPackage(string packageName)
+        private async Task<StripeModel> GetPriceIdForPackageAsync(string packageName)
         {
             //Get the stripe product ID for the product ordered
-            var Stripeproduct = _context
+            var Stripeproduct = await _context
                 .Subscriptions.Where(x => x.Subscription == packageName)
-                .FirstOrDefault();
+                .FirstOrDefaultAsync();
 
             return Stripeproduct != null
                 ? Stripeproduct
@@ -257,9 +260,9 @@ namespace ProbuildBackend.Controllers
                         decimal subscriptionAmount = totalCents / 100m;
 
                         // Check if the subscription already exists in PaymentRecords (if it's a renewal)
-                        var existingRecord = _context
+                        var existingRecord = await _context
                             .PaymentRecords.Where(x => x.SubscriptionID == subscriptionId)
-                            .ToList();
+                            .ToListAsync();
                         DateTime PaidAt = DateTime.UtcNow;
                         if (existingRecord.Count <= 0)
                         {
@@ -375,10 +378,12 @@ namespace ProbuildBackend.Controllers
                     return BadRequest("subscriptionId and packageName are required.");
 
                 var teamMemberUserId =
-                    (from tm in _context.TeamMembers
-                     join u in _context.Users on tm.Email equals u.Email
-                     where tm.Id == payload.AssignedUser
-                     select u.Id).SingleOrDefault();
+                    await (
+                        from tm in _context.TeamMembers
+                        join u in _context.Users on tm.Email equals u.Email
+                        where tm.Id == payload.AssignedUser
+                        select u.Id
+                    ).SingleOrDefaultAsync();
 
                 StripeConfiguration.ApiKey =
                     Environment.GetEnvironmentVariable("StripeAPIKey")
@@ -386,7 +391,7 @@ namespace ProbuildBackend.Controllers
 
                 // Resolve PRICE (not product)
 
-                StripeModel stripeModel = GetPriceIdForPackage(payload.packageName); // Implement this to map package to Price ID
+                StripeModel stripeModel = await GetPriceIdForPackageAsync(payload.packageName); // Implement this to map package to Price ID
 
                 if (string.IsNullOrEmpty(stripeModel.StripeProductId))
                 {
@@ -465,9 +470,9 @@ namespace ProbuildBackend.Controllers
                 });
 
                 // Update your DB
-                var paymentRecord = _context.PaymentRecords
+                var paymentRecord = await _context.PaymentRecords
                     .Where(x => x.SubscriptionID == payload.subscriptionId)
-                    .FirstOrDefault();
+                    .FirstOrDefaultAsync();
 
                 if (paymentRecord != null)
                 {
@@ -477,7 +482,7 @@ namespace ProbuildBackend.Controllers
                     _context.PaymentRecords.Attach(paymentRecord);
                     _context.Entry(paymentRecord).Property(u => u.Package).IsModified = true;
                     _context.Entry(paymentRecord).Property(u => u.Amount).IsModified = true;
-                    _context.SaveChanges();
+                    await _context.SaveChangesAsync();
                 }
 
                 return Ok(new
@@ -572,13 +577,13 @@ namespace ProbuildBackend.Controllers
         }
 
         // Helper method to get or create a Stripe Customer
-        private string GetOrCreateCustomer(string userId)
+        private async Task<string> GetOrCreateCustomerAsync(string userId)
         {
             var customerService = new CustomerService();
 
             // Check if customer exists (you may store Stripe Customer ID in your DB)
             // Example: Query your database for userId to get Stripe Customer ID
-            string StripeCustomerIdFromDB = GetCustomerIdFromDatabase(userId); // Implement this
+            string StripeCustomerIdFromDB = await GetCustomerIdFromDatabaseAsync(userId); // Implement this
             if (string.IsNullOrEmpty(StripeCustomerIdFromDB))
             {
                 // Create a new customer in Stripe
@@ -588,21 +593,21 @@ namespace ProbuildBackend.Controllers
                     // Optionally add email or other details
                     // Email = request.Email,
                 };
-                var customer = customerService.Create(customerOptions);
+                var customer = await customerService.CreateAsync(customerOptions);
                 StripeCustomerIdFromDB = customer.Id;
 
                 // Save customerId to your database for future reference
-                SaveCustomerIdToDatabase(userId, StripeCustomerIdFromDB); // Implement this
+                await SaveCustomerIdToDatabaseAsync(userId, StripeCustomerIdFromDB); // Implement this
             }
 
             return StripeCustomerIdFromDB;
         }
 
-        public string GetCustomerIdFromDatabase(string userId)
+        public async Task<string> GetCustomerIdFromDatabaseAsync(string userId)
         {
             try
             {
-                var customerId = _context.Users.Where(x => x.Id == userId).FirstOrDefault();
+                var customerId = await _context.Users.Where(x => x.Id == userId).FirstOrDefaultAsync();
                 if (customerId == null)
                 {
                     return "User not found";
@@ -615,15 +620,19 @@ namespace ProbuildBackend.Controllers
             }
         }
 
-        public void SaveCustomerIdToDatabase(string userId, string customerId)
+        public async Task SaveCustomerIdToDatabaseAsync(string userId, string customerId)
         {
             try
             {
-                var users = _context.Users.Where(x => x.Id == userId).FirstOrDefault();
+                var users = await _context.Users.Where(x => x.Id == userId).FirstOrDefaultAsync();
+                if (users == null)
+                {
+                    return;
+                }
                 users.StripeCustomerId = customerId;
                 _context.Users.Attach(users);
                 _context.Entry(users).Property(u => u.StripeCustomerId).IsModified = true;
-                _context.SaveChanges();
+                await _context.SaveChangesAsync();
             }
             catch (Exception ex)
             {
@@ -667,7 +676,7 @@ namespace ProbuildBackend.Controllers
                     _context.Entry(subscription).Property(u => u.Status).IsModified = true;
                     _context.Entry(subscription).Property(u => u.Cancelled).IsModified = true;
                     _context.Entry(subscription).Property(u => u.CancelledDate).IsModified = true;
-                    _context.SaveChanges();
+                    await _context.SaveChangesAsync();
                 }
                 else
                 {
@@ -704,7 +713,7 @@ namespace ProbuildBackend.Controllers
 
                 // 1) Resolve the target Price ID from the selected package value
                 //    (Your method must return a PRICE id like "price_...", not a product id)
-                var target = GetPriceIdForPackage(req.PackageName);
+                var target = await GetPriceIdForPackageAsync(req.PackageName);
                 if (string.IsNullOrWhiteSpace(target?.StripeProductId))
                     return BadRequest("Unknown package/price mapping.");
 

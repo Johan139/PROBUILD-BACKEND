@@ -606,9 +606,9 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpGet("AddressTypes")]
-        public IActionResult GetAddressTypes()
+        public async Task<IActionResult> GetAddressTypes()
         {
-            var types = _context.AddressType.OrderBy(t => t.DisplayOrder).ToList();
+            var types = await _context.AddressType.OrderBy(t => t.DisplayOrder).ToListAsync();
 
             return Ok(types);
         }
