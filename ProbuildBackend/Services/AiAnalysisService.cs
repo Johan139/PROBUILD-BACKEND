@@ -225,15 +225,12 @@ namespace ProbuildBackend.Services
                     reportBuilder.Append("\n\n---\n\n");
                     reportBuilder.Append(analysisResult);
 
-                    if (!string.IsNullOrEmpty(connectionId))
-                    {
-                        await ParseAndBroadcastPromptResult(
-                            job.Id,
-                            promptKey,
-                            analysisResult,
-                            connectionId
-                        );
-                    }
+                    await ParseAndBroadcastPromptResult(
+                        job.Id,
+                        promptKey,
+                        analysisResult,
+                        connectionId
+                    );
 
                     step++;
                 }
@@ -910,15 +907,12 @@ namespace ProbuildBackend.Services
                     stringBuilder.Append("\n\n---\n\n");
                     stringBuilder.Append(lastResponse);
 
-                    if (!string.IsNullOrEmpty(connectionId))
-                    {
-                        await ParseAndBroadcastPromptResult(
-                            jobId,
-                            promptName,
-                            lastResponse,
-                            connectionId
-                        );
-                    }
+                    await ParseAndBroadcastPromptResult(
+                        jobId,
+                        promptName,
+                        lastResponse,
+                        connectionId
+                    );
 
                     await MarkPromptCompleted(jobId, promptName);
                     completedCount++;
@@ -1316,7 +1310,7 @@ WHERE [JobId] = {jobId};
             int jobId,
             string promptName,
             string response,
-            string connectionId
+            string? connectionId
         )
         {
             try
@@ -1382,17 +1376,20 @@ WHERE [JobId] = {jobId};
                                 "ParseAndBroadcastPromptResult: Extracted {Count} rooms. Sending 'rooms' via SignalR.",
                                 rooms.Count
                             );
-                            await _hubContext
-                                .Clients.Client(connectionId)
-                                .SendAsync(
-                                    "ReceiveAnalysisData",
-                                    new
-                                    {
-                                        JobId = jobId,
-                                        DataType = "rooms",
-                                        Data = rooms,
-                                    }
-                                );
+                            if (!string.IsNullOrEmpty(connectionId))
+                            {
+                                await _hubContext
+                                    .Clients.Client(connectionId)
+                                    .SendAsync(
+                                        "ReceiveAnalysisData",
+                                        new
+                                        {
+                                            JobId = jobId,
+                                            DataType = "rooms",
+                                            Data = rooms,
+                                        }
+                                    );
+                            }
                             await UpdateAnalysisData(jobId, "rooms", rooms);
                         }
                         else
@@ -1460,17 +1457,20 @@ WHERE [JobId] = {jobId};
                                 "ParseAndBroadcastPromptResult: Extracted {Count} metadata items. Sending 'metadata' via SignalR.",
                                 metadata.Count
                             );
-                            await _hubContext
-                                .Clients.Client(connectionId)
-                                .SendAsync(
-                                    "ReceiveAnalysisData",
-                                    new
-                                    {
-                                        JobId = jobId,
-                                        DataType = "metadata",
-                                        Data = metadata,
-                                    }
-                                );
+                            if (!string.IsNullOrEmpty(connectionId))
+                            {
+                                await _hubContext
+                                    .Clients.Client(connectionId)
+                                    .SendAsync(
+                                        "ReceiveAnalysisData",
+                                        new
+                                        {
+                                            JobId = jobId,
+                                            DataType = "metadata",
+                                            Data = metadata,
+                                        }
+                                    );
+                            }
                             await UpdateAnalysisData(jobId, "metadata", metadata);
                         }
                         else
@@ -1535,17 +1535,20 @@ WHERE [JobId] = {jobId};
                                 "ParseAndBroadcastPromptResult: Extracted {Count} permits. Sending 'permits' via SignalR.",
                                 permits.Count
                             );
-                            await _hubContext
-                                .Clients.Client(connectionId)
-                                .SendAsync(
-                                    "ReceiveAnalysisData",
-                                    new
-                                    {
-                                        JobId = jobId,
-                                        DataType = "permits",
-                                        Data = permits,
-                                    }
-                                );
+                            if (!string.IsNullOrEmpty(connectionId))
+                            {
+                                await _hubContext
+                                    .Clients.Client(connectionId)
+                                    .SendAsync(
+                                        "ReceiveAnalysisData",
+                                        new
+                                        {
+                                            JobId = jobId,
+                                            DataType = "permits",
+                                            Data = permits,
+                                        }
+                                    );
+                            }
                             await UpdateAnalysisData(jobId, "permits", permits);
                         }
                         else
@@ -1620,17 +1623,20 @@ WHERE [JobId] = {jobId};
                                 "ParseAndBroadcastPromptResult: Extracted {Count} blueprint issues. Sending 'blueprint-issues' via SignalR.",
                                 issues.Count
                             );
-                            await _hubContext
-                                .Clients.Client(connectionId)
-                                .SendAsync(
-                                    "ReceiveAnalysisData",
-                                    new
-                                    {
-                                        JobId = jobId,
-                                        DataType = "blueprint-issues",
-                                        Data = issues,
-                                    }
-                                );
+                            if (!string.IsNullOrEmpty(connectionId))
+                            {
+                                await _hubContext
+                                    .Clients.Client(connectionId)
+                                    .SendAsync(
+                                        "ReceiveAnalysisData",
+                                        new
+                                        {
+                                            JobId = jobId,
+                                            DataType = "blueprint-issues",
+                                            Data = issues,
+                                        }
+                                    );
+                            }
                             await UpdateAnalysisData(jobId, "blueprint-issues", issues);
                         }
                         else
@@ -1752,17 +1758,20 @@ WHERE [JobId] = {jobId};
                         _logger.LogInformation(
                             "ParseAndBroadcastPromptResult: Sending 'zoning' via SignalR."
                         );
-                        await _hubContext
-                            .Clients.Client(connectionId)
-                            .SendAsync(
-                                "ReceiveAnalysisData",
-                                new
-                                {
-                                    JobId = jobId,
-                                    DataType = "zoning",
-                                    Data = zoningData,
-                                }
-                            );
+                        if (!string.IsNullOrEmpty(connectionId))
+                        {
+                            await _hubContext
+                                .Clients.Client(connectionId)
+                                .SendAsync(
+                                    "ReceiveAnalysisData",
+                                    new
+                                    {
+                                        JobId = jobId,
+                                        DataType = "zoning",
+                                        Data = zoningData,
+                                    }
+                                );
+                        }
                         await UpdateAnalysisData(jobId, "zoning", zoningData);
                     }
                     else
@@ -1887,17 +1896,20 @@ WHERE [JobId] = {jobId};
                     _logger.LogInformation(
                         "ParseAndBroadcastPromptResult: Sending 'site-logistics' via SignalR."
                     );
-                    await _hubContext
-                        .Clients.Client(connectionId)
-                        .SendAsync(
-                            "ReceiveAnalysisData",
-                            new
-                            {
-                                JobId = jobId,
-                                DataType = "site-logistics",
-                                Data = logistics,
-                            }
-                        );
+                    if (!string.IsNullOrEmpty(connectionId))
+                    {
+                        await _hubContext
+                            .Clients.Client(connectionId)
+                            .SendAsync(
+                                "ReceiveAnalysisData",
+                                new
+                                {
+                                    JobId = jobId,
+                                    DataType = "site-logistics",
+                                    Data = logistics,
+                                }
+                            );
+                    }
                     await UpdateAnalysisData(jobId, "site-logistics", logistics);
                 }
 
@@ -1999,17 +2011,20 @@ WHERE [JobId] = {jobId};
                     _logger.LogInformation(
                         "ParseAndBroadcastPromptResult: Sending 'quality-management' via SignalR."
                     );
-                    await _hubContext
-                        .Clients.Client(connectionId)
-                        .SendAsync(
-                            "ReceiveAnalysisData",
-                            new
-                            {
-                                JobId = jobId,
-                                DataType = "quality-management",
-                                Data = quality,
-                            }
-                        );
+                    if (!string.IsNullOrEmpty(connectionId))
+                    {
+                        await _hubContext
+                            .Clients.Client(connectionId)
+                            .SendAsync(
+                                "ReceiveAnalysisData",
+                                new
+                                {
+                                    JobId = jobId,
+                                    DataType = "quality-management",
+                                    Data = quality,
+                                }
+                            );
+                    }
                     await UpdateAnalysisData(jobId, "quality-management", quality);
                 }
             }
@@ -2765,15 +2780,12 @@ WHERE [JobId] = {jobId};
                     stringBuilder.Append("\n\n---\n\n");
                     stringBuilder.Append(lastResponse);
 
-                    if (!string.IsNullOrEmpty(connectionId))
-                    {
-                        await ParseAndBroadcastPromptResult(
-                            jobId,
-                            promptName,
-                            lastResponse,
-                            connectionId
-                        );
-                    }
+                    await ParseAndBroadcastPromptResult(
+                        jobId,
+                        promptName,
+                        lastResponse,
+                        connectionId
+                    );
 
                     await MarkPromptCompleted(jobId, promptName);
                     completedCount++;
