@@ -70,7 +70,65 @@ namespace ProbuildBackend.Controllers
             _userManager = userManager;
             _cache = cache;
         }
+        [HttpGet("{jobId}/analysis-state")]
+        public async Task<ActionResult<JobAnalysisState>> GetAnalysisState(
+           int jobId,
+           CancellationToken cancellationToken
+       )
+        {
+            try
+            {
+                // Keep this endpoint extremely cheap: it is polled by the UI.
+                var state = await _context.JobAnalysisStates
+                    .AsNoTracking()
+                    .Where(s => s.JobId == jobId)
+                    .Select(s => new JobAnalysisState
+                    {
+                        JobId = s.JobId,
+                        CurrentStep = s.CurrentStep,
+                        TotalSteps = s.TotalSteps,
+                        StatusMessage = s.StatusMessage,
+                        IsComplete = s.IsComplete,
+                        HasFailed = s.HasFailed,
+                        ErrorMessage = s.ErrorMessage,
+                        ExtractedDataJson = s.ExtractedDataJson,
+                        LastUpdated = s.LastUpdated,
+                    })
+                    .FirstOrDefaultAsync(cancellationToken);
 
+                if (state == null)
+                {
+                    return Ok(
+                        new JobAnalysisState
+                        {
+                            JobId = jobId,
+                            CurrentStep = 0,
+                            StatusMessage = "Initializing...",
+                        }
+                    );
+                }
+
+                return Ok(state);
+            }
+            catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == -2)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "SQL timeout while fetching analysis state for Job {JobId}",
+                    jobId
+                );
+
+                // Return a safe fallback instead of a 500 so the UI can keep retrying.
+                return Ok(
+                    new JobAnalysisState
+                    {
+                        JobId = jobId,
+                        CurrentStep = 0,
+                        StatusMessage = "Loading analysis state...",
+                    }
+                );
+            }
+        }
         private async Task<bool> UserCanAccessJobAsync(int jobId, string userId)
         {
             if (string.IsNullOrWhiteSpace(userId))

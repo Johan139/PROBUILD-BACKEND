@@ -184,29 +184,51 @@ namespace ProbuildBackend.Services
 
                     var analysisLink = $"{frontendUrl}/view-quote?{query}";
 
-                    ProjectAnalysisEmail.Subject = ProjectAnalysisEmail.Subject.Replace(
-                        "{{job.ProjectName}}",
-                        job.ProjectName
-                    );
-
-                    ProjectAnalysisEmail.Body = ProjectAnalysisEmail
-                        .Body.Replace("{{UserName}}", user.FirstName + " " + user.LastName)
-                        .Replace("{{job.ProjectName}}", job.ProjectName)
-                        .Replace("{{AnalysisLink}}", analysisLink)
-                        .Replace("{{Header}}", ProjectAnalysisEmail.HeaderHtml)
-                        .Replace("{{Footer}}", ProjectAnalysisEmail.FooterHtml);
+                    var emailToSend = new EmailTemplate
+                    {
+                        TemplateId = ProjectAnalysisEmail.TemplateId,
+                        TemplateName = ProjectAnalysisEmail.TemplateName,
+                        Subject = ProjectAnalysisEmail.Subject?.Replace(
+                            "{{job.ProjectName}}",
+                            job.ProjectName
+                        ),
+                        Body = ProjectAnalysisEmail
+                            .Body.Replace("{{UserName}}", user.FirstName + " " + user.LastName)
+                            .Replace("{{job.ProjectName}}", job.ProjectName)
+                            .Replace("{{AnalysisLink}}", analysisLink)
+                            .Replace("{{Header}}", ProjectAnalysisEmail.HeaderHtml)
+                            .Replace("{{Footer}}", ProjectAnalysisEmail.FooterHtml),
+                        Description = ProjectAnalysisEmail.Description,
+                        FromName = ProjectAnalysisEmail.FromName,
+                        FromEmail = ProjectAnalysisEmail.FromEmail,
+                        IsHtml = ProjectAnalysisEmail.IsHtml,
+                        HeaderHtml = ProjectAnalysisEmail.HeaderHtml,
+                        FooterHtml = ProjectAnalysisEmail.FooterHtml,
+                        LogoUrl = ProjectAnalysisEmail.LogoUrl,
+                        InlineCss = ProjectAnalysisEmail.InlineCss,
+                        LanguageCode = ProjectAnalysisEmail.LanguageCode,
+                        IsActive = ProjectAnalysisEmail.IsActive,
+                        VersionNumber = ProjectAnalysisEmail.VersionNumber,
+                        CreatedBy = ProjectAnalysisEmail.CreatedBy,
+                        CreatedDate = ProjectAnalysisEmail.CreatedDate,
+                        ModifiedBy = ProjectAnalysisEmail.ModifiedBy,
+                        ModifiedDate = ProjectAnalysisEmail.ModifiedDate,
+                    };
                     try
                     {
-                        await _emailService.SendEmailAsync(ProjectAnalysisEmail, user.Email);
-
-                        await MarkEmailSentAsync(jobId);
+                        await _emailService.SendEmailAsync(emailToSend, user.Email);
 
                         if (!string.IsNullOrEmpty(connectionId))
                         {
                             await _hubContext
                                 .Clients.Client(connectionId)
-                                .SendAsync("AnalysisEmailSent", new { JobId = jobId });
+                                .SendAsync(
+                                    "AnalysisEmailSent",
+                                    new { JobId = jobId }
+                                );
                         }
+
+                        await MarkEmailSentAsync(jobId);
                     }
                     catch (Exception ex)
                     {
@@ -378,21 +400,40 @@ namespace ProbuildBackend.Services
 
                     var analysisLink = $"{frontendUrl}/view-quote?{query}";
 
-                    ProjectAnalysisEmail.Subject = ProjectAnalysisEmail.Subject.Replace(
-                        "{{job.ProjectName}}",
-                        job.ProjectName
-                    );
-
-                    ProjectAnalysisEmail.Body = ProjectAnalysisEmail
-                        .Body.Replace("{{UserName}}", user.FirstName + " " + user.LastName)
-                        .Replace("{{job.ProjectName}}", job.ProjectName)
-                        .Replace("{{AnalysisLink}}", analysisLink)
-                        .Replace("{{Header}}", ProjectAnalysisEmail.HeaderHtml)
-                        .Replace("{{Footer}}", ProjectAnalysisEmail.FooterHtml);
+                    var emailToSend = new EmailTemplate
+                    {
+                        TemplateId = ProjectAnalysisEmail.TemplateId,
+                        TemplateName = ProjectAnalysisEmail.TemplateName,
+                        Subject = ProjectAnalysisEmail.Subject?.Replace(
+                            "{{job.ProjectName}}",
+                            job.ProjectName
+                        ),
+                        Body = ProjectAnalysisEmail
+                            .Body.Replace("{{UserName}}", user.FirstName + " " + user.LastName)
+                            .Replace("{{job.ProjectName}}", job.ProjectName)
+                            .Replace("{{AnalysisLink}}", analysisLink)
+                            .Replace("{{Header}}", ProjectAnalysisEmail.HeaderHtml)
+                            .Replace("{{Footer}}", ProjectAnalysisEmail.FooterHtml),
+                        Description = ProjectAnalysisEmail.Description,
+                        FromName = ProjectAnalysisEmail.FromName,
+                        FromEmail = ProjectAnalysisEmail.FromEmail,
+                        IsHtml = ProjectAnalysisEmail.IsHtml,
+                        HeaderHtml = ProjectAnalysisEmail.HeaderHtml,
+                        FooterHtml = ProjectAnalysisEmail.FooterHtml,
+                        LogoUrl = ProjectAnalysisEmail.LogoUrl,
+                        InlineCss = ProjectAnalysisEmail.InlineCss,
+                        LanguageCode = ProjectAnalysisEmail.LanguageCode,
+                        IsActive = ProjectAnalysisEmail.IsActive,
+                        VersionNumber = ProjectAnalysisEmail.VersionNumber,
+                        CreatedBy = ProjectAnalysisEmail.CreatedBy,
+                        CreatedDate = ProjectAnalysisEmail.CreatedDate,
+                        ModifiedBy = ProjectAnalysisEmail.ModifiedBy,
+                        ModifiedDate = ProjectAnalysisEmail.ModifiedDate,
+                    };
 
                     try
                     {
-                        await _emailService.SendEmailAsync(ProjectAnalysisEmail, user.Email);
+                        await _emailService.SendEmailAsync(emailToSend, user.Email);
 
                         await MarkEmailSentAsync(jobId);
 
@@ -555,21 +596,40 @@ namespace ProbuildBackend.Services
 
                     var analysisLink = $"{frontendUrl}/view-quote?{query}";
 
-                    ProjectAnalysisEmail.Subject = ProjectAnalysisEmail.Subject.Replace(
-                        "{{job.ProjectName}}",
-                        job.ProjectName
-                    );
-
-                    ProjectAnalysisEmail.Body = ProjectAnalysisEmail
-                        .Body.Replace("{{UserName}}", user.FirstName + " " + user.LastName)
-                        .Replace("{{job.ProjectName}}", job.ProjectName)
-                        .Replace("{{AnalysisLink}}", analysisLink)
-                        .Replace("{{Header}}", ProjectAnalysisEmail.HeaderHtml)
-                        .Replace("{{Footer}}", ProjectAnalysisEmail.FooterHtml);
+                    var emailToSend = new EmailTemplate
+                    {
+                        TemplateId = ProjectAnalysisEmail.TemplateId,
+                        TemplateName = ProjectAnalysisEmail.TemplateName,
+                        Subject = ProjectAnalysisEmail.Subject?.Replace(
+                            "{{job.ProjectName}}",
+                            job.ProjectName
+                        ),
+                        Body = ProjectAnalysisEmail
+                            .Body.Replace("{{UserName}}", user.FirstName + " " + user.LastName)
+                            .Replace("{{job.ProjectName}}", job.ProjectName)
+                            .Replace("{{AnalysisLink}}", analysisLink)
+                            .Replace("{{Header}}", ProjectAnalysisEmail.HeaderHtml)
+                            .Replace("{{Footer}}", ProjectAnalysisEmail.FooterHtml),
+                        Description = ProjectAnalysisEmail.Description,
+                        FromName = ProjectAnalysisEmail.FromName,
+                        FromEmail = ProjectAnalysisEmail.FromEmail,
+                        IsHtml = ProjectAnalysisEmail.IsHtml,
+                        HeaderHtml = ProjectAnalysisEmail.HeaderHtml,
+                        FooterHtml = ProjectAnalysisEmail.FooterHtml,
+                        LogoUrl = ProjectAnalysisEmail.LogoUrl,
+                        InlineCss = ProjectAnalysisEmail.InlineCss,
+                        LanguageCode = ProjectAnalysisEmail.LanguageCode,
+                        IsActive = ProjectAnalysisEmail.IsActive,
+                        VersionNumber = ProjectAnalysisEmail.VersionNumber,
+                        CreatedBy = ProjectAnalysisEmail.CreatedBy,
+                        CreatedDate = ProjectAnalysisEmail.CreatedDate,
+                        ModifiedBy = ProjectAnalysisEmail.ModifiedBy,
+                        ModifiedDate = ProjectAnalysisEmail.ModifiedDate,
+                    };
 
                     try
                     {
-                        await _emailService.SendEmailAsync(ProjectAnalysisEmail, user.Email);
+                        await _emailService.SendEmailAsync(emailToSend, user.Email);
 
                         await MarkEmailSentAsync(jobId);
 
