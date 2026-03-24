@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Security.Claims;
 using Hangfire;
 using Hangfire.Common;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
@@ -70,6 +71,17 @@ namespace ProbuildBackend.Controllers
             _cache = cache;
         }
 
+        private async Task<bool> UserCanAccessJobAsync(int jobId, string userId)
+        {
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return false;
+            }
+
+            return await _context.Jobs.AsNoTracking().AnyAsync(j => j.Id == jobId && j.UserId == userId)
+                || await _context.JobAssignments.AsNoTracking().AnyAsync(a => a.JobId == jobId && a.UserId == userId);
+        }
+
         [HttpGet("{jobId}/planning-data")]
         public async Task<ActionResult<PlanningDataDto>> GetPlanningData(int jobId)
         {
@@ -77,210 +89,24 @@ namespace ProbuildBackend.Controllers
             return Ok(data);
         }
 
-        [HttpGet("{jobId}/analysis-state")]
-        public async Task<ActionResult<JobAnalysisState>> GetAnalysisState(
-            int jobId,
-            CancellationToken cancellationToken
-        )
-        {
-            try
-            {
-                // Keep this endpoint extremely cheap: it is polled by the UI.
-                var state = await _context.JobAnalysisStates
-                    .AsNoTracking()
-                    .Where(s => s.JobId == jobId)
-                    .Select(s => new JobAnalysisState
-                    {
-                        JobId = s.JobId,
-                        CurrentStep = s.CurrentStep,
-                        TotalSteps = s.TotalSteps,
-                        StatusMessage = s.StatusMessage,
-                        IsComplete = s.IsComplete,
-                        HasFailed = s.HasFailed,
-                        ErrorMessage = s.ErrorMessage,
-                        ExtractedDataJson = s.ExtractedDataJson,
-                        LastUpdated = s.LastUpdated,
-                    })
-                    .FirstOrDefaultAsync(cancellationToken);
-
-                if (state == null)
-                {
-                    return Ok(
-                        new JobAnalysisState
-                        {
-                            JobId = jobId,
-                            CurrentStep = 0,
-                            StatusMessage = "Initializing...",
-                        }
-                    );
-                }
-
-                return Ok(state);
-            }
-            catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == -2)
-            {
-                _logger.LogWarning(
-                    ex,
-                    "SQL timeout while fetching analysis state for Job {JobId}",
-                    jobId
-                );
-
-                // Return a safe fallback instead of a 500 so the UI can keep retrying.
-                return Ok(
-                    new JobAnalysisState
-                    {
-                        JobId = jobId,
-                        CurrentStep = 0,
-                        StatusMessage = "Loading analysis state...",
-                    }
-                );
-            }
-        }
-
-        [HttpGet]
-        public async Task<ActionResult<IEnumerable<JobModel>>> GetJobs()
-        {
-            return await _context.Jobs.ToListAsync();
-        }
-
-        [HttpGet("public")]
-        public async Task<ActionResult<IEnumerable<object>>> GetPublicJobs()
-        {
-            try
-            {
-                var postings = await _context
-                    .TradePackages.Where(tp =>
-                        tp.PostedToMarketplace
-                        && tp.ArchivedAt == null
-                        && !tp.IsHidden
-                        && !tp.IsInactive
-                        && !tp.IsInHouse
-                        && tp.Job != null
-                        && tp.Job.ArchivedAt == null
-                    )
-                    .AsNoTracking()
-                    .Include(tp => tp.Job)
-                        .ThenInclude(j => j.JobAddress)
-                    .ToListAsync();
-
-                _logger.LogInformation("GetPublicJobs: postings fetched {Count}", postings.Count);
-
-                var userIds = postings
-                    .Select(p => p.Job != null ? p.Job.UserId : null)
-                    .Where(id => !string.IsNullOrWhiteSpace(id))
-                    .Distinct()
-                    .ToList();
-
-                _logger.LogInformation("GetPublicJobs: distinct userIds {Count}", userIds.Count);
-
-                var users = await _context.Users
-                    .Where(u => userIds.Contains(u.Id))
-                    .ToDictionaryAsync(u => u.Id);
-
-                var ratingsByUser = await _context.Ratings
-                    .Where(r => userIds.Contains(r.RatedUserId))
-                    .GroupBy(r => r.RatedUserId)
-                    .Select(g => new { UserId = g.Key, Avg = g.Average(r => r.RatingValue) })
-                    .ToDictionaryAsync(g => g.UserId, g => g.Avg);
-
-                var result = postings
-                    .Select(tp =>
-                    {
-                        var job = tp.Job;
-                        var address = job?.JobAddress;
-
-                        var displayBudget = tp.EffectiveBudget > 0
-                            ? tp.EffectiveBudget
-                            : (tp.TotalBudget > 0 ? tp.TotalBudget : tp.Budget);
-
-                        var displayEstimatedManHours = tp.EstimatedManHours > 0
-                            ? tp.EstimatedManHours
-                            : (
-                                tp.LaborBudget > 0 && tp.HourlyRate > 0
-                                    ? Math.Round(tp.LaborBudget / tp.HourlyRate, 2)
-                                    : 0
-                            );
-
-                        var displayEstimatedDuration = !string.IsNullOrWhiteSpace(tp.EstimatedDuration)
-                            ? tp.EstimatedDuration
-                            : "TBD";
-
-                        var user = job != null && !string.IsNullOrWhiteSpace(job.UserId)
-                            ? users.GetValueOrDefault(job.UserId)
-                            : null;
-                        var clientRating = job != null && !string.IsNullOrWhiteSpace(job.UserId)
-                            ? ratingsByUser.GetValueOrDefault(job.UserId, 0)
-                            : 0;
-
-                        var formattedAddress = job?.Address
-                            ?? (address != null ? address.FormattedAddress : "");
-
-                        return new
-                        {
-                            jobId = tp.JobId,
-                            tradePackageId = tp.Id,
-                            projectName = job != null ? job.ProjectName : string.Empty,
-                            jobType = !string.IsNullOrWhiteSpace(tp.Category)
-                                ? tp.Category
-                                : (job != null ? job.JobType : string.Empty),
-                            status = !string.IsNullOrWhiteSpace(tp.Status) ? tp.Status : "Posted",
-                            address = formattedAddress,
-                            streetNumber = address != null ? address.StreetNumber : string.Empty,
-                            streetName = address != null ? address.StreetName : string.Empty,
-                            city = address != null ? address.City : string.Empty,
-                            state = address != null ? address.State : string.Empty,
-                            postalCode = address != null ? address.PostalCode : string.Empty,
-                            country = address != null ? address.Country : string.Empty,
-                            latitude = address != null && address.Latitude.HasValue
-                                ? address.Latitude.Value.ToString()
-                                : "0",
-                            longitude = address != null && address.Longitude.HasValue
-                                ? address.Longitude.Value.ToString()
-                                : "0",
-                            googlePlaceId = address != null ? address.GooglePlaceId : string.Empty,
-                            description = tp.ScopeOfWork ?? string.Empty,
-                            title = tp.TradeName,
-                            biddingType = tp.LaborType ?? "Labor and Materials",
-                            trades = new[] { tp.TradeName },
-                            tradeBudgets = new[]
-                            {
-                                new
-                                {
-                                    tradeName = tp.TradeName,
-                                    budget = (double)displayBudget,
-                                },
-                            },
-                            potentialStartDate = tp.StartDate,
-                            biddingStartDate = tp.BidDeadline ?? tp.CreatedAt,
-                            createdAt = tp.CreatedAt,
-                            clientName = user != null ? $"{user.FirstName} {user.LastName}" : string.Empty,
-                            clientCompanyName = user?.CompanyName,
-                            clientRating = clientRating,
-                            tradePackageLaborBudgetVisible = tp.LaborBudgetVisible,
-                            tradePackageMaterialBudgetVisible = tp.MaterialBudgetVisible,
-                            tradePackageEstimatedManHours = displayEstimatedManHours,
-                            tradePackageEstimatedDuration = displayEstimatedDuration,
-                        };
-                    })
-                    .OrderByDescending(r => r.createdAt)
-                    .ToList();
-
-                _logger.LogInformation("GetPublicJobs: returning {Count} records", result.Count);
-
-                return Ok(result);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "GetPublicJobs failed");
-                return StatusCode(500, new { error = "GetPublicJobs failed", details = ex.Message });
-            }
-        }
-
         [HttpGet("Id/{id}")]
+        [Authorize]
         public async Task<ActionResult<JobDto>> GetJob(int id)
         {
             try
             {
+                var currentUserId = _httpContextAccessor.HttpContext?.User.FindFirstValue("UserId");
+                if (string.IsNullOrWhiteSpace(currentUserId))
+                {
+                    return Unauthorized();
+                }
+
+                var canAccess = await UserCanAccessJobAsync(id, currentUserId);
+                if (!canAccess)
+                {
+                    return NotFound();
+                }
+
                 var job = await _context
                     .Jobs.Include(j => j.TradeBudgets)
                     .FirstOrDefaultAsync(j => j.Id == id);
@@ -481,7 +307,7 @@ namespace ProbuildBackend.Controllers
 
                     decompressedStream.Position = 0;
 
-                    // ⛏ Infer the correct type from file extension (e.g., .pdf)
+                    // Infer the correct type from file extension (e.g., .pdf)
                     string inferredContentType = FileHelpers.GetContentTypeFromFileName(
                         originalFileName
                     );
@@ -489,7 +315,7 @@ namespace ProbuildBackend.Controllers
                     return File(decompressedStream, inferredContentType, originalFileName);
                 }
 
-                // ✅ if not gzip, just return with actual type
+                // if not gzip, just return with actual type
                 return File(contentStream, contentType, originalFileName);
             }
             catch (FileNotFoundException ex)
@@ -563,6 +389,18 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
+                var currentUserId = _httpContextAccessor.HttpContext?.User.FindFirstValue("UserId");
+                if (string.IsNullOrWhiteSpace(currentUserId))
+                {
+                    return Unauthorized();
+                }
+
+                var canAccess = await UserCanAccessJobAsync(jobId, currentUserId);
+                if (!canAccess)
+                {
+                    return NotFound();
+                }
+
                 var results = await _context
                     .DocumentProcessingResults.Where(r => r.JobId == jobId)
                     .ToListAsync();
@@ -584,10 +422,23 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpGet("processing-status/{jobId}")]
+        [Authorize]
         public async Task<IActionResult> GetProcessingStatus(int jobId)
         {
             try
             {
+                var currentUserId = _httpContextAccessor.HttpContext?.User.FindFirstValue("UserId");
+                if (string.IsNullOrWhiteSpace(currentUserId))
+                {
+                    return Unauthorized();
+                }
+
+                var canAccess = await UserCanAccessJobAsync(jobId, currentUserId);
+                if (!canAccess)
+                {
+                    return NotFound();
+                }
+
                 var job = await _context.Jobs.FindAsync(jobId);
                 if (job == null)
                 {
