@@ -270,7 +270,138 @@ namespace ProbuildBackend.Controllers
                 return StatusCode(500, "An error occurred while retrieving the job.");
             }
         }
+        [HttpGet("public")]
+        public async Task<ActionResult<IEnumerable<object>>> GetPublicJobs()
+        {
+            try
+            {
+                var postings = await _context
+                    .TradePackages.Where(tp =>
+                        tp.PostedToMarketplace
+                        && tp.ArchivedAt == null
+                        && !tp.IsHidden
+                        && !tp.IsInactive
+                        && !tp.IsInHouse
+                        && tp.Job != null
+                        && tp.Job.ArchivedAt == null
+                    )
+                    .AsNoTracking()
+                    .Include(tp => tp.Job)
+                        .ThenInclude(j => j.JobAddress)
+                    .ToListAsync();
 
+                _logger.LogInformation("GetPublicJobs: postings fetched {Count}", postings.Count);
+
+                var userIds = postings
+                    .Select(p => p.Job != null ? p.Job.UserId : null)
+                    .Where(id => !string.IsNullOrWhiteSpace(id))
+                    .Distinct()
+                    .ToList();
+
+                _logger.LogInformation("GetPublicJobs: distinct userIds {Count}", userIds.Count);
+
+                var users = await _context.Users
+                    .Where(u => userIds.Contains(u.Id))
+                    .ToDictionaryAsync(u => u.Id);
+
+                var ratingsByUser = await _context.Ratings
+                    .Where(r => userIds.Contains(r.RatedUserId))
+                    .GroupBy(r => r.RatedUserId)
+                    .Select(g => new { UserId = g.Key, Avg = g.Average(r => r.RatingValue) })
+                    .ToDictionaryAsync(g => g.UserId, g => g.Avg);
+
+                var result = postings
+                    .Select(tp =>
+                    {
+                        var job = tp.Job;
+                        var address = job?.JobAddress;
+
+                        var displayBudget = tp.EffectiveBudget > 0
+                            ? tp.EffectiveBudget
+                            : (tp.TotalBudget > 0 ? tp.TotalBudget : tp.Budget);
+
+                        var displayEstimatedManHours = tp.EstimatedManHours > 0
+                            ? tp.EstimatedManHours
+                            : (
+                                tp.LaborBudget > 0 && tp.HourlyRate > 0
+                                    ? Math.Round(tp.LaborBudget / tp.HourlyRate, 2)
+                                    : 0
+                            );
+
+                        var displayEstimatedDuration = !string.IsNullOrWhiteSpace(tp.EstimatedDuration)
+                            ? tp.EstimatedDuration
+                            : "TBD";
+
+                        var user = job != null && !string.IsNullOrWhiteSpace(job.UserId)
+                            ? users.GetValueOrDefault(job.UserId)
+                            : null;
+                        var clientRating = job != null && !string.IsNullOrWhiteSpace(job.UserId)
+                            ? ratingsByUser.GetValueOrDefault(job.UserId, 0)
+                            : 0;
+
+                        var formattedAddress = job?.Address
+                            ?? (address != null ? address.FormattedAddress : "");
+
+                        return new
+                        {
+                            jobId = tp.JobId,
+                            tradePackageId = tp.Id,
+                            projectName = job != null ? job.ProjectName : string.Empty,
+                            jobType = !string.IsNullOrWhiteSpace(tp.Category)
+                                ? tp.Category
+                                : (job != null ? job.JobType : string.Empty),
+                            status = !string.IsNullOrWhiteSpace(tp.Status) ? tp.Status : "Posted",
+                            address = formattedAddress,
+                            streetNumber = address != null ? address.StreetNumber : string.Empty,
+                            streetName = address != null ? address.StreetName : string.Empty,
+                            city = address != null ? address.City : string.Empty,
+                            state = address != null ? address.State : string.Empty,
+                            postalCode = address != null ? address.PostalCode : string.Empty,
+                            country = address != null ? address.Country : string.Empty,
+                            latitude = address != null && address.Latitude.HasValue
+                                ? address.Latitude.Value.ToString()
+                                : "0",
+                            longitude = address != null && address.Longitude.HasValue
+                                ? address.Longitude.Value.ToString()
+                                : "0",
+                            googlePlaceId = address != null ? address.GooglePlaceId : string.Empty,
+                            description = tp.ScopeOfWork ?? string.Empty,
+                            title = tp.TradeName,
+                            biddingType = tp.LaborType ?? "Labor and Materials",
+                            trades = new[] { tp.TradeName },
+                            tradeBudgets = new[]
+                            {
+                                new
+                                {
+                                    tradeName = tp.TradeName,
+                                    budget = (double)displayBudget,
+                                },
+                            },
+                            potentialStartDate = tp.StartDate,
+                            biddingStartDate = tp.BidDeadline ?? tp.CreatedAt,
+                            createdAt = tp.CreatedAt,
+                            clientName = user != null ? $"{user.FirstName} {user.LastName}" : string.Empty,
+                            clientCompanyName = user?.CompanyName,
+                            clientRating = clientRating,
+                            tradePackageLaborBudgetVisible = tp.LaborBudgetVisible,
+                            tradePackageMaterialBudgetVisible = tp.MaterialBudgetVisible,
+                            tradePackageEstimatedManHours = displayEstimatedManHours,
+                            tradePackageEstimatedDuration = displayEstimatedDuration,
+                        };
+                    })
+                    .OrderByDescending(r => r.createdAt)
+                    .ToList();
+
+                _logger.LogInformation("GetPublicJobs: returning {Count} records", result.Count);
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GetPublicJobs failed");
+                return StatusCode(500, new { error = "GetPublicJobs failed", details = ex.Message });
+            }
+        }
         [HttpGet("download/{documentId}")]
         public async Task<IActionResult> DownloadBlob(int documentId)
         {
