@@ -28,6 +28,7 @@ namespace ProbuildBackend.Services
         private const string RenovationAnalysisPersonaKey = "ProBuildAI_Renovation_Prompt.txt";
         private const string FailureCorrectiveActionKey = "prompt-failure-corrective-action.txt";
         private const string BidComparisonPromptKey = "subcontractor-comparison-prompt.txt";
+        private const string InitialAnalysisPhaseTitle = "Initial Analysis & Reporting";
 
         public AiAnalysisService(
             ILogger<AiAnalysisService> logger,
@@ -137,6 +138,8 @@ namespace ProbuildBackend.Services
                     );
                 }
 
+                initialResponse = EnsurePhaseHeading(initialResponse, 1, InitialAnalysisPhaseTitle);
+
                 var reportBuilder = new StringBuilder();
                 reportBuilder.Append(initialResponse);
 
@@ -198,10 +201,8 @@ namespace ProbuildBackend.Services
                     );
 
                     var subPrompt = await _promptManager.GetPromptAsync(null, promptKey);
-                    var phasePrefix = BuildPhaseInstructionPrefix(
-                        step,
-                        FormatPromptStatusLabel(promptKey)
-                    );
+                    var phaseTitle = FormatPromptStatusLabel(promptKey);
+                    var phasePrefix = BuildPhaseInstructionPrefix(step, phaseTitle);
                     var (analysisResult, _) = await _aiService.ContinueConversationAsync(
                         conversationId,
                         userId,
@@ -210,6 +211,7 @@ namespace ProbuildBackend.Services
                         true,
                         personaWithoutJson
                     );
+                    analysisResult = EnsurePhaseHeading(analysisResult, step, phaseTitle);
                     var message = new Message
                     {
                         ConversationId = conversationId,
@@ -466,6 +468,8 @@ namespace ProbuildBackend.Services
                     );
                 }
 
+                initialResponse = EnsurePhaseHeading(initialResponse, 1, InitialAnalysisPhaseTitle);
+
                 _logger.LogInformation(
                     "Blueprint fitness check PASSED for conversation {ConversationId}. Proceeding with full sequential analysis.",
                     conversationId
@@ -639,6 +643,8 @@ namespace ProbuildBackend.Services
                     );
                 }
 
+                initialResponse = EnsurePhaseHeading(initialResponse, 1, InitialAnalysisPhaseTitle);
+
                 _logger.LogInformation(
                     "Blueprint fitness check PASSED for renovation conversation {ConversationId}. Proceeding with full sequential analysis.",
                     conversationId
@@ -785,6 +791,7 @@ namespace ProbuildBackend.Services
         )
         {
             var stringBuilder = new StringBuilder();
+            initialResponse = EnsurePhaseHeading(initialResponse, 1, InitialAnalysisPhaseTitle);
             stringBuilder.Append(initialResponse);
 
             var promptNames = new[]
@@ -844,11 +851,13 @@ namespace ProbuildBackend.Services
                         continue;
                     }
 
-                    var step = completedCount + 1;
+                    var progressStep = completedCount + 1;
+                    var promptIndex = Array.IndexOf(promptNames, promptName);
+                    var phaseNumber = promptIndex >= 0 ? promptIndex + 2 : progressStep;
 
                     _logger.LogInformation(
                         "Executing step {Step} of {TotalSteps}: {PromptName} for conversation {ConversationId}",
-                        step,
+                        progressStep,
                         promptNames.Length,
                         promptName,
                         conversationId
@@ -865,7 +874,7 @@ namespace ProbuildBackend.Services
                                     JobId = jobId,
                                     StatusMessage =
                                         $"Analyzing: {FormatPromptStatusLabel(promptName)}",
-                                    CurrentStep = step,
+                                    CurrentStep = progressStep,
                                     TotalSteps = promptNames.Length,
                                     IsComplete = false,
                                     HasFailed = false,
@@ -876,15 +885,13 @@ namespace ProbuildBackend.Services
                     await UpdateAnalysisState(
                         jobId,
                         $"Analyzing: {FormatPromptStatusLabel(promptName)}",
-                        step,
+                        progressStep,
                         promptNames.Length
                     );
 
                     var promptText = await _promptManager.GetPromptAsync("", $"{promptName}.txt");
-                    var phasePrefix = BuildPhaseInstructionPrefix(
-                        step,
-                        FormatPromptStatusLabel(promptName)
-                    );
+                    var phaseTitle = FormatPromptStatusLabel(promptName);
+                    var phasePrefix = BuildPhaseInstructionPrefix(phaseNumber, phaseTitle);
                     (lastResponse, _) = await _aiService.ContinueConversationAsync(
                         conversationId,
                         userId,
@@ -892,6 +899,7 @@ namespace ProbuildBackend.Services
                         null,
                         true
                     );
+                    lastResponse = EnsurePhaseHeading(lastResponse, phaseNumber, phaseTitle);
 
                     await _conversationRepo.AddMessageIfNotExistsAsync(
                         new Message
@@ -993,7 +1001,38 @@ namespace ProbuildBackend.Services
                 return string.Empty;
             }
 
-            return string.Join("\n\n---\n\n", modelMessages);
+            // Rebuild with server-authoritative sequential phase numbers so duplicate/missing
+            // phase headings from resumed runs or model drift cannot leak into the final report.
+            var normalizedPhaseMessages = new List<string>();
+            var nonPhaseMessages = new List<string>();
+            var phaseNumber = 1;
+
+            foreach (var message in modelMessages)
+            {
+                if (TryExtractFirstPhaseTitle(message, out var phaseTitle))
+                {
+                    normalizedPhaseMessages.Add(EnsurePhaseHeading(message, phaseNumber, phaseTitle));
+                    phaseNumber++;
+                    continue;
+                }
+
+                if (phaseNumber == 1)
+                {
+                    normalizedPhaseMessages.Add(
+                        EnsurePhaseHeading(message, phaseNumber, InitialAnalysisPhaseTitle)
+                    );
+                    phaseNumber++;
+                    continue;
+                }
+
+                nonPhaseMessages.Add(message.Trim());
+            }
+
+            var orderedMessages = normalizedPhaseMessages
+                .Concat(nonPhaseMessages.Where(m => !string.IsNullOrWhiteSpace(m)))
+                .ToList();
+
+            return string.Join("\n\n---\n\n", orderedMessages);
         }
 
         private async Task<HashSet<string>> GetCompletedPromptNames(int jobId)
@@ -2676,6 +2715,7 @@ WHERE [JobId] = {jobId};
         )
         {
             var stringBuilder = new StringBuilder();
+            initialResponse = EnsurePhaseHeading(initialResponse, 1, InitialAnalysisPhaseTitle);
             stringBuilder.Append(initialResponse);
 
             var promptNames = new[]
@@ -2754,10 +2794,8 @@ WHERE [JobId] = {jobId};
                         "RenovationPrompts/",
                         $"{promptName}.txt"
                     );
-                    var phasePrefix = BuildPhaseInstructionPrefix(
-                        step,
-                        FormatPromptStatusLabel(promptName)
-                    );
+                    var phaseTitle = FormatPromptStatusLabel(promptName);
+                    var phasePrefix = BuildPhaseInstructionPrefix(step, phaseTitle);
                     (lastResponse, _) = await _aiService.ContinueConversationAsync(
                         conversationId,
                         userId,
@@ -2765,6 +2803,7 @@ WHERE [JobId] = {jobId};
                         null,
                         true
                     );
+                    lastResponse = EnsurePhaseHeading(lastResponse, step, phaseTitle);
 
                     await _conversationRepo.AddMessageIfNotExistsAsync(
                         new Message
@@ -3469,6 +3508,85 @@ WHERE [JobId] = {jobId};
 - Start your response with the exact title line: ### Phase {safePhase}: {safeTitle}
 - Continue with the requested content immediately after that title.
 ";
+        }
+
+        private static string EnsurePhaseHeading(
+            string? rawResponse,
+            int phaseNumber,
+            string phaseTitle
+        )
+        {
+            var safePhase = Math.Max(1, phaseNumber);
+            var safeTitle = string.IsNullOrWhiteSpace(phaseTitle) ? "Analysis" : phaseTitle.Trim();
+            var canonicalHeading = $"### Phase {safePhase}: {safeTitle}";
+            var response = (rawResponse ?? string.Empty).TrimStart();
+
+            if (string.IsNullOrWhiteSpace(response))
+            {
+                return canonicalHeading;
+            }
+
+            var phaseHeadingRegex = new Regex(
+                @"^\s*#{2,6}\s*Phase\s+\d+\s*:\s*.*$",
+                RegexOptions.Multiline | RegexOptions.IgnoreCase
+            );
+            var firstHeadingMatch = phaseHeadingRegex.Match(response);
+
+            if (firstHeadingMatch.Success)
+            {
+                response = phaseHeadingRegex.Replace(response, canonicalHeading, 1);
+            }
+            else
+            {
+                response = $"{canonicalHeading}\n\n{response}";
+            }
+
+            // Prevent accidental extra top-level phase headings in a single model response.
+            // These can make the final report appear to have duplicated phases.
+            var lines = response.Split('\n');
+            for (var i = 1; i < lines.Length; i++)
+            {
+                var extraHeadingMatch = Regex.Match(
+                    lines[i],
+                    @"^\s*#{2,6}\s*Phase\s+\d+\s*:\s*(.*)$",
+                    RegexOptions.IgnoreCase
+                );
+                if (!extraHeadingMatch.Success)
+                {
+                    continue;
+                }
+
+                var extraTitle = extraHeadingMatch.Groups[1].Value.Trim();
+                lines[i] = string.IsNullOrWhiteSpace(extraTitle)
+                    ? "#### Additional Details"
+                    : $"#### {extraTitle}";
+            }
+
+            return string.Join("\n", lines);
+        }
+
+        private static bool TryExtractFirstPhaseTitle(string content, out string phaseTitle)
+        {
+            phaseTitle = string.Empty;
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                return false;
+            }
+
+            var match = Regex.Match(
+                content,
+                @"^\s*#{2,6}\s*Phase\s+\d+\s*:\s*(.*)$",
+                RegexOptions.Multiline | RegexOptions.IgnoreCase
+            );
+            if (!match.Success)
+            {
+                return false;
+            }
+
+            phaseTitle = string.IsNullOrWhiteSpace(match.Groups[1].Value)
+                ? "Analysis"
+                : match.Groups[1].Value.Trim();
+            return true;
         }
 
         private async Task UpdateAnalysisState(
