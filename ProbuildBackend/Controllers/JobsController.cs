@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.IO.Compression;
 using System.Security.Claims;
 using Hangfire;
@@ -1437,6 +1437,8 @@ namespace ProbuildBackend.Controllers
                         j.Status,
                         j.ThumbnailUrl,
                         j.CreatedAt,
+                        j.DesiredStartDate,
+                        j.BuildingSize,
                         OwnerId = j.UserId,
                     })
                     .ToListAsync();
@@ -1522,6 +1524,8 @@ namespace ProbuildBackend.Controllers
                             Team = teamSize,
                             ClientName = clientName,
                             CreatedAt = job.CreatedAt,
+                            DesiredStartDate = job.DesiredStartDate,
+                            BuildingSize = job.BuildingSize,
                         };
                     })
                     .OrderByDescending(p => p.CreatedAt)
