@@ -272,7 +272,7 @@ builder.Services.AddHangfire(config =>
 );
 builder.Services.AddHangfireServer(options =>
 {
-  options.WorkerCount = 2;
+  options.WorkerCount = 4;
   options.ServerName = "Probuild-Hangfire-Server";
 });
 builder.Services.AddScoped<IEmailService, EmailService>();

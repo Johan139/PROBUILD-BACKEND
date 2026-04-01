@@ -76,8 +76,14 @@ namespace ProbuildBackend.Controllers
            CancellationToken cancellationToken
        )
         {
+            var cacheKey = $"analysis-state:{jobId}";
             try
             {
+                if (_cache.TryGetValue(cacheKey, out JobAnalysisState? cachedState) && cachedState != null)
+                {
+                    return Ok(cachedState);
+                }
+
                 // Keep this endpoint extremely cheap: it is polled by the UI.
                 var state = await _context.JobAnalysisStates
                     .AsNoTracking()
@@ -98,16 +104,17 @@ namespace ProbuildBackend.Controllers
 
                 if (state == null)
                 {
-                    return Ok(
-                        new JobAnalysisState
-                        {
-                            JobId = jobId,
-                            CurrentStep = 0,
-                            StatusMessage = "Initializing...",
-                        }
-                    );
+                    var initialState = new JobAnalysisState
+                    {
+                        JobId = jobId,
+                        CurrentStep = 0,
+                        StatusMessage = "Initializing...",
+                    };
+                    _cache.Set(cacheKey, initialState, TimeSpan.FromSeconds(3));
+                    return Ok(initialState);
                 }
 
+                _cache.Set(cacheKey, state, TimeSpan.FromSeconds(3));
                 return Ok(state);
             }
             catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == -2)
@@ -119,14 +126,14 @@ namespace ProbuildBackend.Controllers
                 );
 
                 // Return a safe fallback instead of a 500 so the UI can keep retrying.
-                return Ok(
-                    new JobAnalysisState
-                    {
-                        JobId = jobId,
-                        CurrentStep = 0,
-                        StatusMessage = "Loading analysis state...",
-                    }
-                );
+                var fallbackState = new JobAnalysisState
+                {
+                    JobId = jobId,
+                    CurrentStep = 0,
+                    StatusMessage = "Loading analysis state...",
+                };
+                _cache.Set(cacheKey, fallbackState, TimeSpan.FromSeconds(3));
+                return Ok(fallbackState);
             }
         }
         private async Task<bool> UserCanAccessJobAsync(int jobId, string userId)
@@ -157,6 +164,12 @@ namespace ProbuildBackend.Controllers
                 if (string.IsNullOrWhiteSpace(currentUserId))
                 {
                     return Unauthorized();
+                }
+
+                var cacheKey = $"job-details:{currentUserId}:{id}";
+                if (_cache.TryGetValue(cacheKey, out JobDto? cachedJobDto) && cachedJobDto != null)
+                {
+                    return Ok(cachedJobDto);
                 }
 
                 var canAccess = await UserCanAccessJobAsync(id, currentUserId);
@@ -263,6 +276,7 @@ namespace ProbuildBackend.Controllers
                         : null,
                 };
 
+                _cache.Set(cacheKey, jobDto, TimeSpan.FromSeconds(10));
                 return Ok(jobDto);
             }
             catch (Exception ex)
