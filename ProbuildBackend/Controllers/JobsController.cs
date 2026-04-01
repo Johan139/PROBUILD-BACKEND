@@ -1448,6 +1448,7 @@ namespace ProbuildBackend.Controllers
                         j.ProjectName,
                         j.Address,
                         JobAddressFormattedAddress = j.JobAddress.FormattedAddress,
+                        JobAddressCountry = j.JobAddress.Country,
                         j.Status,
                         j.ThumbnailUrl,
                         j.CreatedAt,
@@ -1540,6 +1541,7 @@ namespace ProbuildBackend.Controllers
                             CreatedAt = job.CreatedAt,
                             DesiredStartDate = job.DesiredStartDate,
                             BuildingSize = job.BuildingSize,
+                            Country = job.JobAddressCountry,
                         };
                     })
                     .OrderByDescending(p => p.CreatedAt)
