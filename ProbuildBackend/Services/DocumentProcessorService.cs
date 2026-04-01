@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Web;
 using Hangfire;
 using Hangfire.Storage;
@@ -21,6 +21,7 @@ namespace ProbuildBackend.Services
         private readonly IConversationRepository _conversationRepository;
         private readonly AzureBlobService _azureBlobService;
         private readonly IEmailTemplateService _emailTemplate;
+        private readonly IJobSubtaskTimelineSyncService _jobSubtaskTimelineSync;
 
         public DocumentProcessorService(
             ApplicationDbContext context,
@@ -29,7 +30,8 @@ namespace ProbuildBackend.Services
             IAiAnalysisService aiAnalysisService,
             IConversationRepository conversationRepository,
             AzureBlobService azureBlobService,
-            IEmailTemplateService emailTemplate
+            IEmailTemplateService emailTemplate,
+            IJobSubtaskTimelineSyncService jobSubtaskTimelineSync
         )
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
@@ -42,10 +44,12 @@ namespace ProbuildBackend.Services
                 ?? throw new ArgumentNullException(nameof(conversationRepository));
             _azureBlobService = azureBlobService;
             _emailTemplate = emailTemplate;
+            _jobSubtaskTimelineSync =
+                jobSubtaskTimelineSync
+                ?? throw new ArgumentNullException(nameof(jobSubtaskTimelineSync));
         }
 
         [AutomaticRetry(Attempts = 3, OnAttemptsExceeded = AttemptsExceededAction.Fail)]
-        [DisableConcurrentExecution(timeoutInSeconds: 60 * 60)]
         public async Task ProcessDocumentsForJobAsync(
             int jobId,
             List<string> documentUrls,
@@ -58,9 +62,6 @@ namespace ProbuildBackend.Services
             string? ipAddress = null
         )
         {
-            using var distributedLock = JobStorage.Current
-                .GetConnection()
-                .AcquireDistributedLock($"analysis:comprehensive:job:{jobId}", TimeSpan.FromHours(1));
             try
             {
                 var job = await _context.Jobs.FindAsync(jobId);
@@ -68,6 +69,10 @@ namespace ProbuildBackend.Services
                 {
                     throw new InvalidOperationException($"Job with ID {jobId} not found.");
                 }
+                using var userAnalysisLock = AcquireUserAnalysisLock(job.UserId);
+                using var jobLock = JobStorage.Current
+                    .GetConnection()
+                    .AcquireDistributedLock($"analysis:comprehensive:job:{jobId}", TimeSpan.FromHours(1));
 
                 var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == job.UserId);
                 if (user == null)
@@ -97,6 +102,7 @@ namespace ProbuildBackend.Services
                 };
 
                 _context.DocumentProcessingResults.Add(processingResult);
+                await _jobSubtaskTimelineSync.ReplaceSubtasksFromReportAsync(jobId, finalReport);
                 await _context.SaveChangesAsync();
 
                 job.Status = "PRELIMINARY";
@@ -301,7 +307,6 @@ namespace ProbuildBackend.Services
         }
 
         [AutomaticRetry(Attempts = 3, OnAttemptsExceeded = AttemptsExceededAction.Fail)]
-        [DisableConcurrentExecution(timeoutInSeconds: 60 * 60)]
         public async Task ProcessSelectedAnalysisForJobAsync(
             int jobId,
             List<string> documentUrls,
@@ -319,6 +324,7 @@ namespace ProbuildBackend.Services
                 // Log error
                 return;
             }
+            using var userAnalysisLock = AcquireUserAnalysisLock(job.UserId);
 
             try
             {
@@ -355,6 +361,7 @@ namespace ProbuildBackend.Services
                 };
 
                 _context.DocumentProcessingResults.Add(result);
+                await _jobSubtaskTimelineSync.ReplaceSubtasksFromReportAsync(jobId, finalReport);
                 job.Status = "PROCESSED";
                 await _context.SaveChangesAsync();
 
@@ -510,7 +517,6 @@ namespace ProbuildBackend.Services
         }
 
         [AutomaticRetry(Attempts = 3, OnAttemptsExceeded = AttemptsExceededAction.Fail)]
-        [DisableConcurrentExecution(timeoutInSeconds: 60 * 60)]
         public async Task ProcessRenovationAnalysisForJobAsync(
             int jobId,
             List<string> documentUrls,
@@ -527,6 +533,7 @@ namespace ProbuildBackend.Services
                 // Log error
                 return;
             }
+            using var userAnalysisLock = AcquireUserAnalysisLock(job.UserId);
 
             try
             {
@@ -551,6 +558,7 @@ namespace ProbuildBackend.Services
                 };
 
                 _context.DocumentProcessingResults.Add(result);
+                await _jobSubtaskTimelineSync.ReplaceSubtasksFromReportAsync(jobId, finalReport);
                 job.Status = "PROCESSED";
                 await _context.SaveChangesAsync();
 
@@ -707,6 +715,14 @@ SET [ExtractedDataJson] = JSON_MODIFY(
 WHERE [JobId] = {jobId};
 ");
             }
+        }
+
+        private IDisposable AcquireUserAnalysisLock(string? userId)
+        {
+            var key = string.IsNullOrWhiteSpace(userId) ? "unknown" : userId.Trim();
+            return JobStorage.Current
+                .GetConnection()
+                .AcquireDistributedLock($"analysis:user:{key}", TimeSpan.FromHours(1));
         }
     }
 }
