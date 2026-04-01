@@ -1,4 +1,4 @@
-﻿﻿using System.Text;
+using System.Text;
 using Elastic.Apm.NetCoreAll;
 using Hangfire;
 using Hangfire.Dashboard.BasicAuthorization;
@@ -220,6 +220,10 @@ builder
     });
 
 builder.Services.AddScoped<IDocumentProcessorService, DocumentProcessorService>();
+builder.Services.AddScoped<
+    IJobSubtaskTimelineSyncService,
+    JobSubtaskTimelineSyncService
+>();
 builder.Services.AddTransient<IEmailSender, EmailSender>();
 builder.Services.AddScoped<IEmailTemplateService, EmailTemplateService>();
 builder.Services.AddScoped<ILogLoginInformationService, LogLoginInformationService>();

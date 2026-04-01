@@ -21,6 +21,7 @@ namespace ProbuildBackend.Services
         private readonly IConversationRepository _conversationRepository;
         private readonly AzureBlobService _azureBlobService;
         private readonly IEmailTemplateService _emailTemplate;
+        private readonly IJobSubtaskTimelineSyncService _jobSubtaskTimelineSync;
 
         public DocumentProcessorService(
             ApplicationDbContext context,
@@ -29,7 +30,8 @@ namespace ProbuildBackend.Services
             IAiAnalysisService aiAnalysisService,
             IConversationRepository conversationRepository,
             AzureBlobService azureBlobService,
-            IEmailTemplateService emailTemplate
+            IEmailTemplateService emailTemplate,
+            IJobSubtaskTimelineSyncService jobSubtaskTimelineSync
         )
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
@@ -42,6 +44,9 @@ namespace ProbuildBackend.Services
                 ?? throw new ArgumentNullException(nameof(conversationRepository));
             _azureBlobService = azureBlobService;
             _emailTemplate = emailTemplate;
+            _jobSubtaskTimelineSync =
+                jobSubtaskTimelineSync
+                ?? throw new ArgumentNullException(nameof(jobSubtaskTimelineSync));
         }
 
         [AutomaticRetry(Attempts = 3, OnAttemptsExceeded = AttemptsExceededAction.Fail)]
@@ -97,6 +102,7 @@ namespace ProbuildBackend.Services
                 };
 
                 _context.DocumentProcessingResults.Add(processingResult);
+                await _jobSubtaskTimelineSync.ReplaceSubtasksFromReportAsync(jobId, finalReport);
                 await _context.SaveChangesAsync();
 
                 job.Status = "PRELIMINARY";
@@ -355,6 +361,7 @@ namespace ProbuildBackend.Services
                 };
 
                 _context.DocumentProcessingResults.Add(result);
+                await _jobSubtaskTimelineSync.ReplaceSubtasksFromReportAsync(jobId, finalReport);
                 job.Status = "PROCESSED";
                 await _context.SaveChangesAsync();
 
@@ -551,6 +558,7 @@ namespace ProbuildBackend.Services
                 };
 
                 _context.DocumentProcessingResults.Add(result);
+                await _jobSubtaskTimelineSync.ReplaceSubtasksFromReportAsync(jobId, finalReport);
                 job.Status = "PROCESSED";
                 await _context.SaveChangesAsync();
 

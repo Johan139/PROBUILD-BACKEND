@@ -608,12 +608,9 @@ namespace ProbuildBackend.Controllers
                     .DocumentProcessingResults.Where(r => r.JobId == jobId)
                     .ToListAsync();
 
-                if (results == null || !results.Any())
-                {
-                    return StatusCode(500, new { error = "AI is still processing the document." });
-                }
-
-                return Ok(results);
+                // Empty is valid (e.g. race after UI shows complete, or results not persisted yet).
+                // Returning 500 here caused the SPA to log errors and retry aggressively on every call.
+                return Ok(results ?? new List<DocumentProcessingResult>());
             }
             catch (Exception ex)
             {
