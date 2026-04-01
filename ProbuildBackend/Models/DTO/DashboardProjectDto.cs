@@ -13,5 +13,6 @@ namespace ProbuildBackend.Models.DTO
         public DateTime CreatedAt { get; set; }
         public DateTime? DesiredStartDate { get; set; }
         public double? BuildingSize { get; set; }
+        public string? Country { get; set; }
     }
 }
