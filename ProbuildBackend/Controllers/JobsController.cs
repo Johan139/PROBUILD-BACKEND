@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Security.Claims;
 using Hangfire;
@@ -69,6 +70,19 @@ namespace ProbuildBackend.Controllers
             _aiAnalysisService = aiAnalysisService;
             _userManager = userManager;
             _cache = cache;
+        }
+
+        private string GetCorrelationId()
+        {
+            if (Request?.Headers != null && Request.Headers.TryGetValue("X-Correlation-Id", out var cid))
+            {
+                var val = cid.ToString();
+                if (!string.IsNullOrWhiteSpace(val))
+                {
+                    return val;
+                }
+            }
+            return HttpContext?.TraceIdentifier ?? Guid.NewGuid().ToString("N");
         }
         [HttpGet("{jobId}/analysis-state")]
         public async Task<ActionResult<JobAnalysisState>> GetAnalysisState(
@@ -158,6 +172,9 @@ namespace ProbuildBackend.Controllers
         [Authorize]
         public async Task<ActionResult<JobDto>> GetJob(int id)
         {
+            var correlationId = GetCorrelationId();
+            var endpointSw = Stopwatch.StartNew();
+            var dbApproxSw = Stopwatch.StartNew();
             try
             {
                 var currentUserId = _httpContextAccessor.HttpContext?.User.FindFirstValue("UserId");
@@ -277,10 +294,29 @@ namespace ProbuildBackend.Controllers
                 };
 
                 _cache.Set(cacheKey, jobDto, TimeSpan.FromSeconds(10));
+                dbApproxSw.Stop();
+                endpointSw.Stop();
+                _logger.LogInformation(
+                    "GetJob success jobId={JobId} elapsedMs={ElapsedMs} dbApproxMs={DbApproxMs} correlationId={CorrelationId}",
+                    id,
+                    endpointSw.ElapsedMilliseconds,
+                    dbApproxSw.ElapsedMilliseconds,
+                    correlationId
+                );
                 return Ok(jobDto);
             }
             catch (Exception ex)
             {
+                dbApproxSw.Stop();
+                endpointSw.Stop();
+                _logger.LogError(
+                    ex,
+                    "GetJob failed jobId={JobId} elapsedMs={ElapsedMs} dbApproxMs={DbApproxMs} correlationId={CorrelationId}",
+                    id,
+                    endpointSw.ElapsedMilliseconds,
+                    dbApproxSw.ElapsedMilliseconds,
+                    correlationId
+                );
                 return StatusCode(500, "An error occurred while retrieving the job.");
             }
         }
@@ -590,6 +626,10 @@ namespace ProbuildBackend.Controllers
             int jobId
         )
         {
+            var correlationId = GetCorrelationId();
+            var endpointSw = Stopwatch.StartNew();
+            var dbApproxSw = Stopwatch.StartNew();
+            var cacheKey = $"processing-results:{jobId}";
             try
             {
                 var currentUserId = _httpContextAccessor.HttpContext?.User.FindFirstValue("UserId");
@@ -604,16 +644,57 @@ namespace ProbuildBackend.Controllers
                     return NotFound();
                 }
 
+                if (
+                    _cache.TryGetValue(cacheKey, out List<DocumentProcessingResult>? cachedResults)
+                    && cachedResults != null
+                )
+                {
+                    dbApproxSw.Stop();
+                    endpointSw.Stop();
+                    _logger.LogInformation(
+                        "GetProcessingResults cache-hit jobId={JobId} elapsedMs={ElapsedMs} count={Count} correlationId={CorrelationId}",
+                        jobId,
+                        endpointSw.ElapsedMilliseconds,
+                        cachedResults.Count,
+                        correlationId
+                    );
+                    return Ok(cachedResults);
+                }
+
                 var results = await _context
-                    .DocumentProcessingResults.Where(r => r.JobId == jobId)
+                    .DocumentProcessingResults.AsNoTracking()
+                    .Where(r => r.JobId == jobId)
+                    .OrderByDescending(r => r.CreatedAt)
+                    .ThenByDescending(r => r.Id)
                     .ToListAsync();
+                _cache.Set(cacheKey, results ?? new List<DocumentProcessingResult>(), TimeSpan.FromSeconds(10));
 
                 // Empty is valid (e.g. race after UI shows complete, or results not persisted yet).
                 // Returning 500 here caused the SPA to log errors and retry aggressively on every call.
+                dbApproxSw.Stop();
+                endpointSw.Stop();
+                _logger.LogInformation(
+                    "GetProcessingResults success jobId={JobId} elapsedMs={ElapsedMs} dbApproxMs={DbApproxMs} count={Count} correlationId={CorrelationId}",
+                    jobId,
+                    endpointSw.ElapsedMilliseconds,
+                    dbApproxSw.ElapsedMilliseconds,
+                    results?.Count ?? 0,
+                    correlationId
+                );
                 return Ok(results ?? new List<DocumentProcessingResult>());
             }
             catch (Exception ex)
             {
+                dbApproxSw.Stop();
+                endpointSw.Stop();
+                _logger.LogError(
+                    ex,
+                    "GetProcessingResults failed jobId={JobId} elapsedMs={ElapsedMs} dbApproxMs={DbApproxMs} correlationId={CorrelationId}",
+                    jobId,
+                    endpointSw.ElapsedMilliseconds,
+                    dbApproxSw.ElapsedMilliseconds,
+                    correlationId
+                );
                 return StatusCode(
                     500,
                     new { error = "Failed to fetch processing results", details = ex.Message }
@@ -1426,6 +1507,8 @@ namespace ProbuildBackend.Controllers
             string userId
         )
         {
+            var correlationId = GetCorrelationId();
+            var sw = Stopwatch.StartNew();
             try
             {
                 var jobs = await _context
@@ -1544,10 +1627,19 @@ namespace ProbuildBackend.Controllers
                     .OrderByDescending(p => p.CreatedAt)
                     .ToList();
 
+                sw.Stop();
+                _logger.LogInformation(
+                    "GetUserDashboard success userId={UserId} elapsedMs={ElapsedMs} jobs={Count} correlationId={CorrelationId}",
+                    userId,
+                    sw.ElapsedMilliseconds,
+                    dashboardProjects.Count,
+                    correlationId
+                );
                 return Ok(dashboardProjects);
             }
             catch (Exception ex)
             {
+                sw.Stop();
                 _logger.LogError(ex, "Error in GetUserDashboard");
                 return StatusCode(500, "Internal server error fetching dashboard projects.");
             }
@@ -1669,33 +1761,51 @@ namespace ProbuildBackend.Controllers
         [HttpGet("dashboard")]
         public async Task<ActionResult<IEnumerable<JobDto>>> GetDashboardJobs()
         {
-            var jobs = await _context.Jobs.Where(j => j.ArchivedAt == null).ToListAsync();
+            var correlationId = GetCorrelationId();
+            var sw = Stopwatch.StartNew();
+            var jobs = await _context
+                .Jobs.AsNoTracking()
+                .Where(j => j.ArchivedAt == null)
+                .Select(j => new { j.Id, j.ProjectName, j.JobType, j.Status })
+                .ToListAsync();
 
-            var jobDtos = new List<JobDto>();
+            var jobIds = jobs.Select(j => j.Id).ToList();
+            var progressByJobId = await _context
+                .JobSubtasks.AsNoTracking()
+                .Where(st => jobIds.Contains(st.JobId) && !st.Deleted)
+                .GroupBy(st => st.JobId)
+                .Select(g => new
+                {
+                    JobId = g.Key,
+                    Total = g.Count(),
+                    Completed = g.Count(x => x.Status == "Completed" || x.Status == "completed"),
+                })
+                .ToDictionaryAsync(x => x.JobId);
 
-            foreach (var job in jobs)
-            {
-                var subtasks = await _context
-                    .JobSubtasks.Where(st => st.JobId == job.Id && !st.Deleted)
-                    .ToListAsync();
+            var jobDtos = jobs
+                .Select(job =>
+                {
+                    var total = progressByJobId.TryGetValue(job.Id, out var p) ? p.Total : 0;
+                    var completed = progressByJobId.TryGetValue(job.Id, out var p2) ? p2.Completed : 0;
+                    var progress = total > 0 ? (int)Math.Round((double)completed / total * 100) : 0;
 
-                var completedCount = subtasks.Count(st => st.Status == "Completed");
-                var totalCount = subtasks.Count;
-                var progress =
-                    totalCount > 0 ? (int)Math.Round((double)completedCount / totalCount * 100) : 0;
-
-                jobDtos.Add(
-                    new JobDto
+                    return new JobDto
                     {
                         JobId = job.Id,
                         ProjectName = job.ProjectName,
                         JobType = job.JobType,
                         Status = job.Status,
                         Progress = progress,
-                    }
-                );
-            }
-
+                    };
+                })
+                .ToList();
+            sw.Stop();
+            _logger.LogInformation(
+                "GetDashboardJobs success elapsedMs={ElapsedMs} jobs={Count} correlationId={CorrelationId}",
+                sw.ElapsedMilliseconds,
+                jobDtos.Count,
+                correlationId
+            );
             return Ok(jobDtos);
         }
 
