@@ -34,7 +34,7 @@ public class GeminiAiService : IAiService
 #endif
 
         var googleAI = new GoogleAi(apiKey);
-        _generativeModel = googleAI.CreateGenerativeModel("gemini-2.5-pro");
+        _generativeModel = googleAI.CreateGenerativeModel("gemini-3.1-pro-preview");
         _generativeModel.UseGoogleSearch = true;
     }
 
