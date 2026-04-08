@@ -704,7 +704,76 @@ namespace ProbuildBackend.Controllers
                 );
             }
         }
+        [HttpGet("processing-results-front-end/{jobId}")]
+        public async Task<ActionResult<IEnumerable<DocumentProcessingResult>>> GetProcessingResultsFrontEnd(
+          int jobId
+      )
+        {
+            var correlationId = GetCorrelationId();
+            var endpointSw = Stopwatch.StartNew();
+            var dbApproxSw = Stopwatch.StartNew();
+            var cacheKey = $"processing-results:{jobId}";
+            try
+            {
 
+
+                if (
+                    _cache.TryGetValue(cacheKey, out List<DocumentProcessingResult>? cachedResults)
+                    && cachedResults != null
+                )
+                {
+                    dbApproxSw.Stop();
+                    endpointSw.Stop();
+                    _logger.LogInformation(
+                        "GetProcessingResults cache-hit jobId={JobId} elapsedMs={ElapsedMs} count={Count} correlationId={CorrelationId}",
+                        jobId,
+                        endpointSw.ElapsedMilliseconds,
+                        cachedResults.Count,
+                        correlationId
+                    );
+                    return Ok(cachedResults);
+                }
+
+                var results = await _context
+                    .DocumentProcessingResults.AsNoTracking()
+                    .Where(r => r.JobId == jobId)
+                    .OrderByDescending(r => r.CreatedAt)
+                    .ThenByDescending(r => r.Id)
+                    .ToListAsync();
+                _cache.Set(cacheKey, results ?? new List<DocumentProcessingResult>(), TimeSpan.FromSeconds(10));
+
+                // Empty is valid (e.g. race after UI shows complete, or results not persisted yet).
+                // Returning 500 here caused the SPA to log errors and retry aggressively on every call.
+                dbApproxSw.Stop();
+                endpointSw.Stop();
+                _logger.LogInformation(
+                    "GetProcessingResults success jobId={JobId} elapsedMs={ElapsedMs} dbApproxMs={DbApproxMs} count={Count} correlationId={CorrelationId}",
+                    jobId,
+                    endpointSw.ElapsedMilliseconds,
+                    dbApproxSw.ElapsedMilliseconds,
+                    results?.Count ?? 0,
+                    correlationId
+                );
+                return Ok(results ?? new List<DocumentProcessingResult>());
+            }
+            catch (Exception ex)
+            {
+                dbApproxSw.Stop();
+                endpointSw.Stop();
+                _logger.LogError(
+                    ex,
+                    "GetProcessingResults failed jobId={JobId} elapsedMs={ElapsedMs} dbApproxMs={DbApproxMs} correlationId={CorrelationId}",
+                    jobId,
+                    endpointSw.ElapsedMilliseconds,
+                    dbApproxSw.ElapsedMilliseconds,
+                    correlationId
+                );
+                return StatusCode(
+                    500,
+                    new { error = "Failed to fetch processing results", details = ex.Message }
+                );
+            }
+        }
         [HttpGet("processing-status/{jobId}")]
         [Authorize]
         public async Task<IActionResult> GetProcessingStatus(int jobId)

@@ -38,6 +38,64 @@ public class GeminiAiService : IAiService
         _generativeModel.UseGoogleSearch = true;
     }
 
+    private static bool IsTransientGeminiFailure(Exception ex)
+    {
+        var message = ex.Message ?? string.Empty;
+
+        // Gemini/Google APIs can surface overload/quota issues as exceptions with
+        // various strings depending on the SDK version.
+        // We treat these as transient so analysis doesn't get marked FAILED while
+        // the provider is throttling.
+        return message.Contains("RESOURCE_EXHAUSTED", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("quota", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("rate", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("too many", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("429", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("overload", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("overloaded", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("503", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("unavailable", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("temporarily", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("timeout", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("deadline", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<GenerateContentResponse> GenerateContentWithRetriesAsync(
+        GenerateContentRequest request
+    )
+    {
+        // Tuned for the observed behaviour: provider under heavy load for a few minutes.
+        const int maxAttempts = 6;
+        var delay = TimeSpan.FromSeconds(20);
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                return await _generativeModel.GenerateContentAsync(request);
+            }
+            catch (Exception ex) when (attempt < maxAttempts && IsTransientGeminiFailure(ex))
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Transient Gemini failure (attempt {Attempt}/{MaxAttempts}). Retrying after {DelaySeconds}s.",
+                    attempt,
+                    maxAttempts,
+                    (int)delay.TotalSeconds
+                );
+
+                await Task.Delay(delay);
+
+                // Exponential backoff up to 2 minutes between attempts
+                var nextSeconds = Math.Min(delay.TotalSeconds * 2, 120);
+                delay = TimeSpan.FromSeconds(nextSeconds);
+            }
+        }
+
+        // Should never reach here, but the compiler needs a return.
+        throw new InvalidOperationException("Gemini retry loop exited unexpectedly.");
+    }
+
     #region Conversational Method
     public async Task<(string response, string conversationId)> ContinueConversationAsync(
         string? conversationId,
@@ -111,7 +169,7 @@ public class GeminiAiService : IAiService
                 );
                 _logger.LogInformation("ContinueConversationAsync");
 
-                var response = await _generativeModel.GenerateContentAsync(request);
+                var response = await GenerateContentWithRetriesAsync(request);
                 modelResponseText = response.Text();
                 _logger.LogInformation(
                     "Gemini returned response of length {Length}",
