@@ -31,86 +31,88 @@ builder.Logging.AddDebug();
 // Configure CORS to allow Angular app with credentials
 builder.Services.AddCors(options =>
 {
-  options.AddPolicy(
-      "AllowAngularApp",
-      policy =>
-      {
-        policy
-            .SetIsOriginAllowed(origin =>
-                origin == "http://localhost:4200" ||
-                origin == "https://app.probuildai.com" ||
-                origin == "https://www.app.probuildai.com" ||
-                origin == "https://probuildai.com" ||
-                origin == "http://localhost:3000" ||
-                origin == "https://probuildai-web-qa-a2cyd0eygke4gfbu.centralus-01.azurewebsites.net" ||
-                origin.EndsWith(".azurecontainerapps.io")
-            )
-            .AllowAnyHeader()
-            .AllowAnyMethod()
-            .AllowCredentials();
-    });
+    options.AddPolicy(
+        "AllowAngularApp",
+        policy =>
+        {
+            policy
+                .SetIsOriginAllowed(origin =>
+                    origin == "http://localhost:4200"
+                    || origin == "https://app.probuildai.com"
+                    || origin == "https://www.app.probuildai.com"
+                    || origin == "https://probuildai.com"
+                    || origin == "http://localhost:3000"
+                    || origin
+                        == "https://probuildai-web-qa-a2cyd0eygke4gfbu.centralus-01.azurewebsites.net"
+                    || origin.EndsWith(".azurecontainerapps.io")
+                )
+                .AllowAnyHeader()
+                .AllowAnyMethod()
+                .AllowCredentials();
+        }
+    );
 });
 
 // Configure the token provider for password reset
 builder.Services.Configure<DataProtectionTokenProviderOptions>(options =>
 {
-  options.TokenLifespan = TimeSpan.FromHours(24); // Set expiration to 24 hours
+    options.TokenLifespan = TimeSpan.FromHours(24); // Set expiration to 24 hours
 });
 
 // Add services to the container
 builder
     .Services.AddControllers(options =>
     {
-      options.Filters.Add(new RequestSizeLimitAttribute(200 * 1024 * 1024)); // 200MB
+        options.Filters.Add(new RequestSizeLimitAttribute(200 * 1024 * 1024)); // 200MB
     })
     .ConfigureApiBehaviorOptions(options =>
     {
-      options.InvalidModelStateResponseFactory = context =>
-      {
-        var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
-        var errors = context
-              .ModelState.Values.SelectMany(v => v.Errors)
-              .Select(e => e.ErrorMessage);
-        logger.LogError("Model binding errors occurred: {Errors}", string.Join(", ", errors));
-
-        foreach (var key in context.ModelState.Keys)
+        options.InvalidModelStateResponseFactory = context =>
         {
-          var state = context.ModelState[key];
-          if (state.Errors.Any())
-          {
-            var rawValue = state.RawValue;
-            logger.LogError(
-                  "Error for key '{Key}'. Raw value was '{RawValue}'. Errors: {Errors}",
-                  key,
-                  rawValue,
-                  string.Join(", ", state.Errors.Select(e => e.ErrorMessage))
-              );
-          }
-        }
+            var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+            var errors = context
+                .ModelState.Values.SelectMany(v => v.Errors)
+                .Select(e => e.ErrorMessage);
+            logger.LogError("Model binding errors occurred: {Errors}", string.Join(", ", errors));
 
-        return new BadRequestObjectResult(context.ModelState);
-      };
+            foreach (var key in context.ModelState.Keys)
+            {
+                var state = context.ModelState[key];
+                if (state.Errors.Any())
+                {
+                    var rawValue = state.RawValue;
+                    logger.LogError(
+                        "Error for key '{Key}'. Raw value was '{RawValue}'. Errors: {Errors}",
+                        key,
+                        rawValue,
+                        string.Join(", ", state.Errors.Select(e => e.ErrorMessage))
+                    );
+                }
+            }
+
+            return new BadRequestObjectResult(context.ModelState);
+        };
     });
 builder
     .Services.AddControllers()
     .AddJsonOptions(options =>
     {
-      options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+        options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
     });
 
 // Configure FormOptions for multipart requests
 builder.Services.Configure<FormOptions>(options =>
 {
-  options.MultipartBodyLengthLimit = 200 * 1024 * 1024; // 200MB
-  options.ValueLengthLimit = int.MaxValue;
-  options.MultipartBoundaryLengthLimit = int.MaxValue;
+    options.MultipartBodyLengthLimit = 200 * 1024 * 1024; // 200MB
+    options.ValueLengthLimit = int.MaxValue;
+    options.MultipartBoundaryLengthLimit = int.MaxValue;
 });
 
 // Kestrel configuration
 builder.WebHost.ConfigureKestrel(options =>
 {
-  options.Limits.MaxRequestBodySize = 200 * 1024 * 1024; // 200MB
-  options.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(5); // 5-minute timeout
+    options.Limits.MaxRequestBodySize = 200 * 1024 * 1024; // 200MB
+    options.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(5); // 5-minute timeout
 });
 
 builder
@@ -121,8 +123,8 @@ builder
     .UseCryptographicAlgorithms(
         new AuthenticatedEncryptorConfiguration
         {
-          EncryptionAlgorithm = EncryptionAlgorithm.AES_256_CBC,
-          ValidationAlgorithm = ValidationAlgorithm.HMACSHA256,
+            EncryptionAlgorithm = EncryptionAlgorithm.AES_256_CBC,
+            ValidationAlgorithm = ValidationAlgorithm.HMACSHA256,
         }
     );
 
@@ -142,88 +144,87 @@ var configuration = builder.Configuration;
 builder.Services.AddSingleton<SlowQueryCommandInterceptor>();
 
 // Configure DbContext with retry policy to handle rate-limiting
-builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
-{
-  var interceptor = sp.GetRequiredService<SlowQueryCommandInterceptor>();
+builder.Services.AddDbContext<ApplicationDbContext>(
+    (sp, options) =>
+    {
+        var interceptor = sp.GetRequiredService<SlowQueryCommandInterceptor>();
 
-  options
-      .UseSqlServer(
-          connectionString,
-          sqlServerOptions =>
-              sqlServerOptions
-                  .UseNetTopologySuite()
-                  .EnableRetryOnFailure(
-                      maxRetryCount: 3, // Reduced number of retries
-                      maxRetryDelay: TimeSpan.FromSeconds(5), // Increased delay between retries
-                      errorNumbersToAdd: null
-                  )
-      )
-      .AddInterceptors(interceptor);
-});
+        options
+            .UseSqlServer(
+                connectionString,
+                sqlServerOptions =>
+                    sqlServerOptions
+                        .UseNetTopologySuite()
+                        .EnableRetryOnFailure(
+                            maxRetryCount: 3, // Reduced number of retries
+                            maxRetryDelay: TimeSpan.FromSeconds(5), // Increased delay between retries
+                            errorNumbersToAdd: null
+                        )
+            )
+            .AddInterceptors(interceptor);
+    }
+);
 
 builder.Services.AddScoped<ContractService>();
 builder
     .Services.AddIdentity<UserModel, IdentityRole>(options =>
     {
-      options.SignIn.RequireConfirmedEmail = true;
-      options.Tokens.PasswordResetTokenProvider = TokenOptions.DefaultProvider;
+        options.SignIn.RequireConfirmedEmail = true;
+        options.Tokens.PasswordResetTokenProvider = TokenOptions.DefaultProvider;
     })
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddDefaultTokenProviders();
 
 builder.Services.Configure<DataProtectionTokenProviderOptions>(options =>
 {
-  options.TokenLifespan = TimeSpan.FromHours(24);
+    options.TokenLifespan = TimeSpan.FromHours(24);
 });
 builder
     .Services.AddAuthentication(options =>
     {
-      options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-      options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
     })
     .AddJwtBearer(options =>
     {
-      options.TokenValidationParameters = new TokenValidationParameters
-      {
-        ValidateIssuer = true,
-        ValidateAudience = true,
-        ValidateLifetime = true,
-        ValidateIssuerSigningKey = true,
-        ValidIssuer = builder.Configuration["Jwt:Issuer"],
-        ValidAudience = builder.Configuration["Jwt:Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
-      };
-
-      options.Events = new JwtBearerEvents
-      {
-        OnMessageReceived = context =>
+        options.TokenValidationParameters = new TokenValidationParameters
         {
-          var accessToken = context.Request.Query["access_token"];
-          var path = context.HttpContext.Request.Path;
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+        };
 
-          // If the request is for our hub...
-          if (
-                  !string.IsNullOrEmpty(accessToken)
-                  && (
-                      path.StartsWithSegments("/chathub")
-                      || path.StartsWithSegments("/hubs/progressHub")
-                      || path.StartsWithSegments("/hubs/notifications")
-                  )
-              )
-          {
-            // Read the token out of the query string
-            context.Token = accessToken;
-          }
-          return Task.CompletedTask;
-        },
-      };
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+
+                // If the request is for our hub...
+                if (
+                    !string.IsNullOrEmpty(accessToken)
+                    && (
+                        path.StartsWithSegments("/chathub")
+                        || path.StartsWithSegments("/hubs/progressHub")
+                        || path.StartsWithSegments("/hubs/notifications")
+                    )
+                )
+                {
+                    // Read the token out of the query string
+                    context.Token = accessToken;
+                }
+                return Task.CompletedTask;
+            },
+        };
     });
 
 builder.Services.AddScoped<IDocumentProcessorService, DocumentProcessorService>();
-builder.Services.AddScoped<
-    IJobSubtaskTimelineSyncService,
-    JobSubtaskTimelineSyncService
->();
+builder.Services.AddScoped<IJobSubtaskTimelineSyncService, JobSubtaskTimelineSyncService>();
 builder.Services.AddTransient<IEmailSender, EmailSender>();
 builder.Services.AddScoped<IEmailTemplateService, EmailTemplateService>();
 builder.Services.AddScoped<ILogLoginInformationService, LogLoginInformationService>();
@@ -244,12 +245,12 @@ builder.Services.AddScoped<WebSocketManager>();
 var signalR = builder.Services.AddSignalR();
 if (!string.IsNullOrWhiteSpace(signalrConn))
 {
-  signalR.AddAzureSignalR(o =>
-  {
-    o.ConnectionString = signalrConn;
-    o.InitialHubServerConnectionCount = 1;
-    o.MaxHubServerConnectionCount = 1; // leaves room for clients
-  });
+    signalR.AddAzureSignalR(o =>
+    {
+        o.ConnectionString = signalrConn;
+        o.InitialHubServerConnectionCount = 1;
+        o.MaxHubServerConnectionCount = 1; // leaves room for clients
+    });
 }
 builder.Services.AddLogging(configure => configure.AddConsole());
 builder.Services.AddHttpContextAccessor(); // Required for AzureBlobService
@@ -269,20 +270,21 @@ builder.Services.AddHangfire(config =>
             connectionString,
             new Hangfire.SqlServer.SqlServerStorageOptions
             {
-              SchemaName = hangfireSchema,
-              PrepareSchemaIfNecessary = true,
+                SchemaName = hangfireSchema,
+                PrepareSchemaIfNecessary = true,
             }
         )
 );
 builder.Services.AddHangfireServer(options =>
 {
-  options.WorkerCount = 4;
-  options.ServerName = "Probuild-Hangfire-Server";
+    options.WorkerCount = 4;
+    options.ServerName = "Probuild-Hangfire-Server";
 });
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IEmailSender, EmailSender>();
 builder.Services.AddScoped<IConversationRepository, SqlConversationRepository>();
 builder.Services.AddScoped<IPromptManagerService, PromptManagerService>();
+builder.Services.AddScoped<ChatKnowledgeResolverService>();
 builder.Services.AddScoped<ICompanyService, CompanyService>();
 builder.Services.AddScoped<IArchiveService, ArchiveService>();
 
@@ -309,25 +311,25 @@ var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
 {
-  var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-  // Ensure database is created
-  context.Database.EnsureCreated();
+    // Ensure database is created
+    context.Database.EnsureCreated();
 
-  // Initialize data protection keys if none exist
-  var keyManager = scope.ServiceProvider.GetRequiredService<IKeyManager>();
-  var keys = keyManager.GetAllKeys();
+    // Initialize data protection keys if none exist
+    var keyManager = scope.ServiceProvider.GetRequiredService<IKeyManager>();
+    var keys = keyManager.GetAllKeys();
 
-  if (!keys.Any())
-  {
-    app.Logger.LogInformation("No data protection keys found. Creating new key...");
-    // This will trigger key creation
-    app.Logger.LogInformation("Data protection key created successfully");
-  }
-  else
-  {
-    app.Logger.LogInformation($"Found {keys.Count()} data protection key(s)");
-  }
+    if (!keys.Any())
+    {
+        app.Logger.LogInformation("No data protection keys found. Creating new key...");
+        // This will trigger key creation
+        app.Logger.LogInformation("Data protection key created successfully");
+    }
+    else
+    {
+        app.Logger.LogInformation($"Found {keys.Count()} data protection key(s)");
+    }
 }
 
 // Map a simple health endpoint
@@ -348,14 +350,14 @@ app.Logger.LogInformation("Application is listening on: {Urls}", listeningUrls);
 // Middleware pipeline
 if (app.Environment.IsDevelopment())
 {
-  app.UseSwagger();
-  app.UseSwaggerUI();
-  app.UseDeveloperExceptionPage();
+    app.UseSwagger();
+    app.UseSwaggerUI();
+    app.UseDeveloperExceptionPage();
 }
 else
 {
-  app.UseExceptionHandler("/Home/Error");
-  app.UseHsts();
+    app.UseExceptionHandler("/Home/Error");
+    app.UseHsts();
 }
 
 // Bypass HTTPS redirection for /health endpoint to ensure compatibility
@@ -363,7 +365,7 @@ app.UseWhen(
     context => !context.Request.Path.StartsWithSegments("/health"),
     appBuilder =>
     {
-      appBuilder.UseHttpsRedirection();
+        appBuilder.UseHttpsRedirection();
     }
 );
 
@@ -372,15 +374,15 @@ app.UseStaticFiles();
 var elasticEnabledString = Environment.GetEnvironmentVariable("ELASTIC_ENABLED");
 if (string.IsNullOrEmpty(elasticEnabledString))
 {
-  Console.WriteLine(
-      "Warning: ELASTIC_ENABLED environment variable is not set. Defaulting to false."
-  );
-  elasticEnabledString = "false";
+    Console.WriteLine(
+        "Warning: ELASTIC_ENABLED environment variable is not set. Defaulting to false."
+    );
+    elasticEnabledString = "false";
 }
 var elasticEnabled = bool.Parse(elasticEnabledString);
 if (elasticEnabled)
 {
-  app.UseAllElasticApm(builder.Configuration);
+    app.UseAllElasticApm(builder.Configuration);
 }
 
 app.UseRouting();
@@ -394,83 +396,83 @@ app.MapControllers();
 // Wrap the application startup in a try-catch to log any errors with retry logic
 try
 {
-  app.Logger.LogInformation("Application starting...");
+    app.Logger.LogInformation("Application starting...");
 
-  // Test database connection with retry logic and exponential backoff
-  app.Logger.LogInformation("Attempting to connect to the database...");
-  bool connected = false;
-  int maxRetries = 3;
-  int retryDelaySeconds = 5;
-  for (int i = 0; i < maxRetries && !connected; i++)
-  {
-    try
+    // Test database connection with retry logic and exponential backoff
+    app.Logger.LogInformation("Attempting to connect to the database...");
+    bool connected = false;
+    int maxRetries = 3;
+    int retryDelaySeconds = 5;
+    for (int i = 0; i < maxRetries && !connected; i++)
     {
-      using (var scope = app.Services.CreateScope())
-      {
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        app.Logger.LogInformation("DbContext created. Calling EnsureCreated...");
-        dbContext.Database.EnsureCreated();
-        app.Logger.LogInformation("EnsureCreated completed successfully");
-        app.Logger.LogInformation("Successfully connected to the database");
-        connected = true;
-      }
-    }
-    catch (Exception ex)
-    {
-      app.Logger.LogWarning(
-          ex,
-          "Failed to connect to the database on attempt {Attempt}. Retrying in {Delay} seconds...",
-          i + 1,
-          retryDelaySeconds
-      );
-      if (i == maxRetries - 1)
-      {
-        app.Logger.LogError(
-            ex,
-            "Failed to connect to the database after {MaxRetries} attempts",
-            maxRetries
-        );
-        throw;
-      }
-      await Task.Delay(TimeSpan.FromSeconds(retryDelaySeconds));
-      retryDelaySeconds *= 2; // Exponential backoff
-    }
-  }
-
-  // Test Blob Storage connection
-  app.Logger.LogInformation("Attempting to initialize Azure Blob Service...");
-  var blobService = app.Services.GetRequiredService<AzureBlobService>();
-  app.Logger.LogInformation("Successfully initialized Azure Blob Service");
-
-  using (var scope = app.Services.CreateScope())
-  {
-    var keyManager = scope.ServiceProvider.GetRequiredService<IKeyManager>();
-    var keys = keyManager.GetAllKeys();
-
-    app.Logger.LogInformation("🔐 Data Protection Keys loaded at startup:");
-    foreach (var key in keys)
-    {
-      app.Logger.LogInformation(
-          $"🔑 KeyId: {key.KeyId} | Created: {key.CreationDate} | Expires: {key.ExpirationDate}"
-      );
+        try
+        {
+            using (var scope = app.Services.CreateScope())
+            {
+                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                app.Logger.LogInformation("DbContext created. Calling EnsureCreated...");
+                dbContext.Database.EnsureCreated();
+                app.Logger.LogInformation("EnsureCreated completed successfully");
+                app.Logger.LogInformation("Successfully connected to the database");
+                connected = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogWarning(
+                ex,
+                "Failed to connect to the database on attempt {Attempt}. Retrying in {Delay} seconds...",
+                i + 1,
+                retryDelaySeconds
+            );
+            if (i == maxRetries - 1)
+            {
+                app.Logger.LogError(
+                    ex,
+                    "Failed to connect to the database after {MaxRetries} attempts",
+                    maxRetries
+                );
+                throw;
+            }
+            await Task.Delay(TimeSpan.FromSeconds(retryDelaySeconds));
+            retryDelaySeconds *= 2; // Exponential backoff
+        }
     }
 
-    var keyXmls = scope
-        .ServiceProvider.GetRequiredService<ApplicationDbContext>()
-        .DataProtectionKeys.ToList();
-    foreach (var keyRow in keyXmls)
-    {
-      app.Logger.LogInformation($"🧱 DB Row KeyId: {keyRow.FriendlyName}");
-    }
-  }
-  app.UseHangfireDashboard("/hangfire");
+    // Test Blob Storage connection
+    app.Logger.LogInformation("Attempting to initialize Azure Blob Service...");
+    var blobService = app.Services.GetRequiredService<AzureBlobService>();
+    app.Logger.LogInformation("Successfully initialized Azure Blob Service");
 
-  app.UseHangfireDashboard(
-      "/hangfire",
-      new DashboardOptions
-      {
-        Authorization = new[]
-          {
+    using (var scope = app.Services.CreateScope())
+    {
+        var keyManager = scope.ServiceProvider.GetRequiredService<IKeyManager>();
+        var keys = keyManager.GetAllKeys();
+
+        app.Logger.LogInformation("🔐 Data Protection Keys loaded at startup:");
+        foreach (var key in keys)
+        {
+            app.Logger.LogInformation(
+                $"🔑 KeyId: {key.KeyId} | Created: {key.CreationDate} | Expires: {key.ExpirationDate}"
+            );
+        }
+
+        var keyXmls = scope
+            .ServiceProvider.GetRequiredService<ApplicationDbContext>()
+            .DataProtectionKeys.ToList();
+        foreach (var keyRow in keyXmls)
+        {
+            app.Logger.LogInformation($"🧱 DB Row KeyId: {keyRow.FriendlyName}");
+        }
+    }
+    app.UseHangfireDashboard("/hangfire");
+
+    app.UseHangfireDashboard(
+        "/hangfire",
+        new DashboardOptions
+        {
+            Authorization = new[]
+            {
                 new BasicAuthAuthorizationFilter(
                     new BasicAuthAuthorizationFilterOptions
                     {
@@ -487,16 +489,16 @@ try
                         },
                     }
                 ),
-          },
-      }
-  );
+            },
+        }
+    );
 
-  app.UseHangfireDashboard(
-      "/hangfire",
-      new DashboardOptions
-      {
-        Authorization = new[]
-          {
+    app.UseHangfireDashboard(
+        "/hangfire",
+        new DashboardOptions
+        {
+            Authorization = new[]
+            {
                 new BasicAuthAuthorizationFilter(
                     new BasicAuthAuthorizationFilterOptions
                     {
@@ -513,22 +515,22 @@ try
                         },
                     }
                 ),
-          },
-      }
-  );
+            },
+        }
+    );
 
-  app.Logger.LogInformation("Application startup completed successfully. Starting to run...");
-  var testType = typeof(ProbuildBackend.Services.EmailAutomationManager);
-  app.Logger.LogInformation(
-      "💡 EmailAutomationManager loaded from assembly: {AssemblyPath}",
-      testType.Assembly.Location
-  );
-  app.Logger.LogInformation("💡 Assembly FullName: {AssemblyName}", testType.Assembly.FullName);
-  app.Run();
+    app.Logger.LogInformation("Application startup completed successfully. Starting to run...");
+    var testType = typeof(ProbuildBackend.Services.EmailAutomationManager);
+    app.Logger.LogInformation(
+        "💡 EmailAutomationManager loaded from assembly: {AssemblyPath}",
+        testType.Assembly.Location
+    );
+    app.Logger.LogInformation("💡 Assembly FullName: {AssemblyName}", testType.Assembly.FullName);
+    app.Run();
 }
 catch (Exception ex)
 {
-  app.Logger.LogError(ex, "Application failed to start. Exception: {Message}", ex.Message);
-  app.Logger.LogError(ex, "Stack trace: {StackTrace}", ex.StackTrace);
-  throw;
+    app.Logger.LogError(ex, "Application failed to start. Exception: {Message}", ex.Message);
+    app.Logger.LogError(ex, "Stack trace: {StackTrace}", ex.StackTrace);
+    throw;
 }

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using Azure.Storage.Blobs;
 using ProbuildBackend.Interface;
 
@@ -24,6 +25,39 @@ public class PromptManagerService : IPromptManagerService
 
     public async Task<string> GetPromptAsync(string userType, string fileName)
     {
+        var fullBlobName = ResolvePromptBlobName(fileName);
+
+        return await GetBlobTextAsync(fullBlobName);
+    }
+
+    public async Task<string> GetKnowledgeFileAsync(string fileName)
+    {
+        var normalized = NormalizeKnowledgeFileName(fileName);
+        var fullBlobName = ResolveKnowledgeBlobName(normalized);
+        return await GetBlobTextAsync(fullBlobName);
+    }
+
+    public async Task<IReadOnlyDictionary<string, string>> GetKnowledgeFilesAsync(
+        IEnumerable<string> fileNames
+    )
+    {
+        var normalizedFiles = fileNames
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(NormalizeKnowledgeFileName)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var results = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in normalizedFiles)
+        {
+            results[file] = await GetKnowledgeFileAsync(file);
+        }
+
+        return results;
+    }
+
+    private string ResolvePromptBlobName(string fileName)
+    {
         string fullBlobName;
 
         // Determine the correct folder based on the file name convention
@@ -48,8 +82,30 @@ public class PromptManagerService : IPromptManagerService
             // System-level prompts are in the root
             fullBlobName = fileName;
         }
+
+        return fullBlobName;
+    }
+
+    private static string NormalizeKnowledgeFileName(string fileName)
+    {
+        var normalized = fileName.Replace("\\", "/").TrimStart('/').Trim();
+        if (normalized.StartsWith("Demo/docs/ai-knowledge/", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = normalized.Substring("Demo/docs/ai-knowledge/".Length);
+        }
+
+        return normalized;
+    }
+
+    private static string ResolveKnowledgeBlobName(string fileName)
+    {
+        return $"Knowledge/{fileName}";
+    }
+
+    private async Task<string> GetBlobTextAsync(string fullBlobName)
+    {
         _logger.LogInformation(
-            "Attempting to get prompt with full blob name: {FullBlobName}",
+            "Attempting to get blob content with full blob name: {FullBlobName}",
             fullBlobName
         );
 
@@ -60,7 +116,7 @@ public class PromptManagerService : IPromptManagerService
         }
 
         _logger.LogInformation(
-            "Prompt not found in cache, fetching from Azure Blob Storage: {FullBlobName}",
+            "Blob content not found in cache, fetching from Azure Blob Storage: {FullBlobName}",
             fullBlobName
         );
         var blobClient = _blobContainerClient.GetBlobClient(fullBlobName);
