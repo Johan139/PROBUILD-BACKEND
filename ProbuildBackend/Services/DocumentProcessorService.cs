@@ -244,16 +244,25 @@ namespace ProbuildBackend.Services
 
                 if (!string.IsNullOrEmpty(connectionId))
                 {
-                    await _hubContext
-                        .Clients.Client(connectionId)
-                        .SendAsync(
-                            "JobProcessingComplete",
-                            new
-                            {
-                                JobId = jobId,
-                                Message = "Document processing complete. The analysis report is available.",
-                            }
+                    try
+                    {
+                        await _hubContext
+                            .Clients.Client(connectionId)
+                            .SendAsync(
+                                "JobProcessingComplete",
+                                new
+                                {
+                                    JobId = jobId,
+                                    Message = "Document processing complete. The analysis report is available.",
+                                }
+                            );
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine(
+                            $"SignalR JobProcessingComplete send failed for job {jobId}: {ex.Message}"
                         );
+                    }
                 }
             }
             catch (Exception ex)
@@ -295,12 +304,21 @@ namespace ProbuildBackend.Services
 
                 if (!string.IsNullOrEmpty(connectionId))
                 {
-                    await _hubContext
-                        .Clients.Client(connectionId)
-                        .SendAsync(
-                            "JobProcessingFailed",
-                            new { JobId = jobId, Error = ex.Message }
+                    try
+                    {
+                        await _hubContext
+                            .Clients.Client(connectionId)
+                            .SendAsync(
+                                "JobProcessingFailed",
+                                new { JobId = jobId, Error = ex.Message }
+                            );
+                    }
+                    catch (Exception signalrEx)
+                    {
+                        Console.WriteLine(
+                            $"SignalR JobProcessingFailed send failed for job {jobId}: {signalrEx.Message}"
                         );
+                    }
                 }
                 throw;
             }
@@ -457,18 +475,42 @@ namespace ProbuildBackend.Services
                     }
                 }
 
-                await _hubContext
-                    .Clients.Client(connectionId)
-                    .SendAsync("AnalysisComplete", jobId, "Selected analysis is complete.");
+                if (!string.IsNullOrEmpty(connectionId))
+                {
+                    try
+                    {
+                        await _hubContext
+                            .Clients.Client(connectionId)
+                            .SendAsync("AnalysisComplete", jobId, "Selected analysis is complete.");
+                    }
+                    catch (Exception signalrEx)
+                    {
+                        Console.WriteLine(
+                            $"SignalR AnalysisComplete send failed for selected analysis job {jobId}: {signalrEx.Message}"
+                        );
+                    }
+                }
             }
             catch (Exception ex)
             {
                 // Log error
                 job.Status = "FAILED";
                 await _context.SaveChangesAsync();
-                await _hubContext
-                    .Clients.Client(connectionId)
-                    .SendAsync("AnalysisFailed", jobId, "Selected analysis failed.");
+                if (!string.IsNullOrEmpty(connectionId))
+                {
+                    try
+                    {
+                        await _hubContext
+                            .Clients.Client(connectionId)
+                            .SendAsync("AnalysisFailed", jobId, "Selected analysis failed.");
+                    }
+                    catch (Exception signalrEx)
+                    {
+                        Console.WriteLine(
+                            $"SignalR AnalysisFailed send failed for selected analysis job {jobId}: {signalrEx.Message}"
+                        );
+                    }
+                }
             }
         }
 
@@ -654,18 +696,42 @@ namespace ProbuildBackend.Services
                     }
                 }
 
-                await _hubContext
-                    .Clients.Client(connectionId)
-                    .SendAsync("AnalysisComplete", jobId, "Renovation analysis is complete.");
+                if (!string.IsNullOrEmpty(connectionId))
+                {
+                    try
+                    {
+                        await _hubContext
+                            .Clients.Client(connectionId)
+                            .SendAsync("AnalysisComplete", jobId, "Renovation analysis is complete.");
+                    }
+                    catch (Exception signalrEx)
+                    {
+                        Console.WriteLine(
+                            $"SignalR AnalysisComplete send failed for renovation analysis job {jobId}: {signalrEx.Message}"
+                        );
+                    }
+                }
             }
             catch (Exception ex)
             {
                 // Log error
                 job.Status = "FAILED";
                 await _context.SaveChangesAsync();
-                await _hubContext
-                    .Clients.Client(connectionId)
-                    .SendAsync("AnalysisFailed", jobId, "Renovation analysis failed.");
+                if (!string.IsNullOrEmpty(connectionId))
+                {
+                    try
+                    {
+                        await _hubContext
+                            .Clients.Client(connectionId)
+                            .SendAsync("AnalysisFailed", jobId, "Renovation analysis failed.");
+                    }
+                    catch (Exception signalrEx)
+                    {
+                        Console.WriteLine(
+                            $"SignalR AnalysisFailed send failed for renovation analysis job {jobId}: {signalrEx.Message}"
+                        );
+                    }
+                }
             }
         }
 

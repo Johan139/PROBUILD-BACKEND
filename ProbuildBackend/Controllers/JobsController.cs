@@ -632,12 +632,15 @@ namespace ProbuildBackend.Controllers
             var cacheKey = $"processing-results:{jobId}";
             try
             {
-                var currentUserId = _httpContextAccessor.HttpContext?.User.FindFirstValue("UserId");
+                var currentUserId =
+                   _httpContextAccessor.HttpContext?.User.FindFirstValue("UserId") ??
+                   _httpContextAccessor.HttpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier) ??
+                   _httpContextAccessor.HttpContext?.User.FindFirstValue("sub") ??
+                   _httpContextAccessor.HttpContext?.User.FindFirstValue("userId");
                 if (string.IsNullOrWhiteSpace(currentUserId))
                 {
                     return Unauthorized();
                 }
-
                 var canAccess = await UserCanAccessJobAsync(jobId, currentUserId);
                 if (!canAccess)
                 {
