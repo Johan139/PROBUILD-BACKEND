@@ -34,7 +34,7 @@ public class GeminiAiService : IAiService
 #endif
 
         var googleAI = new GoogleAi(apiKey);
-        _generativeModel = googleAI.CreateGenerativeModel("gemini-2.5-pro");
+        _generativeModel = googleAI.CreateGenerativeModel("gemini-3.1-pro-preview");
         _generativeModel.UseGoogleSearch = true;
     }
 
@@ -51,10 +51,7 @@ public class GeminiAiService : IAiService
         var conversation = await GetOrCreateConversation(conversationId, userId, userPrompt);
         conversationId = conversation.Id;
 
-        if (!isAnalysis)
-        {
-            await CompactHistoryIfRequiredAsync(conversation);
-        }
+        await CompactHistoryIfRequiredAsync(conversation);
         var updatedConv =
             await _conversationRepo.GetConversationAsync(conversationId) ?? conversation;
 
@@ -551,10 +548,12 @@ JSON Output:";
     {
         _logger.LogInformation("START: StartMultimodalConversationAsync for User {UserId}", userId);
 
+        var createdNewConversation = string.IsNullOrEmpty(conversationId);
+
         // 1. Create a new conversation
         var conversationTitle = $"Analysis started on {DateTime.UtcNow:yyyy-MM-dd}";
         _logger.LogInformation("Creating conversation with title: {Title}", conversationTitle);
-        if (string.IsNullOrEmpty(conversationId))
+        if (createdNewConversation)
         {
             conversationId = await _conversationRepo.CreateConversationAsync(
                 userId,
@@ -665,29 +664,39 @@ JSON Output:";
             }
 
             // 4. Store initial messages
-            _logger.LogInformation(
-                "Storing initial messages for conversation {ConversationId}",
-                conversationId
-            );
-            if (!string.IsNullOrWhiteSpace(initialUserPrompt))
+            if (createdNewConversation)
             {
+                _logger.LogInformation(
+                    "Storing initial messages for NEW conversation {ConversationId}",
+                    conversationId
+                );
+                if (!string.IsNullOrWhiteSpace(initialUserPrompt))
+                {
+                    await _conversationRepo.AddMessageAsync(
+                        new Message
+                        {
+                            ConversationId = conversationId,
+                            Role = "user",
+                            Content = initialUserPrompt,
+                        }
+                    );
+                }
                 await _conversationRepo.AddMessageAsync(
                     new Message
                     {
                         ConversationId = conversationId,
-                        Role = "user",
-                        Content = initialUserPrompt,
+                        Role = "model",
+                        Content = modelResponseText,
                     }
                 );
             }
-            await _conversationRepo.AddMessageAsync(
-                new Message
-                {
-                    ConversationId = conversationId,
-                    Role = "model",
-                    Content = modelResponseText,
-                }
-            );
+            else
+            {
+                _logger.LogInformation(
+                    "Skipping initial message persistence for existing conversation {ConversationId}",
+                    conversationId
+                );
+            }
 
             // 5. Return response and ID
             _logger.LogInformation(

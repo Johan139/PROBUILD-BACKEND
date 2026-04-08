@@ -65,8 +65,13 @@ namespace Probuild.Controllers
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
             };
-            var receiver = _context.Users.Where(u => u.Id == request.ReceiverId).FirstOrDefault();
-            var requester = _context.Users.Where(u => u.Id == requesterId).FirstOrDefault();
+            var receiver = await _context.Users.Where(u => u.Id == request.ReceiverId).FirstOrDefaultAsync();
+            var requester = await _context.Users.Where(u => u.Id == requesterId).FirstOrDefaultAsync();
+
+            if (receiver == null || requester == null)
+            {
+                return BadRequest(new { message = "Unable to create connection request." });
+            }
 
             var frontendUrl =
                 Environment.GetEnvironmentVariable("FRONTEND_URL")

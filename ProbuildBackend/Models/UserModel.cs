@@ -7,6 +7,7 @@ namespace ProbuildBackend.Models
         public string? FirstName { get; set; }
         public string? LastName { get; set; }
         public string? UserType { get; set; }
+        public bool? IsAdmin { get; set; }
         public string? CompanyName { get; set; }
         public string? CompanyRegNo { get; set; }
         public string? VatNo { get; set; }
@@ -45,6 +46,7 @@ namespace ProbuildBackend.Models
         public Portfolio? Portfolio { get; set; }
         public ICollection<Invitation>? SentInvitations { get; set; }
 
+        public bool? isPlaceholder { get; set; }
         public ICollection<UserAddressModel>? UserAddresses { get; set; }
     }
 }

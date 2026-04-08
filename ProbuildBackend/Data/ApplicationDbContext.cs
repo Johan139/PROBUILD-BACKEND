@@ -12,9 +12,12 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<UserModel> Users { get; set; }
     public DbSet<ClientDetailsModel> ClientDetails { get; set; }
     public DbSet<ProjectModel> Projects { get; set; }
+    public DbSet<EmailLog> EmailLogs { get; set; }
+    public DbSet<EmailLogEvent> EmailLogEvents { get; set; }
     public DbSet<EmailAutomationRuleModel> EmailAutomationRules { get; set; }
     public DbSet<JobModel> Jobs { get; set; }
     public DbSet<EmailTemplate> EmailTemplates { get; set; }
+    public DbSet<EmailTemplateAsset> EmailTemplateAssets { get; set; }
     public DbSet<JobsTermsAgreement> JobsTermsAgreement { get; set; }
     public DbSet<BidModel> Bids { get; set; }
     public DbSet<NotificationModel> Notifications { get; set; }
@@ -41,10 +44,12 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<Quote> Quotes { get; set; }
     public DbSet<QuoteRow> QuoteRows { get; set; }
     public DbSet<QuoteExtraCost> QuoteExtraCosts { get; set; }
+    public DbSet<QuoteVersionModel> QuoteVersions { get; set; }
     public DbSet<RefreshToken> RefreshTokens { get; set; }
     public DbSet<TeamMember> TeamMembers { get; set; }
     public DbSet<Permission> Permissions { get; set; }
     public DbSet<TeamMemberPermission> TeamMemberPermissions { get; set; }
+    public DbSet<WebsiteJobTrackerModel> WebsiteJobTracker { get; set; }
     public DbSet<Conversation> Conversations { get; set; }
     public DbSet<ConversationPrompt> ConversationPrompts { get; set; }
     public DbSet<UserLoginAudit> UserLoginAudit { get; set; }
@@ -59,7 +64,10 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<Portfolio> Portfolios { get; set; }
     public DbSet<BidAnalysis> BidAnalyses { get; set; }
     public DbSet<Invitation> Invitations { get; set; }
+    public DbSet<CompaniesModel> Companies { get; set; }
 
+    public DbSet<UserNotificationPreference> UserNotificationPreferences { get; set; }
+    public DbSet<CompanyAddressModel> CompanyAddresses { get; set; }
     public DbSet<AddressTypeModel> AddressType { get; set; }
     public DbSet<CountriesModel> Countries { get; set; }
     public DbSet<StatesModel> States { get; set; }
@@ -67,10 +75,36 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<BudgetLineItem> BudgetLineItems { get; set; }
     public DbSet<JobTradeBudget> JobTradeBudgets { get; set; }
     public DbSet<JobPermitModel> JobPermits { get; set; }
+    public DbSet<TradePackage> TradePackages { get; set; }
+    public DbSet<JobAnalysisState> JobAnalysisStates { get; set; }
+    public DbSet<ExternalCompany> ExternalCompanies { get; set; }
+    public DbSet<ExternalContact> ExternalContacts { get; set; }
+    public DbSet<TradePackageBidInvite> TradePackageBidInvites { get; set; }
+    public DbSet<NoteModel> Notes { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<NotificationView>().HasNoKey().ToView("vw_Notifications");
+
+        modelBuilder.Entity<EmailLog>(entity =>
+        {
+            entity.HasIndex(x => x.CreatedAt);
+            entity.HasIndex(x => x.ToEmail);
+            entity.HasIndex(x => x.LastEventType);
+        });
+
+        modelBuilder.Entity<EmailLogEvent>(entity =>
+        {
+            entity.HasIndex(x => x.EmailLogId);
+            entity.HasIndex(x => x.Timestamp);
+            entity.HasIndex(x => x.SgEventId).IsUnique();
+
+            entity
+                .HasOne(x => x.EmailLog)
+                .WithMany(x => x.Events)
+                .HasForeignKey(x => x.EmailLogId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
 
         modelBuilder
             .Entity<ProjectModel>()
@@ -92,6 +126,10 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .WithMany()
             .HasForeignKey(p => p.SubContractorWallStructureId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<UserNotificationPreference>()
+            .HasIndex(x => new { x.UserId, x.NotificationType, x.Channel })
+            .IsUnique();
 
         modelBuilder
             .Entity<ProjectModel>()
@@ -194,7 +232,26 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .WithOne()
             .HasForeignKey(p => p.JobId)
             .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder
+            .Entity<Quote>()
+            .HasMany(q => q.Versions)
+            .WithOne(v => v.Quote)
+            .HasForeignKey(v => v.QuoteId)
+            .OnDelete(DeleteBehavior.Cascade);
 
+        modelBuilder
+            .Entity<QuoteVersionModel>()
+            .HasMany(v => v.Rows)
+            .WithOne(r => r.QuoteVersion)
+            .HasForeignKey(r => r.QuoteVersionId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder
+            .Entity<QuoteVersionModel>()
+            .HasMany(v => v.ExtraCosts)
+            .WithOne(ec => ec.QuoteVersion)
+            .HasForeignKey(ec => ec.QuoteVersionId)
+            .OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<JobModel>().HasOne(j => j.User).WithMany().HasForeignKey(j => j.UserId);
 
         modelBuilder.Entity<AddressModel>(entity =>
@@ -266,7 +323,41 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
                     "CASE WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN geography::Point(latitude, longitude, 4326) ELSE NULL END"
                 );
         });
+        modelBuilder.Entity<CompanyAddressModel>(entity =>
+        {
+            entity.ToTable("CompanyAddress");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Latitude).HasColumnType("decimal(10,8)").IsRequired(false);
+            entity.Property(e => e.Longitude).HasColumnType("decimal(11,8)").IsRequired(false);
+            // Explicitly map properties to snake_case column names
+            entity.Property(e => e.StreetNumber).HasColumnName("street_number");
+            entity.Property(e => e.StreetName).HasColumnName("street_name");
+            entity.Property(e => e.City).HasColumnName("city");
+            entity.Property(e => e.State).HasColumnName("state");
+            entity.Property(e => e.PostalCode).HasColumnName("postal_code");
+            entity.Property(e => e.Country).HasColumnName("country");
 
+            entity.Property(e => e.Latitude).HasColumnName("latitude");
+            entity.Property(e => e.Longitude).HasColumnName("longitude");
+            entity
+                .Property(e => e.FormattedAddress)
+                .HasColumnName("formatted_address")
+                .HasMaxLength(255)
+                .IsRequired(false);
+            entity
+                .Property(e => e.GooglePlaceId)
+                .HasColumnName("google_place_id")
+                .HasMaxLength(100)
+                .IsRequired(false);
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+            entity.Property(e => e.CompanyId).HasColumnName("CompanyId").IsRequired();
+            entity
+                .Property(e => e.Location)
+                .HasComputedColumnSql(
+                    "CASE WHEN latitude IS NOT NULL AND longitude IS NOT NULL THEN geography::Point(latitude, longitude, 4326) ELSE NULL END"
+                );
+        });
         modelBuilder.Entity<JobAssignmentModel>().HasKey(ja => new { ja.UserId, ja.JobId });
 
         modelBuilder
@@ -280,10 +371,9 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
 
         modelBuilder
             .Entity<Quote>()
-            .HasMany(q => q.ExtraCosts)
-            .WithOne(ec => ec.Quote)
-            .HasForeignKey(ec => ec.QuoteId)
-            .OnDelete(DeleteBehavior.Cascade);
+            .HasMany(q => q.Versions)
+            .WithOne(v => v.Quote)
+            .HasForeignKey(v => v.QuoteId);
 
         modelBuilder
             .Entity<Quote>()
@@ -334,6 +424,106 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .WithMany(u => u.SentInvitations)
             .HasForeignKey(i => i.InviterId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<ExternalCompany>(entity =>
+        {
+            entity.ToTable("ExternalCompanies");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.Source, e.ExternalId }).IsUnique();
+            entity
+                .HasIndex(e => new
+                {
+                    e.Source,
+                    e.Name,
+                    e.Domain,
+                })
+                .IsUnique();
+        });
+
+        modelBuilder.Entity<ExternalContact>(entity =>
+        {
+            entity.ToTable("ExternalContacts");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.Source, e.ExternalId }).IsUnique();
+            entity.HasIndex(e => new { e.ExternalCompanyId, e.Email });
+
+            entity
+                .HasOne(e => e.ExternalCompany)
+                .WithMany(c => c.Contacts)
+                .HasForeignKey(e => e.ExternalCompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<TradePackageBidInvite>(entity =>
+        {
+            entity.ToTable("TradePackageBidInvites");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.TradePackageId, e.Email }).IsUnique();
+            entity.HasIndex(e => e.JobId);
+            entity.HasIndex(e => e.TradePackageId);
+        });
+
+        modelBuilder.Entity<NoteModel>(entity =>
+        {
+            entity.ToTable("Notes");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.NoteText).HasMaxLength(2000).IsRequired();
+            entity
+                .Property(e => e.Visibility)
+                .HasMaxLength(20)
+                .HasDefaultValue("private")
+                .IsRequired();
+            entity.Property(e => e.CreatedByUserId).HasMaxLength(450).IsRequired();
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+            entity.HasIndex(e => e.JobId);
+            entity.HasIndex(e => e.TradePackageId);
+            entity.HasIndex(e => new
+            {
+                e.JobId,
+                e.TradePackageId,
+                e.Visibility,
+            });
+            entity.HasIndex(e => new { e.CreatedByUserId, e.CreatedAt });
+
+            entity
+                .HasOne<JobModel>()
+                .WithMany()
+                .HasForeignKey(e => e.JobId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity
+                .HasOne<TradePackage>()
+                .WithMany()
+                .HasForeignKey(e => e.TradePackageId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<TradePackage>(entity =>
+        {
+            entity.Property(e => e.LaborBudget).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.MaterialBudget).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.TotalBudget).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.EffectiveBudget).HasColumnType("decimal(18,2)");
+
+            entity
+                .HasOne(e => e.LinkedTradePackage)
+                .WithMany()
+                .HasForeignKey(e => e.LinkedTradePackageId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            entity
+                .HasOne(e => e.AwardedBid)
+                .WithMany()
+                .HasForeignKey(e => e.AwardedBidId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<JobAnalysisState>(entity =>
+        {
+            entity.HasIndex(e => e.JobId);
+        });
 
         base.OnModelCreating(modelBuilder);
     }

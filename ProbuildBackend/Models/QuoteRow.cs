@@ -4,12 +4,20 @@ namespace ProbuildBackend.Models
 {
     public class QuoteRow
     {
-        [Key]
-        public int Id { get; set; }
-        public string QuoteId { get; set; } = string.Empty;
-        public string Description { get; set; } = string.Empty;
-        public int Quantity { get; set; }
+        public Guid Id { get; set; }
+
+        public Guid QuoteVersionId { get; set; }   // <-- REQUIRED
+        public QuoteVersionModel QuoteVersion { get; set; }
+
+        public string Description { get; set; }
+
+        public decimal Quantity { get; set; }
+
+        public string Unit { get; set; }           // <-- MISSING
+
         public decimal UnitPrice { get; set; }
+
         public decimal Total { get; set; }
     }
+
 }

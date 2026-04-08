@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Models;
 
 namespace ProbuildBackend.Services
@@ -90,11 +91,11 @@ namespace ProbuildBackend.Services
             {
                 // TODO: This logic should be updated to determine the end date based on the subtasks assigned to the specific user, not the job as a whole
                 // For now, we are using the latest end date from all subtasks for the job
-                var endDate = _context
+                var endDate = await _context
                     .JobSubtasks.Where(s => s.JobId.ToString() == jobId)
                     .OrderByDescending(s => s.EndDate)
                     .Select(s => s.EndDate)
-                    .FirstOrDefault();
+                    .FirstOrDefaultAsync();
 
                 if (endDate == default(DateTime))
                 {

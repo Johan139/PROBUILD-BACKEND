@@ -18,5 +18,9 @@ namespace ProbuildBackend.Models
         public string SenderLastName { get; set; }
         public bool? IsRead { get; set; }
         public DateTime? ReadAt { get; set; }
+
+        public Guid? QuoteId { get; set; }
+
+        public string? Type { get; set; }    
     }
 }

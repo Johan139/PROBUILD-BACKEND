@@ -11,5 +11,8 @@ namespace ProbuildBackend.Models.DTO
         public int Team { get; set; }
         public string ClientName { get; set; }
         public DateTime CreatedAt { get; set; }
+        public DateTime? DesiredStartDate { get; set; }
+        public double? BuildingSize { get; set; }
+        public string? Country { get; set; }
     }
 }

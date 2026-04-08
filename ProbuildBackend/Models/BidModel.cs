@@ -11,10 +11,15 @@ namespace ProbuildBackend.Models
         public string? Task { get; set; }
         public int Duration { get; set; }
         public int JobId { get; set; }
+        public int? TradePackageId { get; set; }
 
         // Prevent circular loops
         [JsonIgnore]
         public JobModel? Job { get; set; }
+
+        [ForeignKey("TradePackageId")]
+        [JsonIgnore]
+        public TradePackage? TradePackage { get; set; }
 
         public string? UserId { get; set; }
 
@@ -23,13 +28,15 @@ namespace ProbuildBackend.Models
         public UserModel? User { get; set; }
 
         public decimal Amount { get; set; }
+        public string? Inclusions { get; set; }
+        public string? Exclusions { get; set; }
         public int BiddingRound { get; set; }
         public bool IsFinalist { get; set; }
         public string Status { get; set; }
         public DateTime SubmittedAt { get; set; }
         public string? DocumentUrl { get; set; }
 
-        public string? QuoteId { get; set; }
+        public Guid? QuoteId { get; set; }
 
         [ForeignKey("QuoteId")]
 

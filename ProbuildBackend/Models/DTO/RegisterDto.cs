@@ -69,5 +69,7 @@ namespace ProbuildBackend.Models.DTO
 
         [JsonPropertyName("timezone")]
         public string? Timezone { get; set; }
+
+        public bool? isPlaceholder { get; set; }
     }
 }

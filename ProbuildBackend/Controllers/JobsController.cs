@@ -1,10 +1,15 @@
-﻿using System.Globalization;
+using System.Globalization;
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Security.Claims;
 using Hangfire;
+using Hangfire.Common;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using ProbuildBackend.Helpers;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
@@ -23,23 +28,31 @@ namespace ProbuildBackend.Controllers
         private readonly ApplicationDbContext _context;
         private readonly IHubContext<ProgressHub> _hubContext;
         private readonly AzureBlobService _azureBlobservice;
+        private readonly ILogger<JobsController> _logger;
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly IDocumentProcessorService _documentProcessorService;
         private readonly IEmailSender _emailService;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IConfiguration _config;
         private readonly WebSocketManager _webSocketManager;
+        private readonly UserManager<UserModel> _userManager;
+        private readonly IAiAnalysisService _aiAnalysisService;
+        private readonly IMemoryCache _cache;
 
         public JobsController(
             ApplicationDbContext context,
             AzureBlobService azureBlobservice,
             IHubContext<ProgressHub> hubContext,
+            ILogger<JobsController> logger,
             IHttpContextAccessor httpContextAccessor,
             IDocumentProcessorService documentProcessorService,
             IEmailSender emailService,
             IHttpClientFactory httpClientFactory,
             IConfiguration config,
-            WebSocketManager webSocketManager
+            WebSocketManager webSocketManager,
+            UserManager<UserModel> userManager,
+            IAiAnalysisService aiAnalysisService,
+            IMemoryCache cache
         )
         {
             _httpContextAccessor =
@@ -47,111 +60,141 @@ namespace ProbuildBackend.Controllers
             _context = context;
             _azureBlobservice = azureBlobservice;
             _hubContext = hubContext;
+            _logger = logger;
             _documentProcessorService = documentProcessorService;
             _emailService = emailService ?? throw new ArgumentNullException(nameof(emailService));
             _httpClientFactory =
                 httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
             _config = config ?? throw new ArgumentNullException(nameof(config));
             _webSocketManager = webSocketManager;
+            _aiAnalysisService = aiAnalysisService;
+            _userManager = userManager;
+            _cache = cache;
         }
 
-        [HttpGet]
-        public async Task<ActionResult<IEnumerable<JobModel>>> GetJobs()
+        private string GetCorrelationId()
         {
-            return await _context.Jobs.ToListAsync();
+            if (Request?.Headers != null && Request.Headers.TryGetValue("X-Correlation-Id", out var cid))
+            {
+                var val = cid.ToString();
+                if (!string.IsNullOrWhiteSpace(val))
+                {
+                    return val;
+                }
+            }
+            return HttpContext?.TraceIdentifier ?? Guid.NewGuid().ToString("N");
         }
-
-        [HttpGet("public")]
-        public async Task<ActionResult<IEnumerable<JobDto>>> GetPublicJobs()
+        [HttpGet("{jobId}/analysis-state")]
+        public async Task<ActionResult<JobAnalysisState>> GetAnalysisState(
+           int jobId,
+           CancellationToken cancellationToken
+       )
         {
+            var cacheKey = $"analysis-state:{jobId}";
             try
             {
-                var jobs = await _context
-                    .Jobs.Where(j => j.BiddingType == "PUBLIC" && j.Status == "BIDDING")
-                    .Include(j => j.TradeBudgets)
-                    .Join(
-                        _context.JobAddresses,
-                        j => j.Id,
-                        a => a.JobId,
-                        (j, a) => new { Job = j, Address = a }
-                    )
-                    .ToListAsync();
-
-                var jobDtos = new List<JobDto>();
-
-                foreach (var item in jobs)
+                if (_cache.TryGetValue(cacheKey, out JobAnalysisState? cachedState) && cachedState != null)
                 {
-                    var subtasks = await _context
-                        .JobSubtasks.Where(s => s.JobId == item.Job.Id && !s.Deleted)
-                        .ToListAsync();
-
-                    var potentialStartDate = subtasks.Any()
-                        ? subtasks.Min(s => s.StartDate)
-                        : DateTime.MinValue;
-                    var potentialEndDate = subtasks.Any()
-                        ? subtasks.Max(s => s.EndDate)
-                        : DateTime.MinValue;
-                    var durationInDays = subtasks.Any()
-                        ? (potentialEndDate - potentialStartDate).Days
-                        : 0;
-                    var numberOfBids = await _context.Bids.CountAsync(b => b.JobId == item.Job.Id);
-                    var user = await _context.Users.FindAsync(item.Job.UserId);
-                    var ratings = await _context
-                        .Ratings.Where(r => r.RatedUserId == item.Job.UserId)
-                        .ToListAsync();
-                    double clientRating = ratings.Any() ? ratings.Average(r => r.RatingValue) : 0;
-
-                    jobDtos.Add(
-                        new JobDto
-                        {
-                            JobId = item.Job.Id,
-                            ProjectName = item.Job.ProjectName,
-                            JobType = item.Job.JobType,
-                            Status = item.Job.Status,
-                            Address = item.Address.FormattedAddress,
-                            StreetNumber = item.Address.StreetNumber,
-                            StreetName = item.Address.StreetName,
-                            City = item.Address.City,
-                            State = item.Address.State,
-                            PostalCode = item.Address.PostalCode,
-                            Country = item.Address.Country,
-                            Latitude = item.Address.Latitude.ToString(),
-                            Longitude = item.Address.Longitude.ToString(),
-                            GooglePlaceId = item.Address.GooglePlaceId,
-                            Trades = item.Job.RequiredSubcontractorTypes,
-                            TradeBudgets = item.Job.TradeBudgets?.ToList(),
-                            PotentialStartDate = potentialStartDate,
-                            PotentialEndDate = potentialEndDate,
-                            DurationInDays = durationInDays,
-                            Subtasks = subtasks,
-                            NumberOfBids = numberOfBids,
-                            ClientName = $"{user.FirstName} {user.LastName}",
-                            ClientCompanyName = user.CompanyName,
-                            ClientRating = clientRating,
-                            CreatedAt = item.Job.CreatedAt,
-                            BiddingStartDate = item.Job.BiddingStartDate,
-                            ThumbnailUrl = !string.IsNullOrEmpty(item.Job.ThumbnailUrl)
-                                ? _azureBlobservice.GenerateTemporaryPublicUrl(
-                                    item.Job.ThumbnailUrl
-                                )
-                                : null,
-                        }
-                    );
+                    return Ok(cachedState);
                 }
 
-                return Ok(jobDtos);
+                // Keep this endpoint extremely cheap: it is polled by the UI.
+                var state = await _context.JobAnalysisStates
+                    .AsNoTracking()
+                    .Where(s => s.JobId == jobId)
+                    .Select(s => new JobAnalysisState
+                    {
+                        JobId = s.JobId,
+                        CurrentStep = s.CurrentStep,
+                        TotalSteps = s.TotalSteps,
+                        StatusMessage = s.StatusMessage,
+                        IsComplete = s.IsComplete,
+                        HasFailed = s.HasFailed,
+                        ErrorMessage = s.ErrorMessage,
+                        ExtractedDataJson = s.ExtractedDataJson,
+                        LastUpdated = s.LastUpdated,
+                    })
+                    .FirstOrDefaultAsync(cancellationToken);
+
+                if (state == null)
+                {
+                    var initialState = new JobAnalysisState
+                    {
+                        JobId = jobId,
+                        CurrentStep = 0,
+                        StatusMessage = "Initializing...",
+                    };
+                    _cache.Set(cacheKey, initialState, TimeSpan.FromSeconds(3));
+                    return Ok(initialState);
+                }
+
+                _cache.Set(cacheKey, state, TimeSpan.FromSeconds(3));
+                return Ok(state);
             }
-            catch (Exception ex)
+            catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == -2)
             {
-                throw;
+                _logger.LogWarning(
+                    ex,
+                    "SQL timeout while fetching analysis state for Job {JobId}",
+                    jobId
+                );
+
+                // Return a safe fallback instead of a 500 so the UI can keep retrying.
+                var fallbackState = new JobAnalysisState
+                {
+                    JobId = jobId,
+                    CurrentStep = 0,
+                    StatusMessage = "Loading analysis state...",
+                };
+                _cache.Set(cacheKey, fallbackState, TimeSpan.FromSeconds(3));
+                return Ok(fallbackState);
             }
+        }
+        private async Task<bool> UserCanAccessJobAsync(int jobId, string userId)
+        {
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return false;
+            }
+
+            return await _context.Jobs.AsNoTracking().AnyAsync(j => j.Id == jobId && j.UserId == userId)
+                || await _context.JobAssignments.AsNoTracking().AnyAsync(a => a.JobId == jobId && a.UserId == userId);
+        }
+
+        [HttpGet("{jobId}/planning-data")]
+        public async Task<ActionResult<PlanningDataDto>> GetPlanningData(int jobId)
+        {
+            var data = await _aiAnalysisService.GetPlanningDataAsync(jobId);
+            return Ok(data);
         }
 
         [HttpGet("Id/{id}")]
+        [Authorize]
         public async Task<ActionResult<JobDto>> GetJob(int id)
         {
+            var correlationId = GetCorrelationId();
+            var endpointSw = Stopwatch.StartNew();
+            var dbApproxSw = Stopwatch.StartNew();
             try
             {
+                var currentUserId = _httpContextAccessor.HttpContext?.User.FindFirstValue("UserId");
+                if (string.IsNullOrWhiteSpace(currentUserId))
+                {
+                    return Unauthorized();
+                }
+
+                var cacheKey = $"job-details:{currentUserId}:{id}";
+                if (_cache.TryGetValue(cacheKey, out JobDto? cachedJobDto) && cachedJobDto != null)
+                {
+                    return Ok(cachedJobDto);
+                }
+
+                var canAccess = await UserCanAccessJobAsync(id, currentUserId);
+                if (!canAccess)
+                {
+                    return NotFound();
+                }
+
                 var job = await _context
                     .Jobs.Include(j => j.TradeBudgets)
                     .FirstOrDefaultAsync(j => j.Id == id);
@@ -161,8 +204,16 @@ namespace ProbuildBackend.Controllers
                     return NotFound();
                 }
 
-                var address = await _context.JobAddresses.FirstOrDefaultAsync(a => a.JobId == id);
-
+                AddressModel? address = null;
+                try
+                {
+                    address = await _context.JobAddresses.FirstOrDefaultAsync(a => a.JobId == id);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error fetching address for Job {JobId}", id);
+                    address = null; // Set to null if query fails
+                }
                 var user = await _context.Users.FindAsync(job.UserId);
                 var ratings = await _context
                     .Ratings.Where(r => r.RatedUserId == job.UserId)
@@ -228,6 +279,10 @@ namespace ProbuildBackend.Controllers
                     ClientName = user != null ? $"{user.FirstName} {user.LastName}" : "",
                     ClientCompanyName = user?.CompanyName,
                     ClientRating = clientRating,
+                    FirstName = user?.FirstName,
+                    LastName = user?.LastName,
+                    Email = user?.Email,
+                    Phone = user?.PhoneNumber,
                     PotentialStartDate = potentialStartDate,
                     PotentialEndDate = potentialEndDate,
                     DurationInDays = durationInDays,
@@ -238,14 +293,165 @@ namespace ProbuildBackend.Controllers
                         : null,
                 };
 
+                _cache.Set(cacheKey, jobDto, TimeSpan.FromSeconds(10));
+                dbApproxSw.Stop();
+                endpointSw.Stop();
+                _logger.LogInformation(
+                    "GetJob success jobId={JobId} elapsedMs={ElapsedMs} dbApproxMs={DbApproxMs} correlationId={CorrelationId}",
+                    id,
+                    endpointSw.ElapsedMilliseconds,
+                    dbApproxSw.ElapsedMilliseconds,
+                    correlationId
+                );
                 return Ok(jobDto);
             }
             catch (Exception ex)
             {
+                dbApproxSw.Stop();
+                endpointSw.Stop();
+                _logger.LogError(
+                    ex,
+                    "GetJob failed jobId={JobId} elapsedMs={ElapsedMs} dbApproxMs={DbApproxMs} correlationId={CorrelationId}",
+                    id,
+                    endpointSw.ElapsedMilliseconds,
+                    dbApproxSw.ElapsedMilliseconds,
+                    correlationId
+                );
                 return StatusCode(500, "An error occurred while retrieving the job.");
             }
         }
+        [HttpGet("public")]
+        public async Task<ActionResult<IEnumerable<object>>> GetPublicJobs()
+        {
+            try
+            {
+                var postings = await _context
+                    .TradePackages.Where(tp =>
+                        tp.PostedToMarketplace
+                        && tp.ArchivedAt == null
+                        && !tp.IsHidden
+                        && !tp.IsInactive
+                        && !tp.IsInHouse
+                        && tp.Job != null
+                        && tp.Job.ArchivedAt == null
+                    )
+                    .AsNoTracking()
+                    .Include(tp => tp.Job)
+                        .ThenInclude(j => j.JobAddress)
+                    .ToListAsync();
 
+                _logger.LogInformation("GetPublicJobs: postings fetched {Count}", postings.Count);
+
+                var userIds = postings
+                    .Select(p => p.Job != null ? p.Job.UserId : null)
+                    .Where(id => !string.IsNullOrWhiteSpace(id))
+                    .Distinct()
+                    .ToList();
+
+                _logger.LogInformation("GetPublicJobs: distinct userIds {Count}", userIds.Count);
+
+                var users = await _context.Users
+                    .Where(u => userIds.Contains(u.Id))
+                    .ToDictionaryAsync(u => u.Id);
+
+                var ratingsByUser = await _context.Ratings
+                    .Where(r => userIds.Contains(r.RatedUserId))
+                    .GroupBy(r => r.RatedUserId)
+                    .Select(g => new { UserId = g.Key, Avg = g.Average(r => r.RatingValue) })
+                    .ToDictionaryAsync(g => g.UserId, g => g.Avg);
+
+                var result = postings
+                    .Select(tp =>
+                    {
+                        var job = tp.Job;
+                        var address = job?.JobAddress;
+
+                        var displayBudget = tp.EffectiveBudget > 0
+                            ? tp.EffectiveBudget
+                            : (tp.TotalBudget > 0 ? tp.TotalBudget : tp.Budget);
+
+                        var displayEstimatedManHours = tp.EstimatedManHours > 0
+                            ? tp.EstimatedManHours
+                            : (
+                                tp.LaborBudget > 0 && tp.HourlyRate > 0
+                                    ? Math.Round(tp.LaborBudget / tp.HourlyRate, 2)
+                                    : 0
+                            );
+
+                        var displayEstimatedDuration = !string.IsNullOrWhiteSpace(tp.EstimatedDuration)
+                            ? tp.EstimatedDuration
+                            : "TBD";
+
+                        var user = job != null && !string.IsNullOrWhiteSpace(job.UserId)
+                            ? users.GetValueOrDefault(job.UserId)
+                            : null;
+                        var clientRating = job != null && !string.IsNullOrWhiteSpace(job.UserId)
+                            ? ratingsByUser.GetValueOrDefault(job.UserId, 0)
+                            : 0;
+
+                        var formattedAddress = job?.Address
+                            ?? (address != null ? address.FormattedAddress : "");
+
+                        return new
+                        {
+                            jobId = tp.JobId,
+                            tradePackageId = tp.Id,
+                            projectName = job != null ? job.ProjectName : string.Empty,
+                            jobType = !string.IsNullOrWhiteSpace(tp.Category)
+                                ? tp.Category
+                                : (job != null ? job.JobType : string.Empty),
+                            status = !string.IsNullOrWhiteSpace(tp.Status) ? tp.Status : "Posted",
+                            address = formattedAddress,
+                            streetNumber = address != null ? address.StreetNumber : string.Empty,
+                            streetName = address != null ? address.StreetName : string.Empty,
+                            city = address != null ? address.City : string.Empty,
+                            state = address != null ? address.State : string.Empty,
+                            postalCode = address != null ? address.PostalCode : string.Empty,
+                            country = address != null ? address.Country : string.Empty,
+                            latitude = address != null && address.Latitude.HasValue
+                                ? address.Latitude.Value.ToString()
+                                : "0",
+                            longitude = address != null && address.Longitude.HasValue
+                                ? address.Longitude.Value.ToString()
+                                : "0",
+                            googlePlaceId = address != null ? address.GooglePlaceId : string.Empty,
+                            description = tp.ScopeOfWork ?? string.Empty,
+                            title = tp.TradeName,
+                            biddingType = tp.LaborType ?? "Labor and Materials",
+                            trades = new[] { tp.TradeName },
+                            tradeBudgets = new[]
+                            {
+                                new
+                                {
+                                    tradeName = tp.TradeName,
+                                    budget = (double)displayBudget,
+                                },
+                            },
+                            potentialStartDate = tp.StartDate,
+                            biddingStartDate = tp.BidDeadline ?? tp.CreatedAt,
+                            createdAt = tp.CreatedAt,
+                            clientName = user != null ? $"{user.FirstName} {user.LastName}" : string.Empty,
+                            clientCompanyName = user?.CompanyName,
+                            clientRating = clientRating,
+                            tradePackageLaborBudgetVisible = tp.LaborBudgetVisible,
+                            tradePackageMaterialBudgetVisible = tp.MaterialBudgetVisible,
+                            tradePackageEstimatedManHours = displayEstimatedManHours,
+                            tradePackageEstimatedDuration = displayEstimatedDuration,
+                        };
+                    })
+                    .OrderByDescending(r => r.createdAt)
+                    .ToList();
+
+                _logger.LogInformation("GetPublicJobs: returning {Count} records", result.Count);
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GetPublicJobs failed");
+                return StatusCode(500, new { error = "GetPublicJobs failed", details = ex.Message });
+            }
+        }
         [HttpGet("download/{documentId}")]
         public async Task<IActionResult> DownloadBlob(int documentId)
         {
@@ -340,7 +546,7 @@ namespace ProbuildBackend.Controllers
 
                     decompressedStream.Position = 0;
 
-                    // ⛏ Infer the correct type from file extension (e.g., .pdf)
+                    // Infer the correct type from file extension (e.g., .pdf)
                     string inferredContentType = FileHelpers.GetContentTypeFromFileName(
                         originalFileName
                     );
@@ -348,7 +554,7 @@ namespace ProbuildBackend.Controllers
                     return File(decompressedStream, inferredContentType, originalFileName);
                 }
 
-                // ✅ if not gzip, just return with actual type
+                // if not gzip, just return with actual type
                 return File(contentStream, contentType, originalFileName);
             }
             catch (FileNotFoundException ex)
@@ -383,14 +589,19 @@ namespace ProbuildBackend.Controllers
                             doc.Id,
                             doc.JobId,
                             doc.FileName,
+                            doc.Type,
+                            doc.UploadedAt,
+                            doc.BlobUrl,
                             Size = properties.Content.Length,
                         }
                     );
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine(
-                        $"Error fetching properties for blob {doc.BlobUrl}: {ex.Message}"
+                    _logger.LogWarning(
+                        ex,
+                        "Error fetching properties for blob {BlobUrl}",
+                        doc.BlobUrl
                     );
                     documentDetails.Add(
                         new
@@ -398,6 +609,9 @@ namespace ProbuildBackend.Controllers
                             doc.Id,
                             doc.JobId,
                             doc.FileName,
+                            doc.Type,
+                            doc.UploadedAt,
+                            doc.BlobUrl,
                             Size = 0L,
                         }
                     );
@@ -412,21 +626,78 @@ namespace ProbuildBackend.Controllers
             int jobId
         )
         {
+            var correlationId = GetCorrelationId();
+            var endpointSw = Stopwatch.StartNew();
+            var dbApproxSw = Stopwatch.StartNew();
+            var cacheKey = $"processing-results:{jobId}";
             try
             {
-                var results = await _context
-                    .DocumentProcessingResults.Where(r => r.JobId == jobId)
-                    .ToListAsync();
-
-                if (results == null || !results.Any())
+                var currentUserId =
+                   _httpContextAccessor.HttpContext?.User.FindFirstValue("UserId") ??
+                   _httpContextAccessor.HttpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier) ??
+                   _httpContextAccessor.HttpContext?.User.FindFirstValue("sub") ??
+                   _httpContextAccessor.HttpContext?.User.FindFirstValue("userId");
+                if (string.IsNullOrWhiteSpace(currentUserId))
                 {
-                    return StatusCode(500, new { error = "AI is still processing the document." });
+                    return Unauthorized();
+                }
+                var canAccess = await UserCanAccessJobAsync(jobId, currentUserId);
+                if (!canAccess)
+                {
+                    return NotFound();
                 }
 
-                return Ok(results);
+                if (
+                    _cache.TryGetValue(cacheKey, out List<DocumentProcessingResult>? cachedResults)
+                    && cachedResults != null
+                )
+                {
+                    dbApproxSw.Stop();
+                    endpointSw.Stop();
+                    _logger.LogInformation(
+                        "GetProcessingResults cache-hit jobId={JobId} elapsedMs={ElapsedMs} count={Count} correlationId={CorrelationId}",
+                        jobId,
+                        endpointSw.ElapsedMilliseconds,
+                        cachedResults.Count,
+                        correlationId
+                    );
+                    return Ok(cachedResults);
+                }
+
+                var results = await _context
+                    .DocumentProcessingResults.AsNoTracking()
+                    .Where(r => r.JobId == jobId)
+                    .OrderByDescending(r => r.CreatedAt)
+                    .ThenByDescending(r => r.Id)
+                    .ToListAsync();
+                _cache.Set(cacheKey, results ?? new List<DocumentProcessingResult>(), TimeSpan.FromSeconds(10));
+
+                // Empty is valid (e.g. race after UI shows complete, or results not persisted yet).
+                // Returning 500 here caused the SPA to log errors and retry aggressively on every call.
+                dbApproxSw.Stop();
+                endpointSw.Stop();
+                _logger.LogInformation(
+                    "GetProcessingResults success jobId={JobId} elapsedMs={ElapsedMs} dbApproxMs={DbApproxMs} count={Count} correlationId={CorrelationId}",
+                    jobId,
+                    endpointSw.ElapsedMilliseconds,
+                    dbApproxSw.ElapsedMilliseconds,
+                    results?.Count ?? 0,
+                    correlationId
+                );
+                return Ok(results ?? new List<DocumentProcessingResult>());
             }
             catch (Exception ex)
             {
+                dbApproxSw.Stop();
+                endpointSw.Stop();
+                _logger.LogError(
+                    ex,
+                    "GetProcessingResults failed jobId={JobId} elapsedMs={ElapsedMs} dbApproxMs={DbApproxMs} correlationId={CorrelationId}",
+                    jobId,
+                    endpointSw.ElapsedMilliseconds,
+                    dbApproxSw.ElapsedMilliseconds,
+                    correlationId
+                );
                 return StatusCode(
                     500,
                     new { error = "Failed to fetch processing results", details = ex.Message }
@@ -435,10 +706,23 @@ namespace ProbuildBackend.Controllers
         }
 
         [HttpGet("processing-status/{jobId}")]
+        [Authorize]
         public async Task<IActionResult> GetProcessingStatus(int jobId)
         {
             try
             {
+                var currentUserId = _httpContextAccessor.HttpContext?.User.FindFirstValue("UserId");
+                if (string.IsNullOrWhiteSpace(currentUserId))
+                {
+                    return Unauthorized();
+                }
+
+                var canAccess = await UserCanAccessJobAsync(jobId, currentUserId);
+                if (!canAccess)
+                {
+                    return NotFound();
+                }
+
                 var job = await _context.Jobs.FindAsync(jobId);
                 if (job == null)
                 {
@@ -507,6 +791,8 @@ namespace ProbuildBackend.Controllers
         [RequestSizeLimit(200 * 1024 * 1024)]
         public async Task<IActionResult> PostJob([FromForm] JobDto jobRequest)
         {
+            string? ipAddress = null;
+
             if (jobRequest == null)
             {
                 return BadRequest("Job request cannot be null.");
@@ -517,12 +803,64 @@ namespace ProbuildBackend.Controllers
                 return BadRequest("Project name is required.");
             }
 
+
             var strategy = _context.Database.CreateExecutionStrategy();
             return await strategy.ExecuteAsync(async () =>
             {
                 using var transaction = await _context.Database.BeginTransactionAsync();
                 try
                 {
+                    if (string.IsNullOrEmpty(jobRequest.UserId))
+                    {
+                        var normalizedEmail = jobRequest.Email.ToUpperInvariant();
+                        var user = await _userManager.FindByEmailAsync(jobRequest.Email);
+                        if (user != null)
+                        {
+                            jobRequest.UserId = user.Id;
+                        }
+                        else
+                        {
+                            var placeholderUser = new UserModel
+                            {
+                                Id = Guid.NewGuid().ToString(),
+                                UserName = jobRequest.Email,
+                                Email = jobRequest.Email,
+                                NormalizedUserName = normalizedEmail, // optional: handled automatically but safe
+                                NormalizedEmail = normalizedEmail, // optional: handled automatically but safe
+                                FirstName = "",
+                                LastName = "",
+                                PhoneNumber = "",
+                                CompanyName = "",
+                                CompanyRegNo = "",
+                                VatNo = "",
+                                UserType = "",
+                                ConstructionType = null,
+                                NrEmployees = "",
+                                YearsOfOperation = "",
+                                CertificationStatus = "",
+                                CertificationDocumentPath = "",
+                                Availability = "",
+                                Trade = "",
+                                ProductsOffered = "",
+                                SupplierType = "",
+                                JobPreferences = null,
+                                DeliveryArea = null,
+                                DeliveryTime = "",
+                                SubscriptionPackage = "",
+                                DateCreated = DateTime.UtcNow,
+                                CountryNumberCode = "",
+                                isPlaceholder = true,
+                            };
+
+                            var result = await _userManager.CreateAsync(
+                                placeholderUser,
+                                PasswordGenerator.GenerateRandomPassword(12)
+                            );
+
+                            jobRequest.UserId = placeholderUser.Id;
+                        }
+                    }
+
                     var job = new JobModel
                     {
                         TradeBudgets = jobRequest.TradeBudgets,
@@ -549,20 +887,24 @@ namespace ProbuildBackend.Controllers
                         BuildingSize = jobRequest.BuildingSize,
                         OperatingArea = jobRequest.OperatingArea ?? "Pending AI Analysis",
                         UserId = jobRequest.UserId,
-                        Status = jobRequest.Status,
+                        Status = !string.IsNullOrEmpty(jobRequest.AnalysisType)
+                            ? "ANALYZING"
+                            : jobRequest.Status,
                         BiddingType = "NOT_BIDDING",
                         CreatedAt = DateTime.UtcNow,
                     };
 
+                    var userContextFileUrl = "";
                     if (jobRequest.UserContextFile != null)
                     {
-                        var userContextFileUrl = (
-                            await _azureBlobservice.UploadFiles(
-                                new List<IFormFile> { jobRequest.UserContextFile },
-                                null,
-                                null
-                            )
-                        ).FirstOrDefault();
+                        userContextFileUrl =
+                            (
+                                await _azureBlobservice.UploadFiles(
+                                    new List<IFormFile> { jobRequest.UserContextFile },
+                                    null,
+                                    null
+                                )
+                            ).FirstOrDefault() ?? "";
                     }
 
                     _context.Jobs.Add(job);
@@ -570,11 +912,11 @@ namespace ProbuildBackend.Controllers
 
                     var clientModel = new ClientDetailsModel()
                     {
-                        FirstName = jobRequest.FirstName,
-                        LastName = jobRequest.LastName,
-                        Email = jobRequest.Email,
+                        FirstName = jobRequest.FirstName ?? "Website Analysis",
+                        LastName = jobRequest.LastName ?? "Website Analysis",
+                        Email = jobRequest.Email ?? "Website Analysis",
                         CompanyName = jobRequest.CompanyName,
-                        Phone = jobRequest.Phone,
+                        Phone = jobRequest.Phone ?? "Website Analysis",
                         Position = jobRequest.Position,
                         CreatedAt = DateTime.Now,
                         JobId = job.Id,
@@ -610,6 +952,9 @@ namespace ProbuildBackend.Controllers
                             JobId = job.Id,
                         };
 
+                        job.Address = jobRequest.Address;
+                        job.JobAddress = address;
+
                         _context.JobAddresses.Add(address);
                         await _context.SaveChangesAsync();
                     }
@@ -632,7 +977,9 @@ namespace ProbuildBackend.Controllers
                     }
 
                     await transaction.CommitAsync();
-
+                    var raw = Request.Headers["X-Forwarded-For"].FirstOrDefault();
+                    ipAddress = raw?.Split(',').First().Trim()
+                                ?? HttpContext.Connection.RemoteIpAddress?.ToString();
                     if (documentUrls.Any())
                     {
                         string connectionId =
@@ -642,17 +989,6 @@ namespace ProbuildBackend.Controllers
 
                         if (jobRequest.AnalysisType == "Comprehensive")
                         {
-                            var userContextFileUrl = "";
-                            if (jobRequest.UserContextFile != null)
-                            {
-                                userContextFileUrl = (
-                                    await _azureBlobservice.UploadFiles(
-                                        new List<IFormFile> { jobRequest.UserContextFile },
-                                        null,
-                                        null
-                                    )
-                                ).FirstOrDefault();
-                            }
                             BackgroundJob.Enqueue(() =>
                                 _documentProcessorService.ProcessDocumentsForJobAsync(
                                     job.Id,
@@ -661,23 +997,15 @@ namespace ProbuildBackend.Controllers
                                     jobRequest.GenerateDetailsWithAi,
                                     jobRequest.UserContextText,
                                     userContextFileUrl,
-                                    jobRequest.BudgetLevel
+                                    jobRequest.BudgetLevel,
+                                    jobRequest.isFrontEnd,
+                                    ipAddress
+
                                 )
                             );
                         }
                         else if (jobRequest.AnalysisType == "Selected")
                         {
-                            var userContextFileUrl = "";
-                            if (jobRequest.UserContextFile != null)
-                            {
-                                userContextFileUrl = (
-                                    await _azureBlobservice.UploadFiles(
-                                        new List<IFormFile> { jobRequest.UserContextFile },
-                                        null,
-                                        null
-                                    )
-                                ).FirstOrDefault();
-                            }
                             BackgroundJob.Enqueue(() =>
                                 _documentProcessorService.ProcessSelectedAnalysisForJobAsync(
                                     job.Id,
@@ -693,17 +1021,6 @@ namespace ProbuildBackend.Controllers
                         }
                         else if (jobRequest.AnalysisType == "Renovation")
                         {
-                            var userContextFileUrl = "";
-                            if (jobRequest.UserContextFile != null)
-                            {
-                                userContextFileUrl = (
-                                    await _azureBlobservice.UploadFiles(
-                                        new List<IFormFile> { jobRequest.UserContextFile },
-                                        null,
-                                        null
-                                    )
-                                ).FirstOrDefault();
-                            }
                             BackgroundJob.Enqueue(() =>
                                 _documentProcessorService.ProcessRenovationAnalysisForJobAsync(
                                     job.Id,
@@ -718,6 +1035,8 @@ namespace ProbuildBackend.Controllers
                         }
                     }
 
+                    jobRequest.JobId = job.Id;
+                    jobRequest.Status = job.Status;
                     return Ok(jobRequest);
                 }
                 catch (Exception ex)
@@ -729,6 +1048,25 @@ namespace ProbuildBackend.Controllers
                     );
                 }
             });
+        }
+
+        [HttpGet("check-limit")]
+        public async Task<IActionResult> CheckLimit()
+        {
+
+            var raw = Request.Headers["X-Forwarded-For"].FirstOrDefault();
+            var ip = raw?.Split(',').First().Trim()
+                     ?? HttpContext.Connection.RemoteIpAddress?.ToString();
+
+            if (string.IsNullOrEmpty(ip))
+                return Ok(new { allowed = true });
+
+            var tracker = await _context.WebsiteJobTracker
+                .FirstOrDefaultAsync(x => x.IpAddress == ip);
+
+            var allowed = tracker == null || tracker.JobCount < 2;
+
+            return Ok(new { allowed });
         }
 
         [HttpPost("UploadImage")]
@@ -769,8 +1107,6 @@ namespace ProbuildBackend.Controllers
                     ?? _httpContextAccessor.HttpContext?.Connection.Id
                     ?? throw new InvalidOperationException("No valid connectionId provided.");
 
-                Console.WriteLine($"Received connectionId from client: {connectionId}");
-
                 uploadedFileUrls = await _azureBlobservice.UploadFiles(
                     jobRequest.Blueprint,
                     _hubContext,
@@ -783,17 +1119,14 @@ namespace ProbuildBackend.Controllers
                 {
                     string blobFileName = Path.GetFileName(new Uri(url).LocalPath);
 
-                    Console.WriteLine($"Original file.FileName: {file.FileName}");
-                    Console.WriteLine($"Blob URL from Azure: {url}");
-                    Console.WriteLine($"Extracted Blob FileName: {blobFileName}");
-
                     var jobDocument = new JobDocumentModel
                     {
-                        JobId = null,
+                        JobId = jobRequest.JobId,
                         FileName = blobFileName,
                         BlobUrl = url,
                         SessionId = jobRequest.sessionId,
                         UploadedAt = DateTime.Now,
+                        Type = jobRequest.Type,
                     };
                     _context.JobDocuments.Add(jobDocument);
                 }
@@ -900,6 +1233,10 @@ namespace ProbuildBackend.Controllers
                             existing.Status = subtask.Status;
                             existing.GroupTitle = subtask.GroupTitle;
                             existing.Deleted = subtask.Deleted;
+                            existing.Description = subtask.Description;
+                            existing.Location = subtask.Location;
+                            existing.Notes = subtask.Notes;
+                            existing.DetailsJson = subtask.DetailsJson;
                         }
                     }
                     else
@@ -941,6 +1278,7 @@ namespace ProbuildBackend.Controllers
                         Timestamp = DateTime.UtcNow,
                         JobId = job.Id,
                         SenderId = subtasks.UserId,
+                        Type = "Job",
                     };
 
                     _context.Notifications.Add(notification);
@@ -1140,6 +1478,7 @@ namespace ProbuildBackend.Controllers
             {
                 var jobs = await _context
                     .Jobs.Where(job => job.UserId == userId && job.Status != "ARCHIVED")
+                    .OrderByDescending(job => job.CreatedAt)
                     .ToListAsync();
 
                 if (jobs == null || !jobs.Any())
@@ -1171,53 +1510,69 @@ namespace ProbuildBackend.Controllers
             string userId
         )
         {
+            var correlationId = GetCorrelationId();
+            var sw = Stopwatch.StartNew();
             try
             {
-                // 1. Get IDs of jobs the user is assigned to
-                var assignedJobIds = await _context
-                    .JobAssignments.Where(ja => ja.UserId == userId)
-                    .Select(ja => ja.JobId)
-                    .Distinct()
-                    .ToListAsync();
-
-                // 2. Fetch all relevant jobs (Owned OR Assigned) and NOT Archived
                 var jobs = await _context
-                    .Jobs.Where(j =>
-                        (j.UserId == userId || assignedJobIds.Contains(j.Id))
-                        && j.Status != "ARCHIVED"
+                    .Jobs.AsNoTracking()
+                    .Where(j =>
+                        j.ArchivedAt == null
+                        && (
+                            j.UserId == userId
+                            || _context.JobAssignments.Any(ja =>
+                                ja.UserId == userId && ja.JobId == j.Id
+                            )
+                        )
                     )
-                    .Include(j => j.JobAddress)
+                    .Select(j => new
+                    {
+                        j.Id,
+                        j.ProjectName,
+                        j.Address,
+                        JobAddressFormattedAddress = j.JobAddress.FormattedAddress,
+                        JobAddressCountry = j.JobAddress.Country,
+                        j.Status,
+                        j.ThumbnailUrl,
+                        j.CreatedAt,
+                        j.DesiredStartDate,
+                        j.BuildingSize,
+                        OwnerId = j.UserId,
+                    })
                     .ToListAsync();
 
-                if (jobs == null || !jobs.Any())
+                if (!jobs.Any())
                 {
                     return Ok(new List<DashboardProjectDto>());
                 }
 
                 var jobIds = jobs.Select(j => j.Id).ToList();
 
-                // 3. Fetch Subtasks for all these jobs to calculate progress
-                var allSubtasks = await _context
-                    .JobSubtasks.Where(st => jobIds.Contains(st.JobId) && !st.Deleted)
-                    .Select(st => new
+                var progressByJobId = await _context
+                    .JobSubtasks.AsNoTracking()
+                    .Where(st => jobIds.Contains(st.JobId) && !st.Deleted)
+                    .GroupBy(st => st.JobId)
+                    .Select(g => new
                     {
-                        st.JobId,
-                        st.Status,
-                        st.Days,
+                        JobId = g.Key,
+                        TotalDays = g.Sum(x => x.Days),
+                        CompletedDays = g
+                            .Where(x => x.Status != null && (x.Status == "Completed" || x.Status == "completed"))
+                            .Sum(x => x.Days),
                     })
-                    .ToListAsync();
+                    .ToDictionaryAsync(x => x.JobId);
 
-                // 4. Fetch JobAssignments count for all these jobs (Team Size)
                 var teamCounts = await _context
-                    .JobAssignments.Where(ja => jobIds.Contains(ja.JobId))
+                    .JobAssignments.AsNoTracking()
+                    .Where(ja => jobIds.Contains(ja.JobId))
                     .GroupBy(ja => ja.JobId)
                     .Select(g => new { JobId = g.Key, Count = g.Count() })
                     .ToDictionaryAsync(x => x.JobId, x => x.Count);
 
-                // 5. Fetch Owner Details
-                var ownerIds = jobs.Select(j => j.UserId).Distinct().ToList();
+                var ownerIds = jobs.Select(j => j.OwnerId).Distinct().ToList();
                 var owners = await _context
-                    .Users.Where(u => ownerIds.Contains(u.Id))
+                    .Users.AsNoTracking()
+                    .Where(u => ownerIds.Contains(u.Id))
                     .Select(u => new
                     {
                         u.Id,
@@ -1226,61 +1581,69 @@ namespace ProbuildBackend.Controllers
                     })
                     .ToDictionaryAsync(u => u.Id);
 
-                var dashboardProjects = new List<DashboardProjectDto>();
+                var dashboardProjects = jobs
+                    .Select(job =>
+                    {
+                        var progressRow = progressByJobId.TryGetValue(job.Id, out var p)
+                            ? p
+                            : null;
 
-                foreach (var job in jobs)
-                {
-                    // Calculate Progress
-                    var jobSubtasks = allSubtasks.Where(st => st.JobId == job.Id).ToList();
-                    var totalDays = jobSubtasks.Sum(st => st.Days);
-                    var completedDays = jobSubtasks
-                        .Where(st => st.Status?.ToLower() == "completed")
-                        .Sum(st => st.Days);
+                        var totalDays = progressRow?.TotalDays ?? 0;
+                        var completedDays = progressRow?.CompletedDays ?? 0;
+                        var progress =
+                            totalDays > 0
+                                ? (int)Math.Round((double)completedDays / totalDays * 100)
+                                : 0;
 
-                    var progress =
-                        totalDays > 0
-                            ? (int)Math.Round((double)completedDays / totalDays * 100)
+                        var teamSize = teamCounts.TryGetValue(job.Id, out var team)
+                            ? team
                             : 0;
 
-                    // Get Team Size
-                    var teamSize = teamCounts.ContainsKey(job.Id) ? teamCounts[job.Id] : 0;
+                        var clientName = "";
+                        if (owners.TryGetValue(job.OwnerId, out var owner))
+                        {
+                            clientName = !string.IsNullOrEmpty(owner.CompanyName)
+                                ? owner.CompanyName
+                                : owner.FullName;
+                        }
 
-                    // Get Client Name
-                    var clientName = "";
-                    if (owners.ContainsKey(job.UserId))
-                    {
-                        var owner = owners[job.UserId];
-                        clientName = !string.IsNullOrEmpty(owner.CompanyName)
-                            ? owner.CompanyName
-                            : owner.FullName;
-                    }
+                        var thumbnailUrl = !string.IsNullOrEmpty(job.ThumbnailUrl)
+                            ? _azureBlobservice.GenerateTemporaryPublicUrl(job.ThumbnailUrl)
+                            : null;
 
-                    // Generate Thumbnail URL
-                    var thumbnailUrl = !string.IsNullOrEmpty(job.ThumbnailUrl)
-                        ? _azureBlobservice.GenerateTemporaryPublicUrl(job.ThumbnailUrl)
-                        : null;
-
-                    dashboardProjects.Add(
-                        new DashboardProjectDto
+                        return new DashboardProjectDto
                         {
                             JobId = job.Id,
                             ProjectName = job.ProjectName,
-                            Address = job.Address ?? (job.JobAddress?.FormattedAddress),
+                            Address = job.Address ?? job.JobAddressFormattedAddress,
                             Status = job.Status,
                             ThumbnailUrl = thumbnailUrl,
                             Progress = progress,
                             Team = teamSize,
                             ClientName = clientName,
                             CreatedAt = job.CreatedAt,
-                        }
-                    );
-                }
+                            DesiredStartDate = job.DesiredStartDate,
+                            BuildingSize = job.BuildingSize,
+                            Country = job.JobAddressCountry,
+                        };
+                    })
+                    .OrderByDescending(p => p.CreatedAt)
+                    .ToList();
 
+                sw.Stop();
+                _logger.LogInformation(
+                    "GetUserDashboard success userId={UserId} elapsedMs={ElapsedMs} jobs={Count} correlationId={CorrelationId}",
+                    userId,
+                    sw.ElapsedMilliseconds,
+                    dashboardProjects.Count,
+                    correlationId
+                );
                 return Ok(dashboardProjects);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error in GetUserDashboard: {ex.Message}");
+                sw.Stop();
+                _logger.LogError(ex, "Error in GetUserDashboard");
                 return StatusCode(500, "Internal server error fetching dashboard projects.");
             }
         }
@@ -1311,7 +1674,6 @@ namespace ProbuildBackend.Controllers
                 );
             }
 
-            job.Status = "ARCHIVED";
             job.ArchivedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
@@ -1353,6 +1715,8 @@ namespace ProbuildBackend.Controllers
             return NoContent();
         }
 
+
+
         [HttpPut("{jobId}/unarchive")]
         public async Task<IActionResult> UnarchiveJob(int jobId)
         {
@@ -1363,7 +1727,7 @@ namespace ProbuildBackend.Controllers
                 return NotFound();
             }
 
-            if (job.Status != "ARCHIVED")
+            if (job.ArchivedAt == null)
             {
                 return BadRequest("Job is not archived.");
             }
@@ -1382,7 +1746,7 @@ namespace ProbuildBackend.Controllers
         public async Task<ActionResult<IEnumerable<JobDto>>> GetArchivedJobs()
         {
             var jobs = await _context
-                .Jobs.Where(j => j.Status == "ARCHIVED")
+                .Jobs.Where(j => j.ArchivedAt == null)
                 .Select(j => new JobDto
                 {
                     JobId = j.Id,
@@ -1400,33 +1764,51 @@ namespace ProbuildBackend.Controllers
         [HttpGet("dashboard")]
         public async Task<ActionResult<IEnumerable<JobDto>>> GetDashboardJobs()
         {
-            var jobs = await _context.Jobs.Where(j => j.Status != "ARCHIVED").ToListAsync();
+            var correlationId = GetCorrelationId();
+            var sw = Stopwatch.StartNew();
+            var jobs = await _context
+                .Jobs.AsNoTracking()
+                .Where(j => j.ArchivedAt == null)
+                .Select(j => new { j.Id, j.ProjectName, j.JobType, j.Status })
+                .ToListAsync();
 
-            var jobDtos = new List<JobDto>();
+            var jobIds = jobs.Select(j => j.Id).ToList();
+            var progressByJobId = await _context
+                .JobSubtasks.AsNoTracking()
+                .Where(st => jobIds.Contains(st.JobId) && !st.Deleted)
+                .GroupBy(st => st.JobId)
+                .Select(g => new
+                {
+                    JobId = g.Key,
+                    Total = g.Count(),
+                    Completed = g.Count(x => x.Status == "Completed" || x.Status == "completed"),
+                })
+                .ToDictionaryAsync(x => x.JobId);
 
-            foreach (var job in jobs)
-            {
-                var subtasks = await _context
-                    .JobSubtasks.Where(st => st.JobId == job.Id && !st.Deleted)
-                    .ToListAsync();
+            var jobDtos = jobs
+                .Select(job =>
+                {
+                    var total = progressByJobId.TryGetValue(job.Id, out var p) ? p.Total : 0;
+                    var completed = progressByJobId.TryGetValue(job.Id, out var p2) ? p2.Completed : 0;
+                    var progress = total > 0 ? (int)Math.Round((double)completed / total * 100) : 0;
 
-                var completedCount = subtasks.Count(st => st.Status == "Completed");
-                var totalCount = subtasks.Count;
-                var progress =
-                    totalCount > 0 ? (int)Math.Round((double)completedCount / totalCount * 100) : 0;
-
-                jobDtos.Add(
-                    new JobDto
+                    return new JobDto
                     {
                         JobId = job.Id,
                         ProjectName = job.ProjectName,
                         JobType = job.JobType,
                         Status = job.Status,
                         Progress = progress,
-                    }
-                );
-            }
-
+                    };
+                })
+                .ToList();
+            sw.Stop();
+            _logger.LogInformation(
+                "GetDashboardJobs success elapsedMs={ElapsedMs} jobs={Count} correlationId={CorrelationId}",
+                sw.ElapsedMilliseconds,
+                jobDtos.Count,
+                correlationId
+            );
             return Ok(jobDtos);
         }
 
@@ -1523,6 +1905,12 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
+                var cacheKey = $"weather-forecast:{lat}:{lon}";
+                if (_cache.TryGetValue(cacheKey, out string cachedJson))
+                {
+                    return Content(cachedJson, "application/json");
+                }
+
                 lat = lat.Replace(',', '.');
                 decimal latitude = decimal.Parse(lat, CultureInfo.InvariantCulture);
                 lon = lon.Replace(',', '.');
@@ -1539,11 +1927,16 @@ namespace ProbuildBackend.Controllers
                 var response = await client.GetAsync(url);
                 var content = await response.Content.ReadAsStringAsync();
 
+                if (response.IsSuccessStatusCode)
+                {
+                    _cache.Set(cacheKey, content, TimeSpan.FromMinutes(10));
+                }
+
                 return Content(content, "application/json");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Weather API Error: {ex.Message}");
+                _logger.LogError(ex, "Weather API Error");
                 throw;
             }
         }
@@ -1589,6 +1982,7 @@ namespace ProbuildBackend.Controllers
                         SenderId = request.SenderId,
                         Timestamp = DateTime.UtcNow,
                         Recipients = recipientIds,
+                        Type = "Job",
                     };
 
                     _context.Notifications.Add(notification);
@@ -1704,7 +2098,11 @@ namespace ProbuildBackend.Controllers
                     await _context.SaveChangesAsync();
                 }
 
-                return Ok(new { thumbnailUrl });
+                var displayThumbnailUrl = !string.IsNullOrWhiteSpace(thumbnailUrl)
+                    ? _azureBlobservice.GenerateTemporaryPublicUrl(thumbnailUrl)
+                    : thumbnailUrl;
+
+                return Ok(new { thumbnailUrl = displayThumbnailUrl });
             }
             catch (Exception ex)
             {

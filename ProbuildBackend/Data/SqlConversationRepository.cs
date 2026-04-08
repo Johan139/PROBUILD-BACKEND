@@ -147,6 +147,32 @@ public class SqlConversationRepository : IConversationRepository
         }
     }
 
+    public async Task AddMessageIfNotExistsAsync(Message message)
+    {
+        try
+        {
+            await using var connection = GetConnection();
+            message.Timestamp = DateTime.UtcNow;
+
+            var sql =
+                @"IF NOT EXISTS (SELECT 1 FROM Messages WHERE ConversationId = @ConversationId AND Role = @Role AND Content = @Content)
+BEGIN
+    INSERT INTO Messages (ConversationId, Role, Content, IsSummarized, Timestamp) VALUES (@ConversationId, @Role, @Content, @IsSummarized, @Timestamp);
+END";
+
+            await connection.ExecuteAsync(sql, message);
+        }
+        catch (SqlException ex)
+        {
+            _logger.LogError(
+                ex,
+                "Error inserting (idempotent) message for Conversation {ConversationId}",
+                message.ConversationId
+            );
+            throw;
+        }
+    }
+
     public async Task UpdateConversationSummaryAsync(string conversationId, string? newSummary)
     {
         await using var connection = GetConnection();

@@ -193,24 +193,19 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var assignedNotes = await _context
-                    .SubtaskNoteUser.Where(link => link.UserId == userId)
-                    .Select(link => link.SubtaskNoteId)
-                    .ToListAsync();
-
-                if (!assignedNotes.Any())
-                    return NotFound("No notes assigned to this user.");
-
-                var notes = await (
-                    from note in _context.SubtaskNote
+                var rows = await (
+                    from link in _context.SubtaskNoteUser
+                    join note in _context.SubtaskNote on link.SubtaskNoteId equals note.Id
                     join job in _context.Jobs on note.JobId equals job.Id
-                    where assignedNotes.Contains(note.Id) && !note.Archived
+                    join subtask in _context.JobSubtasks on note.JobSubtaskId equals subtask.Id
+                    where link.UserId == userId && !note.Archived
                     select new
                     {
                         note.Id,
                         note.JobId,
                         job.ProjectName,
                         note.JobSubtaskId,
+                        SubtaskName = subtask.Task,
                         note.NoteText,
                         note.CreatedByUserId,
                         note.CreatedAt,
@@ -219,33 +214,36 @@ namespace ProbuildBackend.Controllers
                         note.Rejected,
                         note.Archived,
                     }
-                ).ToListAsync();
+                ).AsNoTracking().ToListAsync();
 
-                var groupedNotes = (
-                    from note in notes
-                    join subtask in _context.JobSubtasks on note.JobSubtaskId equals subtask.Id
-                    group new { note, subtask } by new { note.JobId, note.JobSubtaskId } into g
-                    select new
+                if (!rows.Any())
+                {
+                    return NotFound("No notes assigned to this user.");
+                }
+
+                var groupedNotes = rows
+                    .GroupBy(r => new { r.JobId, r.JobSubtaskId })
+                    .Select(g => new
                     {
                         JobId = g.Key.JobId,
                         JobSubtaskId = g.Key.JobSubtaskId,
-                        ProjectName = g.First().note.ProjectName,
-                        CreatedAt = g.Min(x => x.note.CreatedAt),
-                        SubtaskName = g.First().subtask.Task,
+                        ProjectName = g.First().ProjectName,
+                        CreatedAt = g.Min(x => x.CreatedAt),
+                        SubtaskName = g.First().SubtaskName,
                         Notes = g.Select(x => new
                             {
-                                x.note.Id,
-                                x.note.NoteText,
-                                x.note.CreatedByUserId,
-                                x.note.CreatedAt,
-                                x.note.ModifiedAt,
-                                x.note.Approved,
-                                x.note.Rejected,
-                                x.note.Archived,
+                                x.Id,
+                                x.NoteText,
+                                x.CreatedByUserId,
+                                x.CreatedAt,
+                                x.ModifiedAt,
+                                x.Approved,
+                                x.Rejected,
+                                x.Archived,
                             })
                             .ToList(),
-                    }
-                ).ToList();
+                    })
+                    .ToList();
 
                 return Ok(groupedNotes);
             }
@@ -732,6 +730,343 @@ namespace ProbuildBackend.Controllers
                     noteId = note.Id,
                 }
             );
+        }
+
+        [HttpGet("marketplace")]
+        public async Task<IActionResult> GetMarketplaceNotes(
+            [FromQuery] string requesterUserId,
+            [FromQuery] int? jobId,
+            [FromQuery] int? tradePackageId
+        )
+        {
+            if (string.IsNullOrWhiteSpace(requesterUserId))
+            {
+                return BadRequest(new { error = "requesterUserId is required." });
+            }
+
+            if (!jobId.HasValue && !tradePackageId.HasValue)
+            {
+                return BadRequest(new { error = "Either jobId or tradePackageId is required." });
+            }
+
+            var normalizedRequester = requesterUserId.Trim();
+            var visibilitySet = await ResolveVisibleScopesAsync(
+                normalizedRequester,
+                jobId,
+                tradePackageId
+            );
+
+            var query = _context.Notes.AsNoTracking().AsQueryable();
+
+            if (jobId.HasValue)
+            {
+                query = query.Where(n => n.JobId == jobId.Value);
+            }
+
+            if (tradePackageId.HasValue)
+            {
+                query = query.Where(n => n.TradePackageId == tradePackageId.Value);
+            }
+
+            query = query.Where(n =>
+                n.Visibility == "public"
+                || (n.Visibility == "private" && n.CreatedByUserId == normalizedRequester)
+                || (n.Visibility == "team-only" && visibilitySet.canViewTeamOnly)
+            );
+
+            var notes = await (
+                from note in query
+                join user in _context.Users on note.CreatedByUserId equals user.Id into userJoin
+                from user in userJoin.DefaultIfEmpty()
+                orderby note.CreatedAt descending
+                select new
+                {
+                    note.Id,
+                    note.JobId,
+                    note.TradePackageId,
+                    note.NoteText,
+                    note.Visibility,
+                    note.CreatedByUserId,
+                    CreatedByDisplayName = user != null
+                        ? string.Concat(
+                                (user.FirstName ?? "").Trim(),
+                                " ",
+                                (user.LastName ?? "").Trim()
+                            )
+                            .Trim()
+                        : note.CreatedByUserId,
+                    note.CreatedAt,
+                    note.UpdatedAt,
+                }
+            ).ToListAsync();
+
+            return Ok(notes);
+        }
+
+        [HttpPost("marketplace")]
+        public async Task<IActionResult> CreateMarketplaceNote(
+            [FromBody] CreateMarketplaceNoteDto dto
+        )
+        {
+            if (dto == null)
+            {
+                return BadRequest(new { error = "Payload is required." });
+            }
+
+            if (string.IsNullOrWhiteSpace(dto.CreatedByUserId))
+            {
+                return BadRequest(new { error = "createdByUserId is required." });
+            }
+
+            if (!dto.JobId.HasValue && !dto.TradePackageId.HasValue)
+            {
+                return BadRequest(new { error = "Either jobId or tradePackageId is required." });
+            }
+
+            var normalizedText = (dto.NoteText ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(normalizedText))
+            {
+                return BadRequest(new { error = "noteText is required." });
+            }
+
+            if (normalizedText.Length > 2000)
+            {
+                return BadRequest(new { error = "noteText cannot exceed 2000 characters." });
+            }
+
+            var normalizedVisibility = NormalizeVisibility(dto.Visibility);
+            var normalizedUser = dto.CreatedByUserId.Trim();
+
+            if (dto.JobId.HasValue)
+            {
+                var jobExists = await _context.Jobs.AnyAsync(j => j.Id == dto.JobId.Value);
+                if (!jobExists)
+                {
+                    return NotFound(new { error = "Job not found." });
+                }
+            }
+
+            if (dto.TradePackageId.HasValue)
+            {
+                var tradePackage = await _context
+                    .TradePackages.AsNoTracking()
+                    .FirstOrDefaultAsync(tp => tp.Id == dto.TradePackageId.Value);
+                if (tradePackage == null)
+                {
+                    return NotFound(new { error = "Trade package not found." });
+                }
+
+                if (!dto.JobId.HasValue)
+                {
+                    dto.JobId = tradePackage.JobId;
+                }
+            }
+
+            var note = new NoteModel
+            {
+                JobId = dto.JobId,
+                TradePackageId = dto.TradePackageId,
+                CreatedByUserId = normalizedUser,
+                NoteText = normalizedText,
+                Visibility = normalizedVisibility,
+                CreatedAt = DateTime.UtcNow,
+            };
+
+            _context.Notes.Add(note);
+            await _context.SaveChangesAsync();
+
+            var user = await _context
+                .Users.AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Id == normalizedUser);
+            var displayName =
+                user != null
+                    ? string.Concat(
+                            (user.FirstName ?? "").Trim(),
+                            " ",
+                            (user.LastName ?? "").Trim()
+                        )
+                        .Trim()
+                    : normalizedUser;
+
+            return Ok(
+                new
+                {
+                    note.Id,
+                    note.JobId,
+                    note.TradePackageId,
+                    note.NoteText,
+                    note.Visibility,
+                    note.CreatedByUserId,
+                    CreatedByDisplayName = string.IsNullOrWhiteSpace(displayName)
+                        ? note.CreatedByUserId
+                        : displayName,
+                    note.CreatedAt,
+                    note.UpdatedAt,
+                }
+            );
+        }
+
+        [HttpPut("marketplace/{id:int}")]
+        public async Task<IActionResult> UpdateMarketplaceNote(
+            int id,
+            [FromBody] UpdateMarketplaceNoteDto dto
+        )
+        {
+            if (dto == null)
+            {
+                return BadRequest(new { error = "Payload is required." });
+            }
+
+            if (string.IsNullOrWhiteSpace(dto.RequesterUserId))
+            {
+                return BadRequest(new { error = "requesterUserId is required." });
+            }
+
+            var normalizedText = (dto.NoteText ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(normalizedText))
+            {
+                return BadRequest(new { error = "noteText is required." });
+            }
+
+            if (normalizedText.Length > 2000)
+            {
+                return BadRequest(new { error = "noteText cannot exceed 2000 characters." });
+            }
+
+            var normalizedRequester = dto.RequesterUserId.Trim();
+            var note = await _context.Notes.FirstOrDefaultAsync(n => n.Id == id);
+            if (note == null)
+            {
+                return NotFound(new { error = "Note not found." });
+            }
+
+            if (!string.Equals(note.CreatedByUserId, normalizedRequester, StringComparison.Ordinal))
+            {
+                return Forbid();
+            }
+
+            note.NoteText = normalizedText;
+            note.Visibility = NormalizeVisibility(dto.Visibility);
+            note.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+
+            var user = await _context
+                .Users.AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Id == normalizedRequester);
+            var displayName =
+                user != null
+                    ? string.Concat(
+                            (user.FirstName ?? "").Trim(),
+                            " ",
+                            (user.LastName ?? "").Trim()
+                        )
+                        .Trim()
+                    : normalizedRequester;
+
+            return Ok(
+                new
+                {
+                    note.Id,
+                    note.JobId,
+                    note.TradePackageId,
+                    note.NoteText,
+                    note.Visibility,
+                    note.CreatedByUserId,
+                    CreatedByDisplayName = string.IsNullOrWhiteSpace(displayName)
+                        ? note.CreatedByUserId
+                        : displayName,
+                    note.CreatedAt,
+                    note.UpdatedAt,
+                }
+            );
+        }
+
+        [HttpDelete("marketplace/{id:int}")]
+        public async Task<IActionResult> DeleteMarketplaceNote(
+            int id,
+            [FromQuery] string requesterUserId
+        )
+        {
+            if (string.IsNullOrWhiteSpace(requesterUserId))
+            {
+                return BadRequest(new { error = "requesterUserId is required." });
+            }
+
+            var normalizedRequester = requesterUserId.Trim();
+            var note = await _context.Notes.FirstOrDefaultAsync(n => n.Id == id);
+            if (note == null)
+            {
+                return NotFound(new { error = "Note not found." });
+            }
+
+            if (!string.Equals(note.CreatedByUserId, normalizedRequester, StringComparison.Ordinal))
+            {
+                return Forbid();
+            }
+
+            _context.Notes.Remove(note);
+            await _context.SaveChangesAsync();
+            return NoContent();
+        }
+
+        private static string NormalizeVisibility(string? rawVisibility)
+        {
+            var value = (rawVisibility ?? "private").Trim().ToLowerInvariant();
+            return value switch
+            {
+                "public" => "public",
+                "team-only" => "team-only",
+                _ => "private",
+            };
+        }
+
+        private async Task<(bool canViewTeamOnly, string ownerId)> ResolveVisibleScopesAsync(
+            string requesterUserId,
+            int? jobId,
+            int? tradePackageId
+        )
+        {
+            string ownerId = string.Empty;
+
+            if (tradePackageId.HasValue)
+            {
+                ownerId = await _context
+                    .TradePackages.AsNoTracking()
+                    .Where(tp => tp.Id == tradePackageId.Value)
+                    .Select(tp => tp.Job.UserId ?? string.Empty)
+                    .FirstOrDefaultAsync();
+            }
+
+            if (string.IsNullOrWhiteSpace(ownerId) && jobId.HasValue)
+            {
+                ownerId = await _context
+                    .Jobs.AsNoTracking()
+                    .Where(j => j.Id == jobId.Value)
+                    .Select(j => j.UserId ?? string.Empty)
+                    .FirstOrDefaultAsync();
+            }
+
+            ownerId = (ownerId ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(ownerId))
+            {
+                return (false, ownerId);
+            }
+
+            if (string.Equals(ownerId, requesterUserId, StringComparison.Ordinal))
+            {
+                return (true, ownerId);
+            }
+
+            var isTeamMember = await _context
+                .TeamMembers.AsNoTracking()
+                .AnyAsync(tm =>
+                    tm.Id == requesterUserId
+                    && tm.InviterId == ownerId
+                    && (tm.Status == "Registered" || tm.Status == "Invited")
+                );
+
+            return (isTeamMember, ownerId);
         }
     }
 }
