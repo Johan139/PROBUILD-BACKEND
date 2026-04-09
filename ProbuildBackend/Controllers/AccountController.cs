@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
@@ -18,6 +19,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Diagnostics;
 using static Google.Api.Ads.AdWords.Util.Reports.v201809.PaidOrganicQueryReportReportRow;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 
@@ -37,6 +39,24 @@ namespace ProbuildBackend.Controllers
         public readonly ILogLoginInformationService _logLoginInformationService;
         private readonly IBackgroundJobClient _jobClient;
         private readonly EmailAutomationManager _manager;
+        private readonly ILogger<AccountController> _logger;
+
+        private int GetAccessTokenExpiryMinutes()
+        {
+            var env = Environment.GetEnvironmentVariable("JWT_ACCESS_TOKEN_MINUTES");
+            if (int.TryParse(env, out var minutes) && minutes > 0)
+            {
+                return minutes;
+            }
+
+            var fromConfig = _configuration["Jwt:AccessTokenMinutes"];
+            if (int.TryParse(fromConfig, out minutes) && minutes > 0)
+            {
+                return minutes;
+            }
+
+            return 30;
+        }
 
         public AccountController(
             UserManager<UserModel> userManager,
@@ -48,7 +68,8 @@ namespace ProbuildBackend.Controllers
             IEmailTemplateService emailTemplate,
             ILogLoginInformationService logLoginInformationService,
             IBackgroundJobClient jobClient,
-            EmailAutomationManager manager
+            EmailAutomationManager manager,
+            ILogger<AccountController> logger
         )
         {
             _userManager = userManager;
@@ -61,6 +82,7 @@ namespace ProbuildBackend.Controllers
             _logLoginInformationService = logLoginInformationService;
             _jobClient = jobClient;
             _manager = manager;
+            _logger = logger;
         }
 
         [HttpPost("register")]
@@ -616,94 +638,157 @@ namespace ProbuildBackend.Controllers
         public record RefreshTokenRequest(string RefreshToken);
 
         [HttpPost("refresh-token")]
-        public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
+        public async Task<IActionResult> RefreshToken(
+            [FromBody] RefreshTokenRequest request,
+            CancellationToken cancellationToken
+        )
         {
-            var refreshToken = request.RefreshToken;
-
-            var storedToken = await _context.RefreshTokens.FirstOrDefaultAsync(rt =>
-                rt.Token == refreshToken
-            );
-
-            if (
-                storedToken == null
-                || storedToken.Revoked != null
-                || storedToken.Expires < DateTime.UtcNow
-            )
+            if (request == null || string.IsNullOrWhiteSpace(request.RefreshToken))
             {
-                return Unauthorized(new { error = "Invalid refresh token." });
+                return BadRequest(new { error = "Refresh token is required." });
             }
 
-            // Revoke the old refresh token immediately
-            storedToken.Revoked = DateTime.UtcNow;
-
-            string newAccessTokenString;
-
-            // Case 1: Regular User
-            var user = await _context.Users.FindAsync(storedToken.UserId);
-            if (user != null)
+            var sw = Stopwatch.StartNew();
+            try
             {
-                newAccessTokenString = GenerateJwtToken(user);
-            }
-            else
-            {
-                var memberById = await _context.TeamMembers.FindAsync(storedToken.UserId);
-                if (memberById == null)
+                var refreshToken = request.RefreshToken;
+
+                _logger.LogInformation(
+                    "Refresh-token start. ElapsedMs={ElapsedMs}",
+                    sw.ElapsedMilliseconds
+                );
+
+                var storedToken = await _context.RefreshTokens.FirstOrDefaultAsync(
+                    rt => rt.Token == refreshToken,
+                    cancellationToken
+                );
+
+                _logger.LogInformation(
+                    "Refresh-token DB lookup complete. Found={Found} ElapsedMs={ElapsedMs}",
+                    storedToken != null,
+                    sw.ElapsedMilliseconds
+                );
+
+                if (
+                    storedToken == null
+                    || storedToken.Revoked != null
+                    || storedToken.Expires < DateTime.UtcNow
+                )
                 {
-                    return Unauthorized(
-                        new { error = "User or team member not found for the given token." }
+                    _logger.LogInformation(
+                        "Refresh-token rejected (invalid/revoked/expired). ElapsedMs={ElapsedMs}",
+                        sw.ElapsedMilliseconds
                     );
+                    return Unauthorized(new { error = "Invalid refresh token." });
                 }
 
-                var teamMembers = await _context
-                    .TeamMembers.Where(tm =>
-                        tm.Email == memberById.Email && tm.Status == "Registered"
-                    )
-                    .ToListAsync();
+                // Revoke the old refresh token immediately
+                storedToken.Revoked = DateTime.UtcNow;
 
-                if (!teamMembers.Any())
+                string newAccessTokenString;
+
+                // Case 1: Regular User
+                var user = await _context.Users.FindAsync(
+                    new object[] { storedToken.UserId },
+                    cancellationToken
+                );
+                if (user != null)
                 {
-                    return Unauthorized(new { error = "Team member not found for the given token." });
+                    newAccessTokenString = GenerateJwtToken(user);
+                }
+                else
+                {
+                    var memberById = await _context.TeamMembers.FindAsync(
+                        new object[] { storedToken.UserId },
+                        cancellationToken
+                    );
+                    if (memberById == null)
+                    {
+                        return Unauthorized(
+                            new { error = "User or team member not found for the given token." }
+                        );
+                    }
+
+                    var teamMembers = await _context
+                        .TeamMembers.Where(tm =>
+                            tm.Email == memberById.Email && tm.Status == "Registered"
+                        )
+                        .ToListAsync(cancellationToken);
+
+                    if (!teamMembers.Any())
+                    {
+                        return Unauthorized(
+                            new { error = "Team member not found for the given token." }
+                        );
+                    }
+
+                    var firstMember = teamMembers.First();
+                    var claims = new List<Claim>
+                    {
+                        new Claim(ClaimTypes.Email, firstMember.Email),
+                        new Claim("isTeamMember", "true"),
+                    };
+                    foreach (var member in teamMembers)
+                    {
+                        claims.Add(new Claim("team", $"{member.Id}:{member.InviterId}"));
+                    }
+
+                    var key = new SymmetricSecurityKey(
+                        Encoding.UTF8.GetBytes(_configuration["Jwt:Key"])
+                    );
+                    var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+                    var newAccessToken = new JwtSecurityToken(
+                        issuer: _configuration["Jwt:Issuer"],
+                        audience: _configuration["Jwt:Audience"],
+                        claims: claims,
+                        expires: DateTime.UtcNow.AddMinutes(GetAccessTokenExpiryMinutes()),
+                        signingCredentials: creds
+                    );
+                    newAccessTokenString = new JwtSecurityTokenHandler().WriteToken(newAccessToken);
                 }
 
-                var firstMember = teamMembers.First();
-                var claims = new List<Claim>
+                // Generate a new refresh token for both cases
+                var newRefreshToken = GenerateRefreshToken();
+                var newRefreshTokenEntity = new RefreshToken
                 {
-                    new Claim(ClaimTypes.Email, firstMember.Email),
-                    new Claim("isTeamMember", "true"),
+                    UserId = storedToken.UserId, // Re-use the same ID (either UserModel or TeamMember)
+                    Token = newRefreshToken,
+                    Expires = DateTime.UtcNow.AddDays(7),
+                    Created = DateTime.UtcNow,
                 };
-                foreach (var member in teamMembers)
-                {
-                    claims.Add(new Claim("team", $"{member.Id}:{member.InviterId}"));
-                }
 
-                var key = new SymmetricSecurityKey(
-                    Encoding.UTF8.GetBytes(_configuration["Jwt:Key"])
+                _context.RefreshTokens.Add(newRefreshTokenEntity);
+                await _context.SaveChangesAsync(cancellationToken);
+
+                _logger.LogInformation(
+                    "Refresh-token SaveChanges complete. ElapsedMs={ElapsedMs}",
+                    sw.ElapsedMilliseconds
                 );
-                var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-                var newAccessToken = new JwtSecurityToken(
-                    issuer: _configuration["Jwt:Issuer"],
-                    audience: _configuration["Jwt:Audience"],
-                    claims: claims,
-                    expires: DateTime.UtcNow.AddMinutes(30),
-                    signingCredentials: creds
+
+                _logger.LogInformation(
+                    "Refresh-token OK. ElapsedMs={ElapsedMs}",
+                    sw.ElapsedMilliseconds
                 );
-                newAccessTokenString = new JwtSecurityTokenHandler().WriteToken(newAccessToken);
+
+                return Ok(new { token = newAccessTokenString, refreshToken = newRefreshToken });
             }
-
-            // Generate a new refresh token for both cases
-            var newRefreshToken = GenerateRefreshToken();
-            var newRefreshTokenEntity = new RefreshToken
+            catch (OperationCanceledException)
             {
-                UserId = storedToken.UserId, // Re-use the same ID (either UserModel or TeamMember)
-                Token = newRefreshToken,
-                Expires = DateTime.UtcNow.AddDays(7),
-                Created = DateTime.UtcNow,
-            };
-
-            _context.RefreshTokens.Add(newRefreshTokenEntity);
-            await _context.SaveChangesAsync();
-
-            return Ok(new { token = newAccessTokenString, refreshToken = newRefreshToken });
+                _logger.LogWarning(
+                    "Refresh-token request canceled. ElapsedMs={ElapsedMs}",
+                    sw.ElapsedMilliseconds
+                );
+                return StatusCode(499);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Refresh-token crashed. ElapsedMs={ElapsedMs}",
+                    sw.ElapsedMilliseconds
+                );
+                return Problem("Refresh token failed.");
+            }
         }
 
         [HttpPost("trailversion")]
@@ -794,7 +879,7 @@ namespace ProbuildBackend.Controllers
                 issuer: _configuration["Jwt:Issuer"],
                 audience: _configuration["Jwt:Audience"],
                 claims: claims,
-                expires: DateTime.UtcNow.AddMinutes(30),
+                expires: DateTime.UtcNow.AddMinutes(GetAccessTokenExpiryMinutes()),
                 signingCredentials: creds
             );
 
