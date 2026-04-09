@@ -12,6 +12,17 @@ namespace ProbuildBackend.Services
         {
             _logger.LogInformation("Token Cleanup Service is starting.");
 
+            // Avoid doing heavy cleanup immediately on boot (can spam logs / DB after downtime).
+            // A short delay also lets the app come up fully before running maintenance tasks.
+            try
+            {
+                await Task.Delay(TimeSpan.FromMinutes(2), stoppingToken);
+            }
+            catch (TaskCanceledException)
+            {
+                return;
+            }
+
             while (!stoppingToken.IsCancellationRequested)
             {
                 _logger.LogInformation("Token Cleanup Service is running.");
@@ -29,21 +40,26 @@ namespace ProbuildBackend.Services
             using var scope = _services.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-            var tokensToRemove = context
-                .RefreshTokens.Where(rt => rt.Expires < DateTime.UtcNow || rt.Revoked != null)
-                .ToListAsync(stoppingToken);
-
-            var tokens = await tokensToRemove;
-
-            if (tokens.Count != 0)
+            try
             {
-                context.RefreshTokens.RemoveRange(tokens);
-                await context.SaveChangesAsync(stoppingToken);
-                _logger.LogInformation($"Cleaned up {tokens.Count} refresh token(s).");
+                // Execute as a single SQL statement (fast, avoids N DELETE statements).
+                var deletedCount = await context
+                    .RefreshTokens
+                    .Where(rt => rt.Expires < DateTime.UtcNow || rt.Revoked != null)
+                    .ExecuteDeleteAsync(stoppingToken);
+
+                if (deletedCount != 0)
+                {
+                    _logger.LogInformation($"Cleaned up {deletedCount} refresh token(s).");
+                }
+                else
+                {
+                    _logger.LogInformation("No refresh tokens to clean up.");
+                }
             }
-            else
+            catch (Exception ex)
             {
-                _logger.LogInformation("No refresh tokens to clean up.");
+                _logger.LogError(ex, "Failed to clean up refresh tokens.");
             }
         }
     }
