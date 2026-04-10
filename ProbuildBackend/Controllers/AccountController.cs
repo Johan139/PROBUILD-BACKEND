@@ -20,6 +20,9 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Diagnostics;
+using System.Net;
+using System.Net.Http;
+using System.Net.Sockets;
 using static Google.Api.Ads.AdWords.Util.Reports.v201809.PaidOrganicQueryReportReportRow;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 
@@ -40,6 +43,7 @@ namespace ProbuildBackend.Controllers
         private readonly IBackgroundJobClient _jobClient;
         private readonly EmailAutomationManager _manager;
         private readonly ILogger<AccountController> _logger;
+        private readonly IHttpClientFactory _httpClientFactory;
 
         private int GetAccessTokenExpiryMinutes()
         {
@@ -69,7 +73,8 @@ namespace ProbuildBackend.Controllers
             ILogLoginInformationService logLoginInformationService,
             IBackgroundJobClient jobClient,
             EmailAutomationManager manager,
-            ILogger<AccountController> logger
+            ILogger<AccountController> logger,
+            IHttpClientFactory httpClientFactory
         )
         {
             _userManager = userManager;
@@ -83,6 +88,7 @@ namespace ProbuildBackend.Controllers
             _jobClient = jobClient;
             _manager = manager;
             _logger = logger;
+            _httpClientFactory = httpClientFactory;
         }
 
         [HttpPost("register")]
@@ -1305,6 +1311,160 @@ namespace ProbuildBackend.Controllers
             {
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Geo/IP hint for registration (same shape as ipapi.co). Called from the browser via our API to avoid CORS.
+        /// </summary>
+        [HttpGet("client-geo-hint")]
+        public async Task<IActionResult> GetClientGeoHint(CancellationToken cancellationToken)
+        {
+            var cfCountry = NormalizeCfCountry(
+                HttpContext.Request.Headers["CF-IPCountry"].FirstOrDefault()
+            );
+            var ip = GetRequestClientIp(HttpContext);
+
+            if (string.IsNullOrEmpty(ip) || !IsSafeClientIpForLookup(ip))
+            {
+                return Content(
+                    ClientGeoHintFallbackJson(ip, cfCountry),
+                    "application/json"
+                );
+            }
+
+            var client = _httpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(6);
+            var url = $"https://ipapi.co/{Uri.EscapeDataString(ip)}/json/";
+
+            try
+            {
+                using var response = await client.GetAsync(url, cancellationToken);
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                if (!response.IsSuccessStatusCode || string.IsNullOrWhiteSpace(body))
+                {
+                    return Content(
+                        ClientGeoHintFallbackJson(ip, cfCountry),
+                        "application/json"
+                    );
+                }
+
+                return Content(body, "application/json");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "client-geo-hint: ipapi request failed for {Ip}", ip);
+                return Content(
+                    ClientGeoHintFallbackJson(ip, cfCountry),
+                    "application/json"
+                );
+            }
+        }
+
+        private static string? NormalizeCfCountry(string? header)
+        {
+            if (string.IsNullOrWhiteSpace(header))
+                return null;
+            var v = header.Trim().ToUpperInvariant();
+            if (v.Length != 2 || v == "XX" || v == "T1")
+                return null;
+            return v;
+        }
+
+        private static string ClientGeoHintFallbackJson(string? ip, string? countryCode) =>
+            JsonConvert.SerializeObject(
+                new Dictionary<string, object?>
+                {
+                    ["ip"] = ip,
+                    ["country_code"] = countryCode,
+                    ["city"] = null,
+                    ["region"] = null,
+                    ["country_name"] = null,
+                    ["latitude"] = null,
+                    ["longitude"] = null,
+                    ["timezone"] = null,
+                }
+            );
+
+        private static string? GetRequestClientIp(HttpContext ctx)
+        {
+            var cfConnecting = ctx.Request.Headers["CF-Connecting-IP"].FirstOrDefault();
+            if (
+                !string.IsNullOrWhiteSpace(cfConnecting)
+                && IPAddress.TryParse(cfConnecting.Trim(), out var cfAddr)
+            )
+            {
+                return FormatIpString(cfAddr);
+            }
+
+            var trueClient = ctx.Request.Headers["True-Client-IP"].FirstOrDefault();
+            if (
+                !string.IsNullOrWhiteSpace(trueClient)
+                && IPAddress.TryParse(trueClient.Trim(), out var tcAddr)
+            )
+            {
+                return FormatIpString(tcAddr);
+            }
+
+            var azureClientIp = ctx.Request.Headers["X-Azure-ClientIP"].FirstOrDefault();
+            if (
+                !string.IsNullOrWhiteSpace(azureClientIp)
+                && IPAddress.TryParse(azureClientIp.Trim(), out var azAddr)
+            )
+            {
+                return FormatIpString(azAddr);
+            }
+
+            var forwarded = ctx.Request.Headers["X-Forwarded-For"].FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(forwarded))
+            {
+                var first = forwarded
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .FirstOrDefault();
+                if (
+                    !string.IsNullOrEmpty(first)
+                    && IPAddress.TryParse(first, out var fwdAddr)
+                )
+                {
+                    return FormatIpString(fwdAddr);
+                }
+            }
+
+            return ctx.Connection.RemoteIpAddress != null
+                ? FormatIpString(ctx.Connection.RemoteIpAddress)
+                : null;
+        }
+
+        private static string FormatIpString(IPAddress addr)
+        {
+            if (addr.AddressFamily == AddressFamily.InterNetworkV6 && addr.IsIPv4MappedToIPv6)
+                return addr.MapToIPv4().ToString();
+            return addr.ToString();
+        }
+
+        private static bool IsSafeClientIpForLookup(string ip)
+        {
+            if (!IPAddress.TryParse(ip, out var addr))
+                return false;
+
+            if (IPAddress.IsLoopback(addr))
+                return false;
+
+            if (addr.AddressFamily == AddressFamily.InterNetwork)
+            {
+                var b = addr.GetAddressBytes();
+                if (b[0] == 10)
+                    return false;
+                if (b[0] == 172 && b[1] >= 16 && b[1] <= 31)
+                    return false;
+                if (b[0] == 192 && b[1] == 168)
+                    return false;
+                if (b[0] == 127)
+                    return false;
+                if (b[0] == 169 && b[1] == 254)
+                    return false;
+            }
+
+            return true;
         }
 
         [HttpGet("email-exists")]
