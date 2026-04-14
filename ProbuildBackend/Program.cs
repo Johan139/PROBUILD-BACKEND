@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption;
 using Microsoft.AspNetCore.DataProtection.AuthenticatedEncryption.ConfigurationModel;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -22,6 +23,14 @@ using ProbuildBackend.Services;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Real client IP / scheme behind Azure, Container Apps, nginx, Cloudflare, etc.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 
 // Configure logging
 builder.Logging.ClearProviders();
@@ -41,6 +50,10 @@ builder.Services.AddCors(options =>
                     || origin == "https://app.probuildai.com"
                     || origin == "https://www.app.probuildai.com"
                     || origin == "https://probuildai.com"
+                    || origin == "https://app.probuild.com"
+                    || origin == "https://www.app.probuild.com"
+                    || origin == "https://probuild.com"
+                    || origin == "https://www.probuild.com"
                     || origin == "http://localhost:3000"
                     || origin
                         == "https://probuildai-web-qa-a2cyd0eygke4gfbu.centralus-01.azurewebsites.net"
@@ -359,6 +372,8 @@ else
     app.UseExceptionHandler("/Home/Error");
     app.UseHsts();
 }
+
+app.UseForwardedHeaders();
 
 // Bypass HTTPS redirection for /health endpoint to ensure compatibility
 app.UseWhen(

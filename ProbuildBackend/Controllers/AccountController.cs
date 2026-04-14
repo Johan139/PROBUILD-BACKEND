@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
@@ -18,6 +19,10 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Diagnostics;
+using System.Net;
+using System.Net.Http;
+using System.Net.Sockets;
 using static Google.Api.Ads.AdWords.Util.Reports.v201809.PaidOrganicQueryReportReportRow;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 
@@ -37,6 +42,25 @@ namespace ProbuildBackend.Controllers
         public readonly ILogLoginInformationService _logLoginInformationService;
         private readonly IBackgroundJobClient _jobClient;
         private readonly EmailAutomationManager _manager;
+        private readonly ILogger<AccountController> _logger;
+        private readonly IHttpClientFactory _httpClientFactory;
+
+        private int GetAccessTokenExpiryMinutes()
+        {
+            var env = Environment.GetEnvironmentVariable("JWT_ACCESS_TOKEN_MINUTES");
+            if (int.TryParse(env, out var minutes) && minutes > 0)
+            {
+                return minutes;
+            }
+
+            var fromConfig = _configuration["Jwt:AccessTokenMinutes"];
+            if (int.TryParse(fromConfig, out minutes) && minutes > 0)
+            {
+                return minutes;
+            }
+
+            return 30;
+        }
 
         public AccountController(
             UserManager<UserModel> userManager,
@@ -48,7 +72,9 @@ namespace ProbuildBackend.Controllers
             IEmailTemplateService emailTemplate,
             ILogLoginInformationService logLoginInformationService,
             IBackgroundJobClient jobClient,
-            EmailAutomationManager manager
+            EmailAutomationManager manager,
+            ILogger<AccountController> logger,
+            IHttpClientFactory httpClientFactory
         )
         {
             _userManager = userManager;
@@ -61,6 +87,8 @@ namespace ProbuildBackend.Controllers
             _logLoginInformationService = logLoginInformationService;
             _jobClient = jobClient;
             _manager = manager;
+            _logger = logger;
+            _httpClientFactory = httpClientFactory;
         }
 
         [HttpPost("register")]
@@ -616,94 +644,157 @@ namespace ProbuildBackend.Controllers
         public record RefreshTokenRequest(string RefreshToken);
 
         [HttpPost("refresh-token")]
-        public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
+        public async Task<IActionResult> RefreshToken(
+            [FromBody] RefreshTokenRequest request,
+            CancellationToken cancellationToken
+        )
         {
-            var refreshToken = request.RefreshToken;
-
-            var storedToken = await _context.RefreshTokens.FirstOrDefaultAsync(rt =>
-                rt.Token == refreshToken
-            );
-
-            if (
-                storedToken == null
-                || storedToken.Revoked != null
-                || storedToken.Expires < DateTime.UtcNow
-            )
+            if (request == null || string.IsNullOrWhiteSpace(request.RefreshToken))
             {
-                return Unauthorized(new { error = "Invalid refresh token." });
+                return BadRequest(new { error = "Refresh token is required." });
             }
 
-            // Revoke the old refresh token immediately
-            storedToken.Revoked = DateTime.UtcNow;
-
-            string newAccessTokenString;
-
-            // Case 1: Regular User
-            var user = await _context.Users.FindAsync(storedToken.UserId);
-            if (user != null)
+            var sw = Stopwatch.StartNew();
+            try
             {
-                newAccessTokenString = GenerateJwtToken(user);
-            }
-            else
-            {
-                var memberById = await _context.TeamMembers.FindAsync(storedToken.UserId);
-                if (memberById == null)
+                var refreshToken = request.RefreshToken;
+
+                _logger.LogInformation(
+                    "Refresh-token start. ElapsedMs={ElapsedMs}",
+                    sw.ElapsedMilliseconds
+                );
+
+                var storedToken = await _context.RefreshTokens.FirstOrDefaultAsync(
+                    rt => rt.Token == refreshToken,
+                    cancellationToken
+                );
+
+                _logger.LogInformation(
+                    "Refresh-token DB lookup complete. Found={Found} ElapsedMs={ElapsedMs}",
+                    storedToken != null,
+                    sw.ElapsedMilliseconds
+                );
+
+                if (
+                    storedToken == null
+                    || storedToken.Revoked != null
+                    || storedToken.Expires < DateTime.UtcNow
+                )
                 {
-                    return Unauthorized(
-                        new { error = "User or team member not found for the given token." }
+                    _logger.LogInformation(
+                        "Refresh-token rejected (invalid/revoked/expired). ElapsedMs={ElapsedMs}",
+                        sw.ElapsedMilliseconds
                     );
+                    return Unauthorized(new { error = "Invalid refresh token." });
                 }
 
-                var teamMembers = await _context
-                    .TeamMembers.Where(tm =>
-                        tm.Email == memberById.Email && tm.Status == "Registered"
-                    )
-                    .ToListAsync();
+                // Revoke the old refresh token immediately
+                storedToken.Revoked = DateTime.UtcNow;
 
-                if (!teamMembers.Any())
+                string newAccessTokenString;
+
+                // Case 1: Regular User
+                var user = await _context.Users.FindAsync(
+                    new object[] { storedToken.UserId },
+                    cancellationToken
+                );
+                if (user != null)
                 {
-                    return Unauthorized(new { error = "Team member not found for the given token." });
+                    newAccessTokenString = GenerateJwtToken(user);
+                }
+                else
+                {
+                    var memberById = await _context.TeamMembers.FindAsync(
+                        new object[] { storedToken.UserId },
+                        cancellationToken
+                    );
+                    if (memberById == null)
+                    {
+                        return Unauthorized(
+                            new { error = "User or team member not found for the given token." }
+                        );
+                    }
+
+                    var teamMembers = await _context
+                        .TeamMembers.Where(tm =>
+                            tm.Email == memberById.Email && tm.Status == "Registered"
+                        )
+                        .ToListAsync(cancellationToken);
+
+                    if (!teamMembers.Any())
+                    {
+                        return Unauthorized(
+                            new { error = "Team member not found for the given token." }
+                        );
+                    }
+
+                    var firstMember = teamMembers.First();
+                    var claims = new List<Claim>
+                    {
+                        new Claim(ClaimTypes.Email, firstMember.Email),
+                        new Claim("isTeamMember", "true"),
+                    };
+                    foreach (var member in teamMembers)
+                    {
+                        claims.Add(new Claim("team", $"{member.Id}:{member.InviterId}"));
+                    }
+
+                    var key = new SymmetricSecurityKey(
+                        Encoding.UTF8.GetBytes(_configuration["Jwt:Key"])
+                    );
+                    var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+                    var newAccessToken = new JwtSecurityToken(
+                        issuer: _configuration["Jwt:Issuer"],
+                        audience: _configuration["Jwt:Audience"],
+                        claims: claims,
+                        expires: DateTime.UtcNow.AddMinutes(GetAccessTokenExpiryMinutes()),
+                        signingCredentials: creds
+                    );
+                    newAccessTokenString = new JwtSecurityTokenHandler().WriteToken(newAccessToken);
                 }
 
-                var firstMember = teamMembers.First();
-                var claims = new List<Claim>
+                // Generate a new refresh token for both cases
+                var newRefreshToken = GenerateRefreshToken();
+                var newRefreshTokenEntity = new RefreshToken
                 {
-                    new Claim(ClaimTypes.Email, firstMember.Email),
-                    new Claim("isTeamMember", "true"),
+                    UserId = storedToken.UserId, // Re-use the same ID (either UserModel or TeamMember)
+                    Token = newRefreshToken,
+                    Expires = DateTime.UtcNow.AddDays(7),
+                    Created = DateTime.UtcNow,
                 };
-                foreach (var member in teamMembers)
-                {
-                    claims.Add(new Claim("team", $"{member.Id}:{member.InviterId}"));
-                }
 
-                var key = new SymmetricSecurityKey(
-                    Encoding.UTF8.GetBytes(_configuration["Jwt:Key"])
+                _context.RefreshTokens.Add(newRefreshTokenEntity);
+                await _context.SaveChangesAsync(cancellationToken);
+
+                _logger.LogInformation(
+                    "Refresh-token SaveChanges complete. ElapsedMs={ElapsedMs}",
+                    sw.ElapsedMilliseconds
                 );
-                var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-                var newAccessToken = new JwtSecurityToken(
-                    issuer: _configuration["Jwt:Issuer"],
-                    audience: _configuration["Jwt:Audience"],
-                    claims: claims,
-                    expires: DateTime.UtcNow.AddMinutes(30),
-                    signingCredentials: creds
+
+                _logger.LogInformation(
+                    "Refresh-token OK. ElapsedMs={ElapsedMs}",
+                    sw.ElapsedMilliseconds
                 );
-                newAccessTokenString = new JwtSecurityTokenHandler().WriteToken(newAccessToken);
+
+                return Ok(new { token = newAccessTokenString, refreshToken = newRefreshToken });
             }
-
-            // Generate a new refresh token for both cases
-            var newRefreshToken = GenerateRefreshToken();
-            var newRefreshTokenEntity = new RefreshToken
+            catch (OperationCanceledException)
             {
-                UserId = storedToken.UserId, // Re-use the same ID (either UserModel or TeamMember)
-                Token = newRefreshToken,
-                Expires = DateTime.UtcNow.AddDays(7),
-                Created = DateTime.UtcNow,
-            };
-
-            _context.RefreshTokens.Add(newRefreshTokenEntity);
-            await _context.SaveChangesAsync();
-
-            return Ok(new { token = newAccessTokenString, refreshToken = newRefreshToken });
+                _logger.LogWarning(
+                    "Refresh-token request canceled. ElapsedMs={ElapsedMs}",
+                    sw.ElapsedMilliseconds
+                );
+                return StatusCode(499);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Refresh-token crashed. ElapsedMs={ElapsedMs}",
+                    sw.ElapsedMilliseconds
+                );
+                return Problem("Refresh token failed.");
+            }
         }
 
         [HttpPost("trailversion")]
@@ -794,7 +885,7 @@ namespace ProbuildBackend.Controllers
                 issuer: _configuration["Jwt:Issuer"],
                 audience: _configuration["Jwt:Audience"],
                 claims: claims,
-                expires: DateTime.UtcNow.AddMinutes(30),
+                expires: DateTime.UtcNow.AddMinutes(GetAccessTokenExpiryMinutes()),
                 signingCredentials: creds
             );
 
@@ -1220,6 +1311,160 @@ namespace ProbuildBackend.Controllers
             {
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Geo/IP hint for registration (same shape as ipapi.co). Called from the browser via our API to avoid CORS.
+        /// </summary>
+        [HttpGet("client-geo-hint")]
+        public async Task<IActionResult> GetClientGeoHint(CancellationToken cancellationToken)
+        {
+            var cfCountry = NormalizeCfCountry(
+                HttpContext.Request.Headers["CF-IPCountry"].FirstOrDefault()
+            );
+            var ip = GetRequestClientIp(HttpContext);
+
+            if (string.IsNullOrEmpty(ip) || !IsSafeClientIpForLookup(ip))
+            {
+                return Content(
+                    ClientGeoHintFallbackJson(ip, cfCountry),
+                    "application/json"
+                );
+            }
+
+            var client = _httpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(6);
+            var url = $"https://ipapi.co/{Uri.EscapeDataString(ip)}/json/";
+
+            try
+            {
+                using var response = await client.GetAsync(url, cancellationToken);
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                if (!response.IsSuccessStatusCode || string.IsNullOrWhiteSpace(body))
+                {
+                    return Content(
+                        ClientGeoHintFallbackJson(ip, cfCountry),
+                        "application/json"
+                    );
+                }
+
+                return Content(body, "application/json");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "client-geo-hint: ipapi request failed for {Ip}", ip);
+                return Content(
+                    ClientGeoHintFallbackJson(ip, cfCountry),
+                    "application/json"
+                );
+            }
+        }
+
+        private static string? NormalizeCfCountry(string? header)
+        {
+            if (string.IsNullOrWhiteSpace(header))
+                return null;
+            var v = header.Trim().ToUpperInvariant();
+            if (v.Length != 2 || v == "XX" || v == "T1")
+                return null;
+            return v;
+        }
+
+        private static string ClientGeoHintFallbackJson(string? ip, string? countryCode) =>
+            JsonConvert.SerializeObject(
+                new Dictionary<string, object?>
+                {
+                    ["ip"] = ip,
+                    ["country_code"] = countryCode,
+                    ["city"] = null,
+                    ["region"] = null,
+                    ["country_name"] = null,
+                    ["latitude"] = null,
+                    ["longitude"] = null,
+                    ["timezone"] = null,
+                }
+            );
+
+        private static string? GetRequestClientIp(HttpContext ctx)
+        {
+            var cfConnecting = ctx.Request.Headers["CF-Connecting-IP"].FirstOrDefault();
+            if (
+                !string.IsNullOrWhiteSpace(cfConnecting)
+                && IPAddress.TryParse(cfConnecting.Trim(), out var cfAddr)
+            )
+            {
+                return FormatIpString(cfAddr);
+            }
+
+            var trueClient = ctx.Request.Headers["True-Client-IP"].FirstOrDefault();
+            if (
+                !string.IsNullOrWhiteSpace(trueClient)
+                && IPAddress.TryParse(trueClient.Trim(), out var tcAddr)
+            )
+            {
+                return FormatIpString(tcAddr);
+            }
+
+            var azureClientIp = ctx.Request.Headers["X-Azure-ClientIP"].FirstOrDefault();
+            if (
+                !string.IsNullOrWhiteSpace(azureClientIp)
+                && IPAddress.TryParse(azureClientIp.Trim(), out var azAddr)
+            )
+            {
+                return FormatIpString(azAddr);
+            }
+
+            var forwarded = ctx.Request.Headers["X-Forwarded-For"].FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(forwarded))
+            {
+                var first = forwarded
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .FirstOrDefault();
+                if (
+                    !string.IsNullOrEmpty(first)
+                    && IPAddress.TryParse(first, out var fwdAddr)
+                )
+                {
+                    return FormatIpString(fwdAddr);
+                }
+            }
+
+            return ctx.Connection.RemoteIpAddress != null
+                ? FormatIpString(ctx.Connection.RemoteIpAddress)
+                : null;
+        }
+
+        private static string FormatIpString(IPAddress addr)
+        {
+            if (addr.AddressFamily == AddressFamily.InterNetworkV6 && addr.IsIPv4MappedToIPv6)
+                return addr.MapToIPv4().ToString();
+            return addr.ToString();
+        }
+
+        private static bool IsSafeClientIpForLookup(string ip)
+        {
+            if (!IPAddress.TryParse(ip, out var addr))
+                return false;
+
+            if (IPAddress.IsLoopback(addr))
+                return false;
+
+            if (addr.AddressFamily == AddressFamily.InterNetwork)
+            {
+                var b = addr.GetAddressBytes();
+                if (b[0] == 10)
+                    return false;
+                if (b[0] == 172 && b[1] >= 16 && b[1] <= 31)
+                    return false;
+                if (b[0] == 192 && b[1] == 168)
+                    return false;
+                if (b[0] == 127)
+                    return false;
+                if (b[0] == 169 && b[1] == 254)
+                    return false;
+            }
+
+            return true;
         }
 
         [HttpGet("email-exists")]
