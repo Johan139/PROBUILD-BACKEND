@@ -20,6 +20,7 @@ namespace ProbuildBackend.Services
         private readonly AzureBlobService _azureBlobService;
         private readonly IHubContext<ChatHub> _hubContext;
         private readonly IAiAnalysisService _aiAnalysisService;
+        private readonly ChatKnowledgeResolverService _chatKnowledgeResolver;
 
         public ChatService(
             IConversationRepository conversationRepository,
@@ -29,7 +30,8 @@ namespace ProbuildBackend.Services
             IWebHostEnvironment hostingEnvironment,
             AzureBlobService azureBlobService,
             IHubContext<ChatHub> hubContext,
-            IAiAnalysisService aiAnalysisService
+            IAiAnalysisService aiAnalysisService,
+            ChatKnowledgeResolverService chatKnowledgeResolver
         )
         {
             _conversationRepository = conversationRepository;
@@ -41,6 +43,7 @@ namespace ProbuildBackend.Services
             _azureBlobService = azureBlobService;
             _hubContext = hubContext;
             _aiAnalysisService = aiAnalysisService;
+            _chatKnowledgeResolver = chatKnowledgeResolver;
         }
 
         private List<PromptMapping> LoadPromptMappings()
@@ -122,7 +125,8 @@ namespace ProbuildBackend.Services
             string userType,
             string initialMessage,
             List<string>? promptKeys = null,
-            List<string>? blueprintUrls = null
+            List<string>? blueprintUrls = null,
+            ChatKnowledgeContextRequest? knowledgeContext = null
         )
         {
             promptKeys ??= new List<string>();
@@ -149,10 +153,22 @@ namespace ProbuildBackend.Services
                 }
             );
 
-            var systemPersonaPrompt = await _promptManager.GetPromptAsync(
-                userType,
-                promptKeys.FirstOrDefault() ?? "generic-prompt.txt"
+            var resolvedKnowledge = await _chatKnowledgeResolver.ResolveAsync(
+                $"new:{userId}:{conversationId}",
+                new ChatKnowledgeContextRequest
+                {
+                    UserType = userType,
+                    UserMessage = initialMessage,
+                    HelpIntent = knowledgeContext?.HelpIntent,
+                    CurrentRoute = knowledgeContext?.CurrentRoute,
+                    CurrentFeature = knowledgeContext?.CurrentFeature,
+                    CurrentStage = knowledgeContext?.CurrentStage,
+                    ProjectName = knowledgeContext?.ProjectName,
+                    PromptKeys = promptKeys,
+                }
             );
+
+            var systemPersonaPrompt = resolvedKnowledge.ComposedSystemPrompt;
 
             string aiResponse;
 
@@ -336,11 +352,28 @@ namespace ProbuildBackend.Services
             }
             else
             {
+                var resolvedKnowledge = await _chatKnowledgeResolver.ResolveAsync(
+                    $"conversation:{conversationId}",
+                    new ChatKnowledgeContextRequest
+                    {
+                        UserType = conversation.UserId == userId ? null : null,
+                        UserMessage = dto.Message,
+                        HelpIntent = dto.HelpIntent,
+                        CurrentRoute = dto.CurrentRoute,
+                        CurrentFeature = dto.CurrentFeature,
+                        CurrentStage = dto.CurrentStage,
+                        ProjectName = dto.ProjectName,
+                        PromptKeys = dto.PromptKeys ?? new List<string>(),
+                    }
+                );
+
                 var (continueResponse, _) = await _aiService.ContinueConversationAsync(
                     conversationId,
                     userId,
                     dto.Message,
-                    fileUrls
+                    fileUrls,
+                    false,
+                    resolvedKnowledge.ComposedSystemPrompt
                 );
 
                 var words = (continueResponse ?? string.Empty).Split(

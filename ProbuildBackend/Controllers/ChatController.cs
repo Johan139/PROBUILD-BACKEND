@@ -83,7 +83,18 @@ namespace ProbuildBackend.Controllers
                 dto.UserType,
                 dto.InitialMessage,
                 dto.PromptKeys,
-                dto.BlueprintUrls
+                dto.BlueprintUrls,
+                new ChatKnowledgeContextRequest
+                {
+                    UserType = dto.UserType,
+                    UserMessage = dto.InitialMessage,
+                    HelpIntent = dto.HelpIntent,
+                    CurrentRoute = dto.CurrentRoute,
+                    CurrentFeature = dto.CurrentFeature,
+                    CurrentStage = dto.CurrentStage,
+                    ProjectName = dto.ProjectName,
+                    PromptKeys = dto.PromptKeys ?? new List<string>(),
+                }
             );
             _logger.LogInformation(
                 $"StartConversation - Returning new conversation with ID: {conversation.Id}"
