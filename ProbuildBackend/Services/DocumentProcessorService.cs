@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Web;
 using Hangfire;
 using Hangfire.Storage;
@@ -90,6 +91,7 @@ namespace ProbuildBackend.Services
                     budgetLevel,
                     connectionId
                 );
+                await EnsureScopePromptResultsPersistedAsync(jobId, finalReport);
 
                 var processingResult = new DocumentProcessingResult
                 {
@@ -368,6 +370,7 @@ namespace ProbuildBackend.Services
                     null,
                     connectionId
                 );
+                await EnsureScopePromptResultsPersistedAsync(jobId, finalReport);
 
                 var result = new DocumentProcessingResult
                 {
@@ -589,6 +592,7 @@ namespace ProbuildBackend.Services
                     budgetLevel,
                     connectionId
                 );
+                await EnsureScopePromptResultsPersistedAsync(jobId, finalReport);
 
                 var result = new DocumentProcessingResult
                 {
@@ -789,6 +793,113 @@ WHERE [JobId] = {jobId};
             return JobStorage.Current
                 .GetConnection()
                 .AcquireDistributedLock($"analysis:user:{key}", TimeSpan.FromHours(1));
+        }
+
+        /// <summary>
+        /// Failsafe persistence path: if upstream parse/broadcast path is skipped,
+        /// still persist scope-review JSON blocks from final report.
+        /// </summary>
+        private async Task EnsureScopePromptResultsPersistedAsync(int jobId, string? finalReport)
+        {
+            if (string.IsNullOrWhiteSpace(finalReport))
+            {
+                return;
+            }
+
+            var extracted = ExtractScopeJsonBySchema(finalReport);
+            if (extracted.Count == 0)
+            {
+                return;
+            }
+
+            var now = DateTime.UtcNow;
+            var existingRecent = await _context.JobPromptResults
+                .AsNoTracking()
+                .Where(
+                    r =>
+                        r.JobId == jobId
+                        && r.CreatedAt >= now.AddMinutes(-5)
+                        && (
+                            r.PromptKey == "executive-summary-prompt"
+                            || r.PromptKey == "prompt-21-timeline"
+                            || r.PromptKey == "prompt-25-cost-breakdowns"
+                        )
+                )
+                .Select(r => r.PromptKey)
+                .Distinct()
+                .ToListAsync();
+
+            var existingSet = new HashSet<string>(existingRecent, StringComparer.OrdinalIgnoreCase);
+            foreach (var kvp in extracted)
+            {
+                if (existingSet.Contains(kvp.Key))
+                {
+                    continue;
+                }
+
+                _context.JobPromptResults.Add(
+                    new JobPromptResult
+                    {
+                        JobId = jobId,
+                        PromptKey = kvp.Key,
+                        SchemaVersion = kvp.Value.SchemaVersion,
+                        RawResponse = kvp.Value.Json,
+                        ParsedJson = kvp.Value.Json,
+                        CreatedAt = DateTime.UtcNow,
+                    }
+                );
+            }
+        }
+
+        private sealed record ScopeJsonExtract(string SchemaVersion, string Json);
+
+        private static Dictionary<string, ScopeJsonExtract> ExtractScopeJsonBySchema(string report)
+        {
+            var result = new Dictionary<string, ScopeJsonExtract>(StringComparer.OrdinalIgnoreCase);
+            var blockRegex = new Regex(@"```json\s*(\{[\s\S]*?\})\s*```", RegexOptions.IgnoreCase);
+            var matches = blockRegex.Matches(report);
+            foreach (Match m in matches)
+            {
+                if (!m.Success || m.Groups.Count < 2)
+                {
+                    continue;
+                }
+
+                var json = m.Groups[1].Value?.Trim();
+                if (string.IsNullOrWhiteSpace(json))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    using var doc = JsonDocument.Parse(json);
+                    if (!doc.RootElement.TryGetProperty("schemaVersion", out var schemaEl))
+                    {
+                        continue;
+                    }
+
+                    var schema = schemaEl.GetString() ?? string.Empty;
+                    if (schema.Equals("executive_summary.v1", StringComparison.OrdinalIgnoreCase))
+                    {
+                        result["executive-summary-prompt"] = new ScopeJsonExtract(schema, json);
+                    }
+                    else if (schema.Equals("timeline.v1", StringComparison.OrdinalIgnoreCase))
+                    {
+                        result["prompt-21-timeline"] = new ScopeJsonExtract(schema, json);
+                    }
+                    else if (schema.Equals("cost_breakdowns.v1", StringComparison.OrdinalIgnoreCase))
+                    {
+                        result["prompt-25-cost-breakdowns"] = new ScopeJsonExtract(schema, json);
+                    }
+                }
+                catch
+                {
+                    // Ignore invalid JSON blocks.
+                }
+            }
+
+            return result;
         }
     }
 }

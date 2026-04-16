@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Linq;
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -29,6 +30,12 @@ namespace ProbuildBackend.Services
         private const string FailureCorrectiveActionKey = "prompt-failure-corrective-action.txt";
         private const string BidComparisonPromptKey = "subcontractor-comparison-prompt.txt";
         private const string InitialAnalysisPhaseTitle = "Initial Analysis & Reporting";
+        private const double ScopeCostVarianceRejectThreshold = 0.15;
+        private const string RejectionReasonPrefix = "__SCOPE_REJECTION_REASON__:";
+        private static readonly ConcurrentDictionary<int, SemaphoreSlim> _analysisLocks = new();
+        private static int _jobPromptResultsTableDiagnosticsLogged = 0;
+        private static int _jobPromptResultsTableEnsured = 0;
+        private static readonly string _instanceId = Guid.NewGuid().ToString("N");
 
         public AiAnalysisService(
             ILogger<AiAnalysisService> logger,
@@ -63,6 +70,9 @@ namespace ProbuildBackend.Services
         )
         {
             _keepAliveService.StartPinging();
+            var analysisLock = _analysisLocks.GetOrAdd(requestDto.JobId, _ => new SemaphoreSlim(1, 1));
+            await analysisLock.WaitAsync();
+            var analysisStartedAtUtc = DateTime.UtcNow;
             try
             {
                 if (requestDto?.PromptKeys == null || !requestDto.PromptKeys.Any())
@@ -161,37 +171,66 @@ namespace ProbuildBackend.Services
                 {
                     if (!completedPrompts.Contains(promptName))
                     {
-                        await MarkPromptCompleted(job.Id, promptName);
-                        completedPrompts.Add(promptName);
+                        // Do not mark completed just because the model response was saved.
+                        // A prompt is only considered completed once we have persisted a JobPromptResult.
+                        var normalizedPromptKey = NormalizePromptKey(promptName);
+                        var hasPersisted = await _context.JobPromptResults.AsNoTracking()
+                            .AnyAsync(r => r.JobId == job.Id && r.PromptKey == normalizedPromptKey);
+                        if (hasPersisted)
+                        {
+                            await MarkPromptCompleted(job.Id, normalizedPromptKey);
+                            completedPrompts.Add(normalizedPromptKey);
+                        }
+                    }
+                }
+
+                // Resume safety: if a prompt is marked completed but no JobPromptResult exists,
+                // treat it as incomplete so the prompt reruns and persists.
+                foreach (var promptKey in orderedPrompts)
+                {
+                    if (!completedPrompts.Contains(promptKey) || IsScopeSnapshotPromptKey(promptKey))
+                    {
+                        continue;
+                    }
+
+                    var normalizedPromptKey = NormalizePromptKey(promptKey);
+                    var hasPersisted = await _context.JobPromptResults.AsNoTracking()
+                        .AnyAsync(r => r.JobId == job.Id && r.PromptKey == normalizedPromptKey);
+                    if (!hasPersisted)
+                    {
+                        _logger.LogWarning(
+                            "Resume detected completed prompt without JobPromptResults row. Will rerun: jobId={JobId} promptKey={PromptKey}",
+                            job.Id,
+                            normalizedPromptKey
+                        );
+                        completedPrompts.Remove(promptKey);
+                        completedPrompts.Remove(normalizedPromptKey);
                     }
                 }
 
                 int step = completedPrompts.Count + 1;
                 foreach (var promptKey in orderedPrompts)
                 {
-                    if (completedPrompts.Contains(promptKey))
+                    if (
+                        completedPrompts.Contains(promptKey)
+                        && !IsScopeSnapshotPromptKey(promptKey)
+                    )
                     {
                         continue;
                     }
 
-                    if (!string.IsNullOrEmpty(connectionId))
-                    {
-                        await _hubContext
-                            .Clients.Client(connectionId)
-                            .SendAsync(
-                                "ReceiveAnalysisProgress",
-                                new Middleware.AnalysisProgressUpdate
-                                {
-                                    JobId = job.Id,
-                                    StatusMessage =
-                                        $"Analyzing: {FormatPromptStatusLabel(promptKey)}",
-                                    CurrentStep = step,
-                                    TotalSteps = orderedPrompts.Count,
-                                    IsComplete = false,
-                                    HasFailed = false,
-                                }
-                            );
-                    }
+                    await TrySendAnalysisProgressUpdate(
+                        connectionId,
+                        new Middleware.AnalysisProgressUpdate
+                        {
+                            JobId = job.Id,
+                            StatusMessage = $"Analyzing: {FormatPromptStatusLabel(promptKey)}",
+                            CurrentStep = step,
+                            TotalSteps = orderedPrompts.Count,
+                            IsComplete = false,
+                            HasFailed = false,
+                        }
+                    );
 
                     await UpdateAnalysisState(
                         job.Id,
@@ -201,6 +240,7 @@ namespace ProbuildBackend.Services
                     );
 
                     var subPrompt = await _promptManager.GetPromptAsync(null, promptKey);
+                    subPrompt = ApplyDeterministicScopePromptInstructions(promptKey, subPrompt);
                     var phaseTitle = FormatPromptStatusLabel(promptKey);
                     var phasePrefix = BuildPhaseInstructionPrefix(step, phaseTitle);
                     var (analysisResult, _) = await _aiService.ContinueConversationAsync(
@@ -222,17 +262,21 @@ namespace ProbuildBackend.Services
                     await _conversationRepo.AddMessageIfNotExistsAsync(message);
 
                     await MarkModelPromptSaved(job.Id, promptKey);
-                    await MarkPromptCompleted(job.Id, promptKey);
-                    completedPrompts.Add(promptKey);
                     reportBuilder.Append("\n\n---\n\n");
                     reportBuilder.Append(analysisResult);
 
-                    await ParseAndBroadcastPromptResult(
+                    var persisted = await ParseAndBroadcastPromptResult(
                         job.Id,
                         promptKey,
                         analysisResult,
                         connectionId
                     );
+
+                    if (persisted)
+                    {
+                        await MarkPromptCompleted(job.Id, promptKey);
+                        completedPrompts.Add(promptKey);
+                    }
 
                     step++;
                 }
@@ -256,6 +300,12 @@ namespace ProbuildBackend.Services
                     );
                     reportBuilder.Append("\n\n---\n\n");
                     reportBuilder.Append(timelineResult);
+                    await ParseAndBroadcastPromptResult(
+                        job.Id,
+                        "prompt-21-timeline",
+                        timelineResult,
+                        connectionId
+                    );
                 }
 
                 var costPromptRegex = new Regex(@"3\. Cost Prompt:.*", RegexOptions.Singleline);
@@ -273,12 +323,20 @@ namespace ProbuildBackend.Services
                     );
                     reportBuilder.Append("\n\n---\n\n");
                     reportBuilder.Append(costResult);
+                    await ParseAndBroadcastPromptResult(
+                        job.Id,
+                        "prompt-25-cost-breakdowns",
+                        costResult,
+                        connectionId
+                    );
                 }
 
                 if (job != null && generateDetailsWithAi)
                 {
                     await ParseAndSaveAiJobDetails(job.Id, reportBuilder.ToString());
                 }
+
+                await EnsureScopeSnapshotCompletenessAsync(job.Id, analysisStartedAtUtc);
 
                 var completedJob = await _context.Jobs.FindAsync(job.Id);
                 if (completedJob != null)
@@ -287,23 +345,18 @@ namespace ProbuildBackend.Services
                     await _context.SaveChangesAsync();
                 }
 
-                if (!string.IsNullOrEmpty(connectionId))
-                {
-                    await _hubContext
-                        .Clients.Client(connectionId)
-                        .SendAsync(
-                            "ReceiveAnalysisProgress",
-                            new Middleware.AnalysisProgressUpdate
-                            {
-                                JobId = job.Id,
-                                StatusMessage = "Analysis complete.",
-                                CurrentStep = orderedPrompts.Count,
-                                TotalSteps = orderedPrompts.Count,
-                                IsComplete = true,
-                                HasFailed = false,
-                            }
-                        );
-                }
+                await TrySendAnalysisProgressUpdate(
+                    connectionId,
+                    new Middleware.AnalysisProgressUpdate
+                    {
+                        JobId = job.Id,
+                        StatusMessage = "Analysis complete.",
+                        CurrentStep = orderedPrompts.Count,
+                        TotalSteps = orderedPrompts.Count,
+                        IsComplete = true,
+                        HasFailed = false,
+                    }
+                );
 
                 _logger.LogInformation(
                     "Analysis completed successfully for prompts: {PromptKeys}",
@@ -318,30 +371,26 @@ namespace ProbuildBackend.Services
                     "An error occurred during analysis for prompts: {PromptKeys}",
                     string.Join(", ", requestDto.PromptKeys)
                 );
-                if (!string.IsNullOrEmpty(connectionId))
+                var jobForError = await _context.Jobs.FindAsync(requestDto.JobId);
+                if (jobForError != null)
                 {
-                    var jobForError = await _context.Jobs.FindAsync(requestDto.JobId);
-                    if (jobForError != null)
-                    {
-                        await _hubContext
-                            .Clients.Client(connectionId)
-                            .SendAsync(
-                                "ReceiveAnalysisProgress",
-                                new Middleware.AnalysisProgressUpdate
-                                {
-                                    JobId = jobForError.Id,
-                                    StatusMessage = "Analysis failed.",
-                                    IsComplete = false,
-                                    HasFailed = true,
-                                    ErrorMessage = ex.Message,
-                                }
-                            );
-                    }
+                    await TrySendAnalysisProgressUpdate(
+                        connectionId,
+                        new Middleware.AnalysisProgressUpdate
+                        {
+                            JobId = jobForError.Id,
+                            StatusMessage = "Analysis failed.",
+                            IsComplete = false,
+                            HasFailed = true,
+                            ErrorMessage = ex.Message,
+                        }
+                    );
                 }
                 throw;
             }
             finally
             {
+                analysisLock.Release();
                 _keepAliveService.StopPinging();
             }
         }
@@ -364,6 +413,9 @@ namespace ProbuildBackend.Services
                 jobDetails.Id
             );
             _keepAliveService.StartPinging();
+            var analysisLock = _analysisLocks.GetOrAdd(jobDetails.Id, _ => new SemaphoreSlim(1, 1));
+            await analysisLock.WaitAsync();
+            var analysisStartedAtUtc = DateTime.UtcNow;
             try
             {
                 _logger.LogInformation("Fetching system persona prompt.");
@@ -420,7 +472,8 @@ namespace ProbuildBackend.Services
                         userId,
                         string.Empty,
                         jobDetails.Id,
-                        connectionId
+                        connectionId,
+                        analysisStartedAtUtc
                     );
                 }
 
@@ -493,7 +546,8 @@ namespace ProbuildBackend.Services
                     userId,
                     initialResponse,
                     jobDetails.Id,
-                    connectionId
+                    connectionId,
+                    analysisStartedAtUtc
                 );
             }
             catch (Exception ex)
@@ -504,27 +558,22 @@ namespace ProbuildBackend.Services
                     userId,
                     jobDetails.Id
                 );
-                if (!string.IsNullOrEmpty(connectionId))
-                {
-                    await _hubContext
-                        .Clients.Client(connectionId)
-                        .SendAsync(
-                            "ReceiveAnalysisProgress",
-                            new Middleware.AnalysisProgressUpdate
-                            {
-                                JobId = jobDetails.Id,
-                                StatusMessage =
-                                    "Analysis failed - we're sorry for the inconvenience",
-                                IsComplete = false,
-                                HasFailed = true,
-                                ErrorMessage = ex.Message,
-                            }
-                        );
-                }
+                await TrySendAnalysisProgressUpdate(
+                    connectionId,
+                    new Middleware.AnalysisProgressUpdate
+                    {
+                        JobId = jobDetails.Id,
+                        StatusMessage = "Analysis failed - we're sorry for the inconvenience",
+                        IsComplete = false,
+                        HasFailed = true,
+                        ErrorMessage = ex.Message,
+                    }
+                );
                 throw;
             }
             finally
             {
+                analysisLock.Release();
                 _logger.LogInformation(
                     "END: PerformComprehensiveAnalysisAsync for User {UserId}, Job {JobId}",
                     userId,
@@ -552,6 +601,9 @@ namespace ProbuildBackend.Services
                 jobDetails.Id
             );
             _keepAliveService.StartPinging();
+            var analysisLock = _analysisLocks.GetOrAdd(jobDetails.Id, _ => new SemaphoreSlim(1, 1));
+            await analysisLock.WaitAsync();
+            var analysisStartedAtUtc = DateTime.UtcNow;
             try
             {
                 _logger.LogInformation("Fetching renovation persona prompt.");
@@ -594,7 +646,8 @@ namespace ProbuildBackend.Services
                         userId,
                         string.Empty,
                         jobDetails.Id,
-                        connectionId
+                        connectionId,
+                        analysisStartedAtUtc
                     );
                 }
 
@@ -668,7 +721,8 @@ namespace ProbuildBackend.Services
                     userId,
                     initialResponse,
                     jobDetails.Id,
-                    connectionId
+                    connectionId,
+                    analysisStartedAtUtc
                 );
             }
             catch (Exception ex)
@@ -679,26 +733,22 @@ namespace ProbuildBackend.Services
                     userId,
                     jobDetails.Id
                 );
-                if (!string.IsNullOrEmpty(connectionId))
-                {
-                    await _hubContext
-                        .Clients.Client(connectionId)
-                        .SendAsync(
-                            "ReceiveAnalysisProgress",
-                            new Middleware.AnalysisProgressUpdate
-                            {
-                                JobId = jobDetails.Id,
-                                StatusMessage = "Analysis failed.",
-                                IsComplete = false,
-                                HasFailed = true,
-                                ErrorMessage = ex.Message,
-                            }
-                        );
-                }
+                await TrySendAnalysisProgressUpdate(
+                    connectionId,
+                    new Middleware.AnalysisProgressUpdate
+                    {
+                        JobId = jobDetails.Id,
+                        StatusMessage = "Analysis failed.",
+                        IsComplete = false,
+                        HasFailed = true,
+                        ErrorMessage = ex.Message,
+                    }
+                );
                 throw;
             }
             finally
             {
+                analysisLock.Release();
                 _logger.LogInformation(
                     "END: PerformRenovationAnalysisAsync for User {UserId}, Job {JobId}",
                     userId,
@@ -787,9 +837,17 @@ namespace ProbuildBackend.Services
             string userId,
             string initialResponse,
             int jobId,
-            string? connectionId
+            string? connectionId,
+            DateTime analysisStartedAtUtc
         )
         {
+            _logger.LogInformation(
+                "ExecuteSequentialPromptsAsync: instanceId={InstanceId} pid={Pid} jobId={JobId} conversationId={ConversationId}",
+                _instanceId,
+                System.Diagnostics.Process.GetCurrentProcess().Id,
+                jobId,
+                conversationId
+            );
             var stringBuilder = new StringBuilder();
             initialResponse = EnsurePhaseHeading(initialResponse, 1, InitialAnalysisPhaseTitle);
             stringBuilder.Append(initialResponse);
@@ -838,15 +896,47 @@ namespace ProbuildBackend.Services
                 {
                     if (!completedPrompts.Contains(promptName))
                     {
-                        await MarkPromptCompleted(jobId, promptName);
-                        completedPrompts.Add(promptName);
+                        // Do not mark completed just because the model response was saved.
+                        // A prompt is only considered completed once we have persisted a JobPromptResult.
+                        var hasPersisted = await _context.JobPromptResults.AsNoTracking()
+                            .AnyAsync(r => r.JobId == jobId && r.PromptKey == promptName);
+                        if (hasPersisted)
+                        {
+                            await MarkPromptCompleted(jobId, promptName);
+                            completedPrompts.Add(promptName);
+                        }
+                    }
+                }
+
+                // Resume safety: if a prompt is marked completed but no JobPromptResult exists,
+                // treat it as incomplete so the prompt reruns and persists.
+                foreach (var promptName in promptNames)
+                {
+                    if (!completedPrompts.Contains(promptName) || IsScopeSnapshotPromptKey(promptName))
+                    {
+                        continue;
+                    }
+
+                    var hasPersisted = await _context.JobPromptResults.AsNoTracking()
+                        .AnyAsync(r => r.JobId == jobId && r.PromptKey == promptName);
+                    if (!hasPersisted)
+                    {
+                        _logger.LogWarning(
+                            "Resume detected completed prompt without JobPromptResults row. Will rerun: jobId={JobId} promptKey={PromptKey}",
+                            jobId,
+                            promptName
+                        );
+                        completedPrompts.Remove(promptName);
                     }
                 }
 
                 int completedCount = promptNames.Count(p => completedPrompts.Contains(p));
                 foreach (var promptName in promptNames)
                 {
-                    if (completedPrompts.Contains(promptName))
+                    if (
+                        completedPrompts.Contains(promptName)
+                        && !IsScopeSnapshotPromptKey(promptName)
+                    )
                     {
                         continue;
                     }
@@ -863,24 +953,18 @@ namespace ProbuildBackend.Services
                         conversationId
                     );
 
-                    if (!string.IsNullOrEmpty(connectionId))
-                    {
-                        await _hubContext
-                            .Clients.Client(connectionId)
-                            .SendAsync(
-                                "ReceiveAnalysisProgress",
-                                new Middleware.AnalysisProgressUpdate
-                                {
-                                    JobId = jobId,
-                                    StatusMessage =
-                                        $"Analyzing: {FormatPromptStatusLabel(promptName)}",
-                                    CurrentStep = progressStep,
-                                    TotalSteps = promptNames.Length,
-                                    IsComplete = false,
-                                    HasFailed = false,
-                                }
-                            );
-                    }
+                    await TrySendAnalysisProgressUpdate(
+                        connectionId,
+                        new Middleware.AnalysisProgressUpdate
+                        {
+                            JobId = jobId,
+                            StatusMessage = $"Analyzing: {FormatPromptStatusLabel(promptName)}",
+                            CurrentStep = progressStep,
+                            TotalSteps = promptNames.Length,
+                            IsComplete = false,
+                            HasFailed = false,
+                        }
+                    );
 
                     await UpdateAnalysisState(
                         jobId,
@@ -890,6 +974,7 @@ namespace ProbuildBackend.Services
                     );
 
                     var promptText = await _promptManager.GetPromptAsync("", $"{promptName}.txt");
+                    promptText = ApplyDeterministicScopePromptInstructions(promptName, promptText);
                     var phaseTitle = FormatPromptStatusLabel(promptName);
                     var phasePrefix = BuildPhaseInstructionPrefix(phaseNumber, phaseTitle);
                     (lastResponse, _) = await _aiService.ContinueConversationAsync(
@@ -915,16 +1000,51 @@ namespace ProbuildBackend.Services
                     stringBuilder.Append("\n\n---\n\n");
                     stringBuilder.Append(lastResponse);
 
-                    await ParseAndBroadcastPromptResult(
+                    _logger.LogInformation(
+                        "About to persist JobPromptResults: instanceId={InstanceId} pid={Pid} jobId={JobId} promptKey={PromptKey}",
+                        _instanceId,
+                        System.Diagnostics.Process.GetCurrentProcess().Id,
+                        jobId,
+                        promptName
+                    );
+                    var persisted = await ParseAndBroadcastPromptResult(
                         jobId,
                         promptName,
                         lastResponse,
                         connectionId
                     );
+                    if (persisted)
+                    {
+                        var normalizedPromptKey = NormalizePromptKey(promptName);
+                        var exists = await _context.JobPromptResults.AsNoTracking()
+                            .AnyAsync(r => r.JobId == jobId && r.PromptKey == normalizedPromptKey);
+                        if (!exists)
+                        {
+                            _logger.LogError(
+                                "Persist pipeline returned persisted=true but no JobPromptResults row exists. jobId={JobId} promptKey={PromptKey}",
+                                jobId,
+                                normalizedPromptKey
+                            );
+                            persisted = false;
+                        }
+                    }
+                    _logger.LogInformation(
+                        "Finished persisting JobPromptResults: instanceId={InstanceId} pid={Pid} jobId={JobId} promptKey={PromptKey} persisted={Persisted}",
+                        _instanceId,
+                        System.Diagnostics.Process.GetCurrentProcess().Id,
+                        jobId,
+                        promptName,
+                        persisted
+                    );
 
-                    await MarkPromptCompleted(jobId, promptName);
-                    completedCount++;
+                    if (persisted)
+                    {
+                        await MarkPromptCompleted(jobId, promptName);
+                        completedCount++;
+                    }
                 }
+
+                await EnsureScopeSnapshotCompletenessAsync(jobId, analysisStartedAtUtc);
 
                 var job = await _context.Jobs.FindAsync(jobId);
                 if (job != null)
@@ -933,23 +1053,18 @@ namespace ProbuildBackend.Services
                     await _context.SaveChangesAsync();
                 }
 
-                if (!string.IsNullOrEmpty(connectionId))
-                {
-                    await _hubContext
-                        .Clients.Client(connectionId)
-                        .SendAsync(
-                            "ReceiveAnalysisProgress",
-                            new Middleware.AnalysisProgressUpdate
-                            {
-                                JobId = jobId,
-                                StatusMessage = "Analysis complete.",
-                                CurrentStep = promptNames.Length,
-                                TotalSteps = promptNames.Length,
-                                IsComplete = true,
-                                HasFailed = false,
-                            }
-                        );
-                }
+                await TrySendAnalysisProgressUpdate(
+                    connectionId,
+                    new Middleware.AnalysisProgressUpdate
+                    {
+                        JobId = jobId,
+                        StatusMessage = "Analysis complete.",
+                        CurrentStep = promptNames.Length,
+                        TotalSteps = promptNames.Length,
+                        IsComplete = true,
+                        HasFailed = false,
+                    }
+                );
 
                 _logger.LogInformation(
                     "Full sequential analysis completed successfully for conversation {ConversationId}",
@@ -964,22 +1079,17 @@ namespace ProbuildBackend.Services
                     "An error occurred during sequential prompt execution for conversation {ConversationId}",
                     conversationId
                 );
-                if (!string.IsNullOrEmpty(connectionId))
-                {
-                    await _hubContext
-                        .Clients.Client(connectionId)
-                        .SendAsync(
-                            "ReceiveAnalysisProgress",
-                            new Middleware.AnalysisProgressUpdate
-                            {
-                                JobId = jobId,
-                                StatusMessage = "Analysis failed during sequential execution.",
-                                IsComplete = false,
-                                HasFailed = true,
-                                ErrorMessage = ex.Message,
-                            }
-                        );
-                }
+                await TrySendAnalysisProgressUpdate(
+                    connectionId,
+                    new Middleware.AnalysisProgressUpdate
+                    {
+                        JobId = jobId,
+                        StatusMessage = "Analysis failed during sequential execution.",
+                        IsComplete = false,
+                        HasFailed = true,
+                        ErrorMessage = ex.Message,
+                    }
+                );
                 throw;
             }
         }
@@ -1345,13 +1455,14 @@ WHERE [JobId] = {jobId};
             return contextBuilder.ToString();
         }
 
-        private async Task ParseAndBroadcastPromptResult(
+        private async Task<bool> ParseAndBroadcastPromptResult(
             int jobId,
             string promptName,
             string response,
             string? connectionId
         )
         {
+            var persisted = false;
             try
             {
                 if (string.IsNullOrEmpty(response))
@@ -1360,8 +1471,10 @@ WHERE [JobId] = {jobId};
                         "ParseAndBroadcastPromptResult: Response is empty for prompt: {PromptName}",
                         promptName
                     );
-                    return;
+                    return false;
                 }
+
+                persisted = await PersistJsonFirstPromptResult(jobId, promptName, response);
 
                 _logger.LogInformation(
                     "ParseAndBroadcastPromptResult: Processing response for prompt: {PromptName} for Connection: {ConnectionId}",
@@ -2073,7 +2186,690 @@ WHERE [JobId] = {jobId};
                     ex,
                     $"Error parsing and broadcasting prompt result for {promptName}"
                 );
+                return false;
             }
+
+            return persisted;
+        }
+
+        private async Task<bool> PersistJsonFirstPromptResult(int jobId, string promptName, string response)
+        {
+            try
+            {
+                var normalizedPromptKey = NormalizePromptKey(promptName);
+
+                _logger.LogInformation(
+                    "PersistJsonFirstPromptResult: instanceId={InstanceId} pid={Pid} jobId={JobId} promptKey={PromptKey}",
+                    _instanceId,
+                    System.Diagnostics.Process.GetCurrentProcess().Id,
+                    jobId,
+                    normalizedPromptKey
+                );
+
+                await EnsureJobPromptResultsTableAsync();
+
+                if (Interlocked.Exchange(ref _jobPromptResultsTableDiagnosticsLogged, 1) == 0)
+                {
+                    try
+                    {
+                        var dbConn = _context.Database.GetDbConnection();
+                        _logger.LogInformation(
+                            "JobPromptResults diagnostics: DataSource={DataSource} Database={Database}",
+                            dbConn.DataSource,
+                            dbConn.Database
+                        );
+
+                        var wasClosed = dbConn.State != System.Data.ConnectionState.Open;
+                        if (wasClosed)
+                        {
+                            await dbConn.OpenAsync();
+                        }
+
+                        using var cmd = dbConn.CreateCommand();
+                        cmd.CommandText = @"
+SELECT TOP 1 TABLE_TYPE
+FROM INFORMATION_SCHEMA.TABLES
+WHERE TABLE_NAME = 'JobPromptResults';";
+                        var tableTypeObj = await cmd.ExecuteScalarAsync();
+                        _logger.LogInformation(
+                            "JobPromptResults diagnostics: INFORMATION_SCHEMA.TABLES.TABLE_TYPE={TableType}",
+                            tableTypeObj?.ToString() ?? "<null>"
+                        );
+
+                        if (wasClosed)
+                        {
+                            await dbConn.CloseAsync();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "JobPromptResults diagnostics failed.");
+                    }
+                }
+
+                _logger.LogInformation(
+                    "PersistJsonFirstPromptResult: jobId={JobId} promptName={PromptName} normalizedPromptKey={PromptKey}",
+                    jobId,
+                    promptName,
+                    normalizedPromptKey
+                );
+
+                // Persist every prompt response so JobPromptResults stays in-sync with Messages.
+                // Only scope snapshot prompts are required to contain valid JSON; all others will be
+                // stored as raw responses with ParsedJson left null.
+                var isScopeSnapshotPrompt = IsScopeSnapshotPromptKey(normalizedPromptKey)
+                    || string.Equals(
+                        normalizedPromptKey,
+                        "prompt-00-initial-analysis",
+                        StringComparison.OrdinalIgnoreCase
+                    );
+
+                if (!isScopeSnapshotPrompt)
+                {
+                    _context.JobPromptResults.Add(
+                        new Models.JobPromptResult
+                        {
+                            JobId = jobId,
+                            PromptKey = normalizedPromptKey,
+                            SchemaVersion = null,
+                            RawResponse = response,
+                            ParsedJson = null,
+                            CreatedAt = DateTime.UtcNow,
+                        }
+                    );
+                    var rows = await _context.SaveChangesAsync();
+                    _logger.LogInformation(
+                        "PersistJsonFirstPromptResult: saved raw response (non-snapshot prompt). SaveChanges wrote {Rows} row(s) for jobId={JobId} promptKey={PromptKey}",
+                        rows,
+                        jobId,
+                        normalizedPromptKey
+                    );
+                    return true;
+                }
+
+                var extractedJson = ExtractFirstJsonCodeBlockOrNull(response);
+                if (string.IsNullOrWhiteSpace(extractedJson))
+                {
+                    // Still persist the raw response so we can debug schema drift.
+                    var reason = "No parseable JSON object returned by model.";
+                    _logger.LogWarning(
+                        "PersistJsonFirstPromptResult: no JSON extracted for jobId={JobId} promptKey={PromptKey}. Persisting rejected raw response.",
+                        jobId,
+                        normalizedPromptKey
+                    );
+                    _context.JobPromptResults.Add(
+                        new Models.JobPromptResult
+                        {
+                            JobId = jobId,
+                            PromptKey = normalizedPromptKey,
+                            SchemaVersion = null,
+                            RawResponse = BuildRejectedRawResponse(response, reason),
+                            ParsedJson = null,
+                            CreatedAt = DateTime.UtcNow,
+                        }
+                    );
+                    var rows = await _context.SaveChangesAsync();
+                    _logger.LogInformation(
+                        "PersistJsonFirstPromptResult: SaveChanges wrote {Rows} row(s) for jobId={JobId} promptKey={PromptKey}",
+                        rows,
+                        jobId,
+                        normalizedPromptKey
+                    );
+                    _logger.LogInformation(
+                        "PersistJsonFirstPromptResult: saved rejected raw response for jobId={JobId} promptKey={PromptKey}",
+                        jobId,
+                        normalizedPromptKey
+                    );
+                    return true;
+                }
+
+                var schemaVersion = TryReadSchemaVersion(extractedJson);
+                if (
+                    !TryValidateScopePromptJson(
+                        promptName,
+                        extractedJson,
+                        schemaVersion,
+                        out var validationError
+                    )
+                )
+                {
+                    _logger.LogWarning(
+                        "PersistJsonFirstPromptResult: validation failed for jobId={JobId} prompt={PromptName}. Reason={Reason}",
+                        jobId,
+                        normalizedPromptKey,
+                        validationError
+                    );
+                    _context.JobPromptResults.Add(
+                        new Models.JobPromptResult
+                        {
+                            JobId = jobId,
+                            PromptKey = normalizedPromptKey,
+                            SchemaVersion = schemaVersion,
+                            RawResponse = BuildRejectedRawResponse(response, validationError),
+                            ParsedJson = null,
+                            CreatedAt = DateTime.UtcNow,
+                        }
+                    );
+                    var rows = await _context.SaveChangesAsync();
+                    _logger.LogInformation(
+                        "PersistJsonFirstPromptResult: SaveChanges wrote {Rows} row(s) for jobId={JobId} promptKey={PromptKey}",
+                        rows,
+                        jobId,
+                        normalizedPromptKey
+                    );
+                    _logger.LogInformation(
+                        "PersistJsonFirstPromptResult: saved rejected response for jobId={JobId} promptKey={PromptKey} schemaVersion={SchemaVersion}",
+                        jobId,
+                        normalizedPromptKey,
+                        schemaVersion
+                    );
+                    return true;
+                }
+
+                if (
+                    string.Equals(
+                        normalizedPromptKey,
+                        "prompt-25-cost-breakdowns",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    var priorParsedCostJson = await _context
+                        .JobPromptResults.AsNoTracking()
+                        .Where(
+                            r =>
+                                r.JobId == jobId
+                                && (
+                                    r.PromptKey == "prompt-25-cost-breakdowns"
+                                    || r.PromptKey == "prompt-25-cost-breakdowns.txt"
+                                )
+                                && r.ParsedJson != null
+                        )
+                        .OrderByDescending(r => r.CreatedAt)
+                        .Select(r => r.ParsedJson)
+                        .FirstOrDefaultAsync();
+
+                    if (
+                        TryGetGrandTotalBidPrice(priorParsedCostJson, out var priorTotal)
+                        && TryGetGrandTotalBidPrice(extractedJson, out var currentTotal)
+                        && priorTotal > 0
+                    )
+                    {
+                        var pctDelta = Math.Abs(currentTotal - priorTotal) / priorTotal;
+                        if (pctDelta > ScopeCostVarianceRejectThreshold)
+                        {
+                            _logger.LogWarning(
+                                "PersistJsonFirstPromptResult: rejected cost_breakdowns.v1 due to high variance for JobId={JobId}. Previous={PreviousTotal}, Current={CurrentTotal}, DeltaPct={DeltaPct}",
+                                jobId,
+                                priorTotal,
+                                currentTotal,
+                                pctDelta
+                            );
+                            _context.JobPromptResults.Add(
+                                new Models.JobPromptResult
+                                {
+                                    JobId = jobId,
+                                    PromptKey = normalizedPromptKey,
+                                    SchemaVersion = schemaVersion,
+                                    RawResponse = BuildRejectedRawResponse(
+                                        response,
+                                        $"High variance vs previous accepted run ({pctDelta:P1} > {ScopeCostVarianceRejectThreshold:P0})."
+                                    ),
+                                    ParsedJson = null,
+                                    CreatedAt = DateTime.UtcNow,
+                                }
+                            );
+                            var rows = await _context.SaveChangesAsync();
+                            _logger.LogInformation(
+                                "PersistJsonFirstPromptResult: SaveChanges wrote {Rows} row(s) for jobId={JobId} promptKey={PromptKey}",
+                                rows,
+                                jobId,
+                                normalizedPromptKey
+                            );
+                            _logger.LogInformation(
+                                "PersistJsonFirstPromptResult: saved rejected high-variance response for jobId={JobId} promptKey={PromptKey} schemaVersion={SchemaVersion}",
+                                jobId,
+                                normalizedPromptKey,
+                                schemaVersion
+                            );
+                            return true;
+                        }
+                    }
+                }
+
+                _context.JobPromptResults.Add(
+                    new Models.JobPromptResult
+                    {
+                        JobId = jobId,
+                        PromptKey = normalizedPromptKey,
+                        SchemaVersion = schemaVersion,
+                        RawResponse = response,
+                        ParsedJson = extractedJson,
+                        CreatedAt = DateTime.UtcNow,
+                    }
+                );
+                var savedRows = await _context.SaveChangesAsync();
+                _logger.LogInformation(
+                    "PersistJsonFirstPromptResult: SaveChanges wrote {Rows} row(s) for jobId={JobId} promptKey={PromptKey}",
+                    savedRows,
+                    jobId,
+                    normalizedPromptKey
+                );
+
+                _logger.LogInformation(
+                    "PersistJsonFirstPromptResult: saved parsed JSON for jobId={JobId} promptKey={PromptKey} schemaVersion={SchemaVersion}",
+                    jobId,
+                    normalizedPromptKey,
+                    schemaVersion
+                );
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "PersistJsonFirstPromptResult failed for jobId={JobId} promptName={PromptName}",
+                    jobId,
+                    promptName
+                );
+                return false;
+            }
+        }
+
+        private async Task EnsureJobPromptResultsTableAsync()
+        {
+            if (Interlocked.Exchange(ref _jobPromptResultsTableEnsured, 1) != 0)
+            {
+                return;
+            }
+
+            try
+            {
+                // If the table already exists, do nothing.
+                // If it does not exist, attempt to create it with the schema expected by EF.
+                // This is intentionally defensive because migrations may not have been applied in some environments.
+                var conn = _context.Database.GetDbConnection();
+                var openedHere = conn.State != System.Data.ConnectionState.Open;
+                if (openedHere)
+                {
+                    await conn.OpenAsync();
+                }
+
+                try
+                {
+                    string? tableType;
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = @"
+SELECT TOP 1 TABLE_TYPE
+FROM INFORMATION_SCHEMA.TABLES
+WHERE TABLE_NAME = 'JobPromptResults';";
+                        tableType = (await cmd.ExecuteScalarAsync())?.ToString();
+                    }
+
+                    if (string.Equals(tableType, "BASE TABLE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return;
+                    }
+
+                    if (string.Equals(tableType, "VIEW", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _logger.LogError(
+                            "JobPromptResults exists as a VIEW, not a table. Inserts will fail until the view is replaced with a table."
+                        );
+                        return;
+                    }
+
+                    _logger.LogWarning(
+                        "JobPromptResults table not found (INFORMATION_SCHEMA.TABLES returned {TableType}). Attempting to create it.",
+                        tableType ?? "<null>"
+                    );
+
+                    using (var create = conn.CreateCommand())
+                    {
+                        create.CommandText = @"
+IF OBJECT_ID(N'[dbo].[JobPromptResults]', N'U') IS NULL
+BEGIN
+    CREATE TABLE [dbo].[JobPromptResults] (
+        [Id] INT IDENTITY(1,1) NOT NULL CONSTRAINT [PK_JobPromptResults] PRIMARY KEY,
+        [JobId] INT NOT NULL,
+        [PromptKey] NVARCHAR(450) NOT NULL,
+        [SchemaVersion] NVARCHAR(50) NULL,
+        [RawResponse] NVARCHAR(MAX) NOT NULL,
+        [ParsedJson] NVARCHAR(MAX) NULL,
+        [CreatedAt] DATETIME2 NOT NULL
+    );
+
+    CREATE INDEX [IX_JobPromptResults_JobId] ON [dbo].[JobPromptResults]([JobId]);
+    CREATE INDEX [IX_JobPromptResults_JobId_PromptKey_CreatedAt] ON [dbo].[JobPromptResults]([JobId], [PromptKey], [CreatedAt]);
+END";
+                        await create.ExecuteNonQueryAsync();
+                    }
+
+                    _logger.LogInformation("JobPromptResults table ensured/created successfully.");
+                }
+                finally
+                {
+                    if (openedHere)
+                    {
+                        await conn.CloseAsync();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Do not throw: analysis can still proceed, but inserts will fail and will be logged where they happen.
+                _logger.LogError(ex, "Failed to ensure/create JobPromptResults table.");
+            }
+        }
+
+        private static string? ExtractFirstJsonCodeBlockOrNull(string response)
+        {
+            if (string.IsNullOrWhiteSpace(response))
+            {
+                return null;
+            }
+
+            var fenceRegex = new Regex(@"```json\b", RegexOptions.IgnoreCase);
+            var fenceMatch = fenceRegex.Match(response);
+            if (!fenceMatch.Success)
+            {
+                return NormalizeJsonOrNull(response);
+            }
+
+            var afterFence = response.Substring(fenceMatch.Index + fenceMatch.Length);
+            var startObj = afterFence.IndexOf('{');
+            if (startObj < 0)
+            {
+                return null;
+            }
+
+            var slice = afterFence.Substring(startObj);
+            var extracted = TryExtractBalancedJsonObject(slice);
+            if (!string.IsNullOrWhiteSpace(extracted))
+            {
+                return NormalizeJsonOrNull(extracted);
+            }
+
+            // If the balanced scan fails (common with truncated model output), attempt to normalize
+            // and parse the full slice before giving up.
+            var normalizedSlice = NormalizeJsonOrNull(slice);
+            if (!string.IsNullOrWhiteSpace(normalizedSlice))
+            {
+                return normalizedSlice;
+            }
+
+            // Best-effort fallback: if the model output is missing the closing fence or has trailing text,
+            // trim to the last closing brace and attempt to parse.
+            var lastBrace = slice.LastIndexOf('}');
+            if (lastBrace > 0)
+            {
+                var trimmed = slice.Substring(0, lastBrace + 1);
+                return NormalizeJsonOrNull(trimmed);
+            }
+
+            return null;
+        }
+
+        private static string? NormalizeJsonOrNull(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return null;
+            }
+
+            // Some LLM outputs mistakenly use SQL-style NULL; normalize to JSON null.
+            var normalized = Regex.Replace(json, @":\s*NULL\b", ": null", RegexOptions.IgnoreCase);
+
+            // Some outputs omit the value for flagsRequiresReview (e.g. "flagsRequiresReview": ,)
+            // Default it to an empty array so the JSON remains valid.
+            normalized = Regex.Replace(
+                normalized,
+                "\"flagsRequiresReview\"\\s*:\\s*(?=,|}|$)",
+                "\"flagsRequiresReview\": []",
+                RegexOptions.IgnoreCase
+            );
+
+            // Remove trailing commas before closing braces/brackets.
+            normalized = Regex.Replace(normalized, @",\s*(\}|\])", "$1");
+
+            // If the JSON is truncated (common when the model stops mid-object), try to close any
+            // missing braces so JsonDocument can parse. Only append closing braces, never remove content.
+            normalized = TryCloseUnbalancedJsonBraces(normalized);
+
+            try
+            {
+                using var doc = JsonDocument.Parse(normalized);
+                if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                {
+                    return null;
+                }
+                return normalized;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string TryCloseUnbalancedJsonBraces(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return text;
+            }
+
+            var depth = 0;
+            var inString = false;
+            var escape = false;
+
+            foreach (var c in text)
+            {
+                if (inString)
+                {
+                    if (escape)
+                    {
+                        escape = false;
+                        continue;
+                    }
+
+                    if (c == '\\')
+                    {
+                        escape = true;
+                        continue;
+                    }
+
+                    if (c == '"')
+                    {
+                        inString = false;
+                    }
+
+                    continue;
+                }
+
+                if (c == '"')
+                {
+                    inString = true;
+                    continue;
+                }
+
+                if (c == '{')
+                {
+                    depth++;
+                }
+                else if (c == '}')
+                {
+                    depth = Math.Max(0, depth - 1);
+                }
+            }
+
+            if (depth <= 0)
+            {
+                return text;
+            }
+
+            // Cap the number of braces we will append to avoid runaway behavior on totally invalid content.
+            var toAppend = Math.Min(depth, 20);
+            return text + new string('}', toAppend);
+        }
+
+        private static string? TryExtractBalancedJsonObject(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return null;
+            }
+
+            var depth = 0;
+            var inString = false;
+            var escape = false;
+            var started = false;
+
+            for (var i = 0; i < text.Length; i++)
+            {
+                var c = text[i];
+
+                if (!started)
+                {
+                    if (c != '{')
+                    {
+                        continue;
+                    }
+                    started = true;
+                    depth = 1;
+                    continue;
+                }
+
+                if (inString)
+                {
+                    if (escape)
+                    {
+                        escape = false;
+                        continue;
+                    }
+
+                    if (c == '\\')
+                    {
+                        escape = true;
+                        continue;
+                    }
+
+                    if (c == '"')
+                    {
+                        inString = false;
+                    }
+
+                    continue;
+                }
+
+                if (c == '"')
+                {
+                    inString = true;
+                    continue;
+                }
+
+                if (c == '{')
+                {
+                    depth++;
+                    continue;
+                }
+
+                if (c == '}')
+                {
+                    depth--;
+                    if (depth == 0)
+                    {
+                        return text.Substring(0, i + 1);
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private static string? TryReadSchemaVersion(string json)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                {
+                    return null;
+                }
+
+                if (doc.RootElement.TryGetProperty("schemaVersion", out var schemaEl))
+                {
+                    return schemaEl.ValueKind == JsonValueKind.String ? schemaEl.GetString() : null;
+                }
+
+                return null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public async Task<int> BackfillJobPromptResultsParsedJsonAsync(
+            int jobId,
+            IEnumerable<string>? promptKeys = null
+        )
+        {
+            var keys = promptKeys?.ToList();
+
+            var query = _context.JobPromptResults.Where(r => r.JobId == jobId);
+            if (keys != null && keys.Count > 0)
+            {
+                query = query.Where(r => keys.Contains(r.PromptKey));
+            }
+
+            var rows = await query.Where(r => r.ParsedJson == null).ToListAsync();
+            if (rows.Count == 0)
+            {
+                return 0;
+            }
+
+            var updated = 0;
+            foreach (var row in rows)
+            {
+                var extracted = ExtractFirstJsonCodeBlockOrNull(row.RawResponse);
+                if (string.IsNullOrWhiteSpace(extracted))
+                {
+                    continue;
+                }
+
+                var schemaVersion = TryReadSchemaVersion(extracted);
+                if (
+                    !TryValidateScopePromptJson(
+                        row.PromptKey,
+                        extracted,
+                        schemaVersion,
+                        out var validationError
+                    )
+                )
+                {
+                    _logger.LogWarning(
+                        "BackfillJobPromptResultsParsedJsonAsync: validation failed for rowId={RowId} jobId={JobId} prompt={Prompt}. Reason={Reason}",
+                        row.Id,
+                        row.JobId,
+                        row.PromptKey,
+                        validationError
+                    );
+                    continue;
+                }
+
+                row.ParsedJson = extracted;
+                row.SchemaVersion ??= schemaVersion;
+                updated++;
+            }
+
+            if (updated > 0)
+            {
+                await _context.SaveChangesAsync();
+            }
+
+            return updated;
         }
 
         public async Task ParseAndSaveAiJobDetails(int jobId, string aiResponse)
@@ -2711,7 +3507,8 @@ WHERE [JobId] = {jobId};
             string userId,
             string initialResponse,
             int jobId,
-            string? connectionId
+            string? connectionId,
+            DateTime analysisStartedAtUtc
         )
         {
             var stringBuilder = new StringBuilder();
@@ -2750,7 +3547,10 @@ WHERE [JobId] = {jobId};
                 int completedCount = promptNames.Count(p => completedPrompts.Contains(p));
                 foreach (var promptName in promptNames)
                 {
-                    if (completedPrompts.Contains(promptName))
+                    if (
+                        completedPrompts.Contains(promptName)
+                        && !IsScopeSnapshotPromptKey(promptName)
+                    )
                     {
                         continue;
                     }
@@ -2764,24 +3564,18 @@ WHERE [JobId] = {jobId};
                         conversationId
                     );
 
-                    if (!string.IsNullOrEmpty(connectionId))
-                    {
-                        await _hubContext
-                            .Clients.Client(connectionId)
-                            .SendAsync(
-                                "ReceiveAnalysisProgress",
-                                new Middleware.AnalysisProgressUpdate
-                                {
-                                    JobId = jobId,
-                                    StatusMessage =
-                                        $"Analyzing: {FormatPromptStatusLabel(promptName)}",
-                                    CurrentStep = step,
-                                    TotalSteps = promptNames.Length,
-                                    IsComplete = false,
-                                    HasFailed = false,
-                                }
-                            );
-                    }
+                    await TrySendAnalysisProgressUpdate(
+                        connectionId,
+                        new Middleware.AnalysisProgressUpdate
+                        {
+                            JobId = jobId,
+                            StatusMessage = $"Analyzing: {FormatPromptStatusLabel(promptName)}",
+                            CurrentStep = step,
+                            TotalSteps = promptNames.Length,
+                            IsComplete = false,
+                            HasFailed = false,
+                        }
+                    );
 
                     await UpdateAnalysisState(
                         jobId,
@@ -2794,6 +3588,7 @@ WHERE [JobId] = {jobId};
                         "RenovationPrompts/",
                         $"{promptName}.txt"
                     );
+                    promptText = ApplyDeterministicScopePromptInstructions(promptName, promptText);
                     var phaseTitle = FormatPromptStatusLabel(promptName);
                     var phasePrefix = BuildPhaseInstructionPrefix(step, phaseTitle);
                     (lastResponse, _) = await _aiService.ContinueConversationAsync(
@@ -2819,34 +3614,50 @@ WHERE [JobId] = {jobId};
                     stringBuilder.Append("\n\n---\n\n");
                     stringBuilder.Append(lastResponse);
 
-                    await ParseAndBroadcastPromptResult(
+                    var persisted = await ParseAndBroadcastPromptResult(
                         jobId,
                         promptName,
                         lastResponse,
                         connectionId
                     );
 
-                    await MarkPromptCompleted(jobId, promptName);
-                    completedCount++;
+                    if (persisted)
+                    {
+                        var normalizedPromptKey = NormalizePromptKey(promptName);
+                        var exists = await _context.JobPromptResults.AsNoTracking()
+                            .AnyAsync(r => r.JobId == jobId && r.PromptKey == normalizedPromptKey);
+                        if (!exists)
+                        {
+                            _logger.LogError(
+                                "Persist pipeline returned persisted=true but no JobPromptResults row exists. jobId={JobId} promptKey={PromptKey}",
+                                jobId,
+                                normalizedPromptKey
+                            );
+                            persisted = false;
+                        }
+                    }
+
+                    if (persisted)
+                    {
+                        await MarkPromptCompleted(jobId, promptName);
+                        completedCount++;
+                    }
                 }
 
-                if (!string.IsNullOrEmpty(connectionId))
-                {
-                    await _hubContext
-                        .Clients.Client(connectionId)
-                        .SendAsync(
-                            "ReceiveAnalysisProgress",
-                            new Middleware.AnalysisProgressUpdate
-                            {
-                                JobId = jobId,
-                                StatusMessage = "Analysis complete.",
-                                CurrentStep = promptNames.Length,
-                                TotalSteps = promptNames.Length,
-                                IsComplete = true,
-                                HasFailed = false,
-                            }
-                        );
-                }
+                await EnsureScopeSnapshotCompletenessAsync(jobId, analysisStartedAtUtc);
+
+                await TrySendAnalysisProgressUpdate(
+                    connectionId,
+                    new Middleware.AnalysisProgressUpdate
+                    {
+                        JobId = jobId,
+                        StatusMessage = "Analysis complete.",
+                        CurrentStep = promptNames.Length,
+                        TotalSteps = promptNames.Length,
+                        IsComplete = true,
+                        HasFailed = false,
+                    }
+                );
 
                 _logger.LogInformation(
                     "Full sequential renovation analysis completed successfully for conversation {ConversationId}",
@@ -2861,22 +3672,17 @@ WHERE [JobId] = {jobId};
                     "An error occurred during sequential renovation prompt execution for conversation {ConversationId}",
                     conversationId
                 );
-                if (!string.IsNullOrEmpty(connectionId))
-                {
-                    await _hubContext
-                        .Clients.Client(connectionId)
-                        .SendAsync(
-                            "ReceiveAnalysisProgress",
-                            new Middleware.AnalysisProgressUpdate
-                            {
-                                JobId = jobId,
-                                StatusMessage = "Analysis failed during sequential execution.",
-                                IsComplete = false,
-                                HasFailed = true,
-                                ErrorMessage = ex.Message,
-                            }
-                        );
-                }
+                await TrySendAnalysisProgressUpdate(
+                    connectionId,
+                    new Middleware.AnalysisProgressUpdate
+                    {
+                        JobId = jobId,
+                        StatusMessage = "Analysis failed during sequential execution.",
+                        IsComplete = false,
+                        HasFailed = true,
+                        ErrorMessage = ex.Message,
+                    }
+                );
                 throw;
             }
         }
@@ -3495,6 +4301,406 @@ WHERE [JobId] = {jobId};
                 @"\b[a-z]",
                 m => m.Value.ToUpperInvariant()
             );
+        }
+
+        private static string ApplyDeterministicScopePromptInstructions(
+            string? promptKeyOrName,
+            string promptText
+        )
+        {
+            if (string.IsNullOrWhiteSpace(promptText))
+            {
+                return promptText;
+            }
+
+            var schema = GetExpectedScopeSchemaVersion(promptKeyOrName);
+            if (string.IsNullOrWhiteSpace(schema))
+            {
+                return promptText;
+            }
+
+            var contract = $@"OUTPUT CONTRACT (MANDATORY):
+- Return ONLY one JSON object in a single fenced code block: ```json ... ```.
+- Do not return markdown tables, bullets, prose, or explanations outside that JSON block.
+- The root `schemaVersion` MUST be exactly ""{schema}"".
+- Keep the exact field layout defined by this prompt; do not rename keys.
+- Use JSON null (not NULL) when a value is unknown.
+- For money/time fields: return numeric values only (no currency symbols or units in numeric fields).
+- If an input is missing, keep the field present and set it to null or an empty array/object as appropriate.
+- All returned JSON must be parseable by a strict JSON parser.";
+
+            return $"{contract}\n\n{promptText}";
+        }
+
+        private static string? GetExpectedScopeSchemaVersion(string? promptKeyOrName)
+        {
+            var key = NormalizePromptKey(promptKeyOrName);
+            if (string.Equals(key, "executive-summary-prompt", StringComparison.OrdinalIgnoreCase))
+            {
+                return "executive_summary.v1";
+            }
+
+            if (string.Equals(key, "prompt-21-timeline", StringComparison.OrdinalIgnoreCase))
+            {
+                return "timeline.v1";
+            }
+
+            if (string.Equals(key, "prompt-25-cost-breakdowns", StringComparison.OrdinalIgnoreCase))
+            {
+                return "cost_breakdowns.v1";
+            }
+
+            return null;
+        }
+
+        private static bool IsScopeSnapshotPromptKey(string? promptKeyOrName)
+        {
+            return !string.IsNullOrWhiteSpace(GetExpectedScopeSchemaVersion(promptKeyOrName));
+        }
+
+        private static string NormalizePromptKey(string? promptKeyOrName)
+        {
+            var key = (promptKeyOrName ?? string.Empty).Trim();
+
+            // If a full URL or blob path is passed, keep only the final path segment.
+            // Examples:
+            // - https://.../prompts/prompt-25-cost-breakdowns.txt -> prompt-25-cost-breakdowns.txt
+            // - prompts/prompt-25-cost-breakdowns.txt -> prompt-25-cost-breakdowns.txt
+            // - prompt-25-cost-breakdowns.txt -> prompt-25-cost-breakdowns.txt
+            key = key.Replace('\\', '/');
+            var qIndex = key.IndexOf('?');
+            if (qIndex >= 0)
+            {
+                key = key.Substring(0, qIndex);
+            }
+            var slashIndex = key.LastIndexOf('/');
+            if (slashIndex >= 0 && slashIndex < key.Length - 1)
+            {
+                key = key.Substring(slashIndex + 1);
+            }
+
+            if (key.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
+            {
+                key = key[..^4];
+            }
+            return key;
+        }
+
+        private static bool TryValidateScopePromptJson(
+            string? promptKeyOrName,
+            string json,
+            string? schemaVersion,
+            out string reason
+        )
+        {
+            reason = string.Empty;
+            var expected = GetExpectedScopeSchemaVersion(promptKeyOrName);
+            if (string.IsNullOrWhiteSpace(expected))
+            {
+                return true;
+            }
+
+            if (!string.Equals(schemaVersion, expected, StringComparison.OrdinalIgnoreCase))
+            {
+                reason = $"schemaVersion mismatch. expected={expected}, actual={schemaVersion ?? "<null>"}";
+                return false;
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                if (root.ValueKind != JsonValueKind.Object)
+                {
+                    reason = "root is not a JSON object";
+                    return false;
+                }
+
+                if (
+                    !root.TryGetProperty("data", out var data)
+                    || data.ValueKind != JsonValueKind.Object
+                )
+                {
+                    reason = "missing object field: data";
+                    return false;
+                }
+
+                if (
+                    string.Equals(expected, "executive_summary.v1", StringComparison.OrdinalIgnoreCase)
+                )
+                {
+                    if (!TryGetPropertyCaseInsensitive(data, "overview", out var overview))
+                    {
+                        reason = "missing required field: data.overview";
+                        return false;
+                    }
+                    if (overview.ValueKind != JsonValueKind.String)
+                    {
+                        reason = "invalid type for data.overview";
+                        return false;
+                    }
+                    if (
+                        !TryGetPropertyCaseInsensitive(data, "keyHighlights", out var highlights)
+                        || highlights.ValueKind != JsonValueKind.Array
+                    )
+                    {
+                        reason = "missing required array: data.keyHighlights";
+                        return false;
+                    }
+                    return true;
+                }
+
+                if (string.Equals(expected, "timeline.v1", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (
+                        !TryGetPropertyCaseInsensitive(data, "tasks", out var tasks)
+                        || tasks.ValueKind != JsonValueKind.Array
+                        || tasks.GetArrayLength() == 0
+                    )
+                    {
+                        reason = "missing required non-empty array: data.tasks";
+                        return false;
+                    }
+
+                    foreach (var task in tasks.EnumerateArray())
+                    {
+                        if (task.ValueKind != JsonValueKind.Object)
+                        {
+                            reason = "invalid task row in data.tasks";
+                            return false;
+                        }
+
+                        if (
+                            !TryGetPropertyCaseInsensitive(task, "taskId", out _)
+                            || !TryGetPropertyCaseInsensitive(task, "task", out _)
+                            || !TryGetPropertyCaseInsensitive(task, "startDate", out _)
+                            || !TryGetPropertyCaseInsensitive(task, "endDate", out _)
+                        )
+                        {
+                            reason = "task row missing one of: taskId/task/startDate/endDate";
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+
+                if (string.Equals(expected, "cost_breakdowns.v1", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (
+                        !TryGetFiniteNumber(data, "totalMaterialCost", out var material)
+                        || !TryGetFiniteNumber(data, "totalLaborCost", out var labor)
+                        || !TryGetFiniteNumber(data, "totalGeneralConditionsSiteServices", out var general)
+                        || !TryGetFiniteNumber(data, "totalPermitsAdminFees", out var permits)
+                        || !TryGetFiniteNumber(data, "insuranceBonds", out var insurance)
+                        || !TryGetFiniteNumber(data, "directInsurableSubtotal", out var directSubtotal)
+                        || !TryGetFiniteNumber(data, "grandTotalBidPrice", out _)
+                    )
+                    {
+                        reason =
+                            "missing required numeric field in cost_breakdowns.v1 (materials/labor/general/permits/insurance/direct/grandTotal)";
+                        return false;
+                    }
+
+                    var expectedDirect = material + labor + general + permits + insurance;
+                    if (Math.Abs(expectedDirect - directSubtotal) > 2.5)
+                    {
+                        reason =
+                            $"directInsurableSubtotal does not reconcile (expected {expectedDirect:F2}, actual {directSubtotal:F2})";
+                        return false;
+                    }
+                    return true;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                reason = $"json parse/validation error: {ex.Message}";
+                return false;
+            }
+        }
+
+        private static bool TryGetPropertyCaseInsensitive(
+            JsonElement obj,
+            string propertyName,
+            out JsonElement value
+        )
+        {
+            foreach (var prop in obj.EnumerateObject())
+            {
+                if (string.Equals(prop.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+                {
+                    value = prop.Value;
+                    return true;
+                }
+            }
+
+            value = default;
+            return false;
+        }
+
+        private static bool TryGetFiniteNumber(
+            JsonElement obj,
+            string propertyName,
+            out double number
+        )
+        {
+            number = 0;
+            if (!TryGetPropertyCaseInsensitive(obj, propertyName, out var value))
+            {
+                return false;
+            }
+
+            if (value.ValueKind == JsonValueKind.Number)
+            {
+                return value.TryGetDouble(out number) && double.IsFinite(number);
+            }
+
+            if (value.ValueKind == JsonValueKind.String)
+            {
+                return double.TryParse(value.GetString(), out number) && double.IsFinite(number);
+            }
+
+            return false;
+        }
+
+        private static bool TryGetGrandTotalBidPrice(string? json, out double value)
+        {
+            value = 0;
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return false;
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                if (root.ValueKind != JsonValueKind.Object)
+                {
+                    return false;
+                }
+
+                if (
+                    !TryGetPropertyCaseInsensitive(root, "data", out var data)
+                    || data.ValueKind != JsonValueKind.Object
+                )
+                {
+                    return false;
+                }
+
+                return TryGetFiniteNumber(data, "grandTotalBidPrice", out value);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private async Task TrySendAnalysisProgressUpdate(
+            string? connectionId,
+            Middleware.AnalysisProgressUpdate update
+        )
+        {
+            if (string.IsNullOrWhiteSpace(connectionId))
+            {
+                return;
+            }
+
+            try
+            {
+                await _hubContext
+                    .Clients.Client(connectionId)
+                    .SendAsync("ReceiveAnalysisProgress", update);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Non-fatal SignalR progress send failure for JobId={JobId} ConnectionId={ConnectionId}",
+                    update.JobId,
+                    connectionId
+                );
+            }
+        }
+
+        private async Task EnsureScopeSnapshotCompletenessAsync(int jobId, DateTime runStartedAtUtc)
+        {
+            var required = new[]
+            {
+                ("executive-summary-prompt", "executive_summary.v1"),
+                ("prompt-21-timeline", "timeline.v1"),
+                ("prompt-25-cost-breakdowns", "cost_breakdowns.v1"),
+            };
+
+            var failures = new List<string>();
+            foreach (var (promptKey, expectedSchema) in required)
+            {
+                var rows = await _context
+                    .JobPromptResults.AsNoTracking()
+                    .Where(r => r.JobId == jobId && r.PromptKey == promptKey && r.CreatedAt >= runStartedAtUtc)
+                    .OrderByDescending(r => r.CreatedAt)
+                    .Select(
+                        r => new
+                        {
+                            r.ParsedJson,
+                            r.SchemaVersion,
+                            r.RawResponse,
+                            r.CreatedAt,
+                        }
+                    )
+                    .ToListAsync();
+
+                var accepted = rows.FirstOrDefault(r => r.ParsedJson != null);
+                if (accepted == null)
+                {
+                    var latest = rows.FirstOrDefault();
+                    var reason =
+                        TryExtractRejectionReason(latest?.RawResponse)
+                        ?? "No accepted parsed JSON row was written in this run.";
+                    failures.Add($"{promptKey}: {reason}");
+                    continue;
+                }
+
+                if (!string.Equals(accepted.SchemaVersion, expectedSchema, StringComparison.OrdinalIgnoreCase))
+                {
+                    failures.Add(
+                        $"{promptKey}: schema mismatch. expected {expectedSchema}, got {accepted.SchemaVersion ?? "<null>"}."
+                    );
+                }
+            }
+
+            if (failures.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    "Scope snapshot persistence failed: " + string.Join(" | ", failures)
+                );
+            }
+        }
+
+        private static string BuildRejectedRawResponse(string response, string reason)
+        {
+            var safeReason = string.IsNullOrWhiteSpace(reason) ? "rejected" : reason.Trim();
+            var safeResponse = response ?? string.Empty;
+            return $"{RejectionReasonPrefix} {safeReason}\n\n{safeResponse}";
+        }
+
+        internal static string? TryExtractRejectionReason(string? rawResponse)
+        {
+            if (string.IsNullOrWhiteSpace(rawResponse))
+            {
+                return null;
+            }
+
+            if (!rawResponse.StartsWith(RejectionReasonPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            var lineEnd = rawResponse.IndexOf('\n');
+            var firstLine = lineEnd >= 0 ? rawResponse.Substring(0, lineEnd) : rawResponse;
+            var reason = firstLine.Replace(RejectionReasonPrefix, string.Empty).Trim();
+            return string.IsNullOrWhiteSpace(reason) ? "Rejected by validation." : reason;
         }
 
         private static string BuildPhaseInstructionPrefix(int phaseNumber, string phaseTitle)

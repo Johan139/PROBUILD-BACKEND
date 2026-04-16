@@ -268,10 +268,18 @@ if (!string.IsNullOrWhiteSpace(signalrConn))
 builder.Services.AddLogging(configure => configure.AddConsole());
 builder.Services.AddHttpContextAccessor(); // Required for AzureBlobService
 // Dynamically choose Hangfire schema based on environment
+var hangfireSchemaOverride =
+    Environment.GetEnvironmentVariable("HANGFIRE_SCHEMA")
+    ?? builder.Configuration["Hangfire:Schema"];
+
 #if DEBUG
-var hangfireSchema = "HangFireLocal";
+var hangfireSchema = string.IsNullOrWhiteSpace(hangfireSchemaOverride)
+    ? "HangFireLocal"
+    : hangfireSchemaOverride;
 #else
-var hangfireSchema = "HangFire";
+var hangfireSchema = string.IsNullOrWhiteSpace(hangfireSchemaOverride)
+    ? "HangFire"
+    : hangfireSchemaOverride;
 #endif
 
 builder.Services.AddHangfire(config =>
@@ -290,8 +298,8 @@ builder.Services.AddHangfire(config =>
 );
 builder.Services.AddHangfireServer(options =>
 {
-    options.WorkerCount = 4;
-    options.ServerName = "Probuild-Hangfire-Server";
+  options.WorkerCount = 4;
+  options.ServerName = $"Probuild-Hangfire-Server:{Environment.MachineName}:{System.Diagnostics.Process.GetCurrentProcess().Id}";
 });
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IEmailSender, EmailSender>();
@@ -355,6 +363,13 @@ app.Logger.LogInformation("ProgressHub endpoint mapped at /hubs/progressHub");
 app.MapHub<NotificationHub>("/hubs/notifications");
 app.MapHub<ChatHub>("/chathub");
 app.Logger.LogInformation("ChatHub endpoint mapped at /chathub");
+
+app.Logger.LogInformation(
+    "Hangfire server identity: {ServerName}",
+    $"Probuild-Hangfire-Server:{Environment.MachineName}:{System.Diagnostics.Process.GetCurrentProcess().Id}"
+);
+
+app.Logger.LogInformation("Hangfire schema: {Schema}", hangfireSchema);
 
 // Log the URLs the application is listening on
 var listeningUrls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "Not set";

@@ -6,8 +6,10 @@ using ProbuildBackend.Interface;
 public class PromptManagerService : IPromptManagerService
 {
     private readonly BlobContainerClient _blobContainerClient;
-    private static readonly ConcurrentDictionary<string, string> _promptCache = new();
+    private sealed record PromptCacheEntry(string Prompt, DateTime CachedAtUtc);
+    private static readonly ConcurrentDictionary<string, PromptCacheEntry> _promptCache = new();
     private readonly ILogger<PromptManagerService> _logger;
+    private readonly TimeSpan _promptCacheTtl = TimeSpan.FromMinutes(10);
 
     public PromptManagerService(IConfiguration configuration, ILogger<PromptManagerService> logger)
     {
@@ -111,8 +113,14 @@ public class PromptManagerService : IPromptManagerService
 
         if (_promptCache.TryGetValue(fullBlobName, out var cachedPrompt))
         {
+            if (DateTime.UtcNow - cachedPrompt.CachedAtUtc <= _promptCacheTtl)
+            {
+                _logger.LogInformation("Found prompt in cache: {FullBlobName}", fullBlobName);
+                return cachedPrompt.Prompt;
+            }
+
+            _promptCache.TryRemove(fullBlobName, out _);
             _logger.LogInformation("Found prompt in cache: {FullBlobName}", fullBlobName);
-            return cachedPrompt;
         }
 
         _logger.LogInformation(
@@ -133,7 +141,7 @@ public class PromptManagerService : IPromptManagerService
 
         var response = await blobClient.DownloadContentAsync();
         var promptText = response.Value.Content.ToString();
-        _promptCache.TryAdd(fullBlobName, promptText);
+        _promptCache[fullBlobName] = new PromptCacheEntry(promptText, DateTime.UtcNow);
         _logger.LogInformation(
             "Successfully fetched and cached prompt: {FullBlobName}",
             fullBlobName

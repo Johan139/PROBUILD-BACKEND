@@ -48,6 +48,7 @@ namespace ProbuildBackend.Interface
         );
         Task<string> GenerateFeedbackForUnsuccessfulBidderAsync(BidModel bid, BidModel winningBid);
         Task ParseAndSaveAiJobDetails(int jobId, string aiResponse);
+        Task<int> BackfillJobPromptResultsParsedJsonAsync(int jobId, IEnumerable<string>? promptKeys = null);
         Task<PlanningDataDto> GetPlanningDataAsync(int jobId);
         Task RefreshTradePackagesAsync(int jobId);
     }

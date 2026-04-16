@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Security.Claims;
+using System.Text.Json;
 using Hangfire;
 using Hangfire.Common;
 using Microsoft.AspNetCore.Authorization;
@@ -166,6 +167,205 @@ namespace ProbuildBackend.Controllers
         {
             var data = await _aiAnalysisService.GetPlanningDataAsync(jobId);
             return Ok(data);
+        }
+
+        [HttpGet("{jobId}/scope-review-snapshot")]
+        [Authorize]
+        public async Task<ActionResult<ScopeReviewSnapshotDto>> GetScopeReviewSnapshot(int jobId)
+        {
+            var currentUserId =
+                _httpContextAccessor.HttpContext?.User.FindFirstValue("UserId")
+                ?? _httpContextAccessor.HttpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                ?? _httpContextAccessor.HttpContext?.User.FindFirstValue("sub")
+                ?? _httpContextAccessor.HttpContext?.User.FindFirstValue("userId");
+            if (string.IsNullOrWhiteSpace(currentUserId))
+            {
+                return Unauthorized();
+            }
+
+            var canAccess = await UserCanAccessJobAsync(jobId, currentUserId);
+            if (!canAccess)
+            {
+                return NotFound();
+            }
+
+            JsonElement? ParseOrNull(string? json)
+            {
+                if (string.IsNullOrWhiteSpace(json))
+                {
+                    return null;
+                }
+
+                try
+                {
+                    return JsonSerializer.Deserialize<JsonElement>(json);
+                }
+                catch
+                {
+                    return null;
+                }
+            }
+
+            try
+            {
+                async Task<ScopeReviewPromptStatusDto> BuildStatusAsync(params string[] promptKeys)
+                {
+                    var latest = await _context
+                        .JobPromptResults.AsNoTracking()
+                        .Where(r => r.JobId == jobId && promptKeys.Contains(r.PromptKey))
+                        .OrderByDescending(r => r.CreatedAt)
+                        .Select(r => new
+                        {
+                            r.CreatedAt,
+                            r.SchemaVersion,
+                            r.ParsedJson,
+                            r.RawResponse,
+                        })
+                        .FirstOrDefaultAsync();
+
+                    if (latest == null)
+                    {
+                        return new ScopeReviewPromptStatusDto
+                        {
+                            HasParsedJson = false,
+                            LastFailureReason = "No runs found for this prompt yet.",
+                        };
+                    }
+
+                    return new ScopeReviewPromptStatusDto
+                    {
+                        HasParsedJson = latest.ParsedJson != null,
+                        LastRunAt = latest.CreatedAt,
+                        LastSchemaVersion = latest.SchemaVersion,
+                        LastFailureReason =
+                            latest.ParsedJson == null
+                                ? AiAnalysisService.TryExtractRejectionReason(latest.RawResponse)
+                                : null,
+                    };
+                }
+
+                var exec = await _context.JobPromptResults
+                    .AsNoTracking()
+                    .Where(
+                        r =>
+                            r.JobId == jobId
+                            && (
+                                r.PromptKey == "executive-summary-prompt"
+                                || r.PromptKey == "executive-summary-prompt.txt"
+                            )
+                            && r.ParsedJson != null
+                    )
+                    .OrderByDescending(r => r.CreatedAt)
+                    .Select(r => r.ParsedJson)
+                    .FirstOrDefaultAsync();
+
+                var timeline = await _context.JobPromptResults
+                    .AsNoTracking()
+                    .Where(
+                        r =>
+                            r.JobId == jobId
+                            && (
+                                r.PromptKey == "prompt-21-timeline"
+                                || r.PromptKey == "prompt-21-timeline.txt"
+                            )
+                            && r.ParsedJson != null
+                    )
+                    .OrderByDescending(r => r.CreatedAt)
+                    .Select(r => r.ParsedJson)
+                    .FirstOrDefaultAsync();
+
+                var cost = await _context.JobPromptResults
+                    .AsNoTracking()
+                    .Where(
+                        r =>
+                            r.JobId == jobId
+                            && (
+                                r.PromptKey == "prompt-25-cost-breakdowns"
+                                || r.PromptKey == "prompt-25-cost-breakdowns.txt"
+                            )
+                            && r.ParsedJson != null
+                    )
+                    .OrderByDescending(r => r.CreatedAt)
+                    .Select(r => r.ParsedJson)
+                    .FirstOrDefaultAsync();
+
+                var executiveStatus = await BuildStatusAsync(
+                    "executive-summary-prompt",
+                    "executive-summary-prompt.txt"
+                );
+                var timelineStatus = await BuildStatusAsync(
+                    "prompt-21-timeline",
+                    "prompt-21-timeline.txt"
+                );
+                var costStatus = await BuildStatusAsync(
+                    "prompt-25-cost-breakdowns",
+                    "prompt-25-cost-breakdowns.txt"
+                );
+
+                return Ok(
+                    new ScopeReviewSnapshotDto
+                    {
+                        ExecutiveSummary = ParseOrNull(exec),
+                        Timeline = ParseOrNull(timeline),
+                        CostBreakdowns = ParseOrNull(cost),
+                        ExecutiveSummaryStatus = executiveStatus,
+                        TimelineStatus = timelineStatus,
+                        CostBreakdownsStatus = costStatus,
+                    }
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Failed to read scope review snapshot from JobPromptResults for JobId={JobId}",
+                    jobId
+                );
+
+                return Ok(new ScopeReviewSnapshotDto());
+            }
+        }
+
+        [HttpPost("{jobId}/scope-review-snapshot/backfill")]
+        [Authorize]
+        public async Task<ActionResult<object>> BackfillScopeReviewSnapshot(int jobId)
+        {
+            var currentUserId =
+                _httpContextAccessor.HttpContext?.User.FindFirstValue("UserId")
+                ?? _httpContextAccessor.HttpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                ?? _httpContextAccessor.HttpContext?.User.FindFirstValue("sub")
+                ?? _httpContextAccessor.HttpContext?.User.FindFirstValue("userId");
+            if (string.IsNullOrWhiteSpace(currentUserId))
+            {
+                return Unauthorized();
+            }
+
+            var canAccess = await UserCanAccessJobAsync(jobId, currentUserId);
+            if (!canAccess)
+            {
+                return NotFound();
+            }
+
+            try
+            {
+                var updated = await _aiAnalysisService.BackfillJobPromptResultsParsedJsonAsync(
+                    jobId,
+                    new[]
+                    {
+                        "executive-summary-prompt",
+                        "prompt-21-timeline",
+                        "prompt-25-cost-breakdowns",
+                        "prompt-00-initial-analysis",
+                    }
+                );
+
+                return Ok(new { updated });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "BackfillScopeReviewSnapshot failed for JobId={JobId}", jobId);
+                return Ok(new { updated = 0 });
+            }
         }
 
         [HttpGet("Id/{id}")]
@@ -1049,6 +1249,20 @@ namespace ProbuildBackend.Controllers
                     var raw = Request.Headers["X-Forwarded-For"].FirstOrDefault();
                     ipAddress = raw?.Split(',').First().Trim()
                                 ?? HttpContext.Connection.RemoteIpAddress?.ToString();
+                    if (!documentUrls.Any())
+                    {
+                        // Fallback: use any documents already attached to this job.
+                        var attachedUrls = await _context
+                            .JobDocuments.AsNoTracking()
+                            .Where(d => d.JobId == job.Id && !string.IsNullOrWhiteSpace(d.BlobUrl))
+                            .Select(d => d.BlobUrl)
+                            .ToListAsync();
+                        documentUrls = attachedUrls
+                            .Where(u => !string.IsNullOrWhiteSpace(u))
+                            .Distinct()
+                            .ToList();
+                    }
+
                     if (documentUrls.Any())
                     {
                         string connectionId =
@@ -1102,6 +1316,21 @@ namespace ProbuildBackend.Controllers
                                 )
                             );
                         }
+                    }
+                    else
+                    {
+                        // Fail loudly instead of returning success while no analysis job is queued.
+                        job.Status = "FAILED";
+                        await _context.SaveChangesAsync();
+                        return BadRequest(
+                            new
+                            {
+                                error = "No documents were linked to this job, so analysis was not started.",
+                                details =
+                                    "Upload/attach blueprint documents first (or provide a valid sessionId with pending documents), then retry.",
+                                jobId = job.Id,
+                            }
+                        );
                     }
 
                     jobRequest.JobId = job.Id;
