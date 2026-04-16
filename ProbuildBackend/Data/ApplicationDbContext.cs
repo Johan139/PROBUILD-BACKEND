@@ -77,6 +77,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<JobPermitModel> JobPermits { get; set; }
     public DbSet<TradePackage> TradePackages { get; set; }
     public DbSet<JobAnalysisState> JobAnalysisStates { get; set; }
+    public DbSet<JobPromptResult> JobPromptResults { get; set; }
     public DbSet<ExternalCompany> ExternalCompanies { get; set; }
     public DbSet<ExternalContact> ExternalContacts { get; set; }
     public DbSet<TradePackageBidInvite> TradePackageBidInvites { get; set; }

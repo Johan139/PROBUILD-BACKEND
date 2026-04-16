@@ -16,7 +16,8 @@
       "launchUrl": "swagger",
       "applicationUrl": "http://localhost:5000",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "HANGFIRE_SCHEMA": "HangFireLocalJohan"
       }
     },
     "ProbuildBackend": {
@@ -25,7 +26,8 @@
       "launchBrowser": true,
       "applicationUrl": "http://localhost:5000",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "HANGFIRE_SCHEMA": "HangFireLocalJohan"
       }
     },
     "https": {
@@ -35,7 +37,8 @@
       "launchUrl": "swagger",
       "applicationUrl": "http://localhost:5000",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "HANGFIRE_SCHEMA": "HangFireLocalJohan"
       }
     },
     "IIS Express": {

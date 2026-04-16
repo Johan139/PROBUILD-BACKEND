@@ -96,6 +96,48 @@ public class GeminiAiService : IAiService
         throw new InvalidOperationException("Gemini retry loop exited unexpectedly.");
     }
 
+    /// <summary>
+    /// Best-effort deterministic settings for analysis runs.
+    /// Uses reflection so this remains compatible across SDK versions where
+    /// GenerationConfig members may differ.
+    /// </summary>
+    private void TryApplyDeterministicAnalysisConfig(GenerateContentRequest request)
+    {
+        try
+        {
+            var requestType = request.GetType();
+            var cfgProp = requestType.GetProperty("GenerationConfig");
+            if (cfgProp == null || !cfgProp.CanWrite)
+            {
+                return;
+            }
+
+            var cfg = cfgProp.GetValue(request);
+            if (cfg == null)
+            {
+                cfg = Activator.CreateInstance(cfgProp.PropertyType);
+            }
+
+            if (cfg == null)
+            {
+                return;
+            }
+
+            var cfgType = cfg.GetType();
+            cfgType.GetProperty("Temperature")?.SetValue(cfg, 0.0f);
+            cfgType.GetProperty("TopP")?.SetValue(cfg, 0.0f);
+            cfgType.GetProperty("TopK")?.SetValue(cfg, 1);
+            cfgProp.SetValue(request, cfg);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(
+                ex,
+                "Could not apply deterministic analysis generation config; proceeding with default SDK config."
+            );
+        }
+    }
+
     #region Conversational Method
     public async Task<(string response, string conversationId)> ContinueConversationAsync(
         string? conversationId,
@@ -145,6 +187,10 @@ public class GeminiAiService : IAiService
         }
 
         request.Contents.Add(currentUserContent);
+        if (isAnalysis)
+        {
+            TryApplyDeterministicAnalysisConfig(request);
+        }
 
         try
         {
@@ -684,6 +730,7 @@ JSON Output:";
         {
             Contents = new List<Content> { systemContent, modelResponseToSystem, userContent },
         };
+        TryApplyDeterministicAnalysisConfig(request);
 
         try
         {
