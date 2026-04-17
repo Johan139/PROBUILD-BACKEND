@@ -337,6 +337,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             entity.Property(e => e.State).HasColumnName("state");
             entity.Property(e => e.PostalCode).HasColumnName("postal_code");
             entity.Property(e => e.Country).HasColumnName("country");
+            entity.Property(e => e.AddressType).HasColumnName("AddressType");
 
             entity.Property(e => e.Latitude).HasColumnName("latitude");
             entity.Property(e => e.Longitude).HasColumnName("longitude");

@@ -1,5 +1,6 @@
 ﻿using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
@@ -9,10 +10,12 @@ namespace ProbuildBackend.Services
     public class CompanyService : ICompanyService
     {
         private readonly ApplicationDbContext _db;
+        private readonly ILogger<CompanyService> _logger;
 
-        public CompanyService(ApplicationDbContext db)
+        public CompanyService(ApplicationDbContext db, ILogger<CompanyService> logger)
         {
             _db = db;
+            _logger = logger;
         }
 
         public async Task<CompanyProfileResponseDto> GetProfileCompanyByUserId(string userId)
@@ -119,15 +122,27 @@ namespace ProbuildBackend.Services
             CompanyProfileDto dto
         )
         {
-            Console.WriteLine(JsonSerializer.Serialize(dto));
+            _logger.LogInformation(
+                "[CompanyService] SaveCompanyProfileAsync started for ownerUserId {OwnerUserId}. Payload: {Payload}",
+                ownerUserId,
+                JsonSerializer.Serialize(dto)
+            );
             try
             {
+                _logger.LogInformation(
+                    "[CompanyService] Looking up existing company for ownerUserId {OwnerUserId}",
+                    ownerUserId
+                );
                 var company = await _db.Companies.FirstOrDefaultAsync(c =>
                     c.OwnerUserId == ownerUserId
                 );
 
                 if (company == null)
                 {
+                    _logger.LogInformation(
+                        "[CompanyService] No existing company found for ownerUserId {OwnerUserId}. Creating new record.",
+                        ownerUserId
+                    );
                     // CREATE
                     company = new CompaniesModel
                     {
@@ -137,8 +152,20 @@ namespace ProbuildBackend.Services
 
                     _db.Companies.Add(company);
                 }
+                else
+                {
+                    _logger.LogInformation(
+                        "[CompanyService] Existing company found for ownerUserId {OwnerUserId}. CompanyId: {CompanyId}",
+                        ownerUserId,
+                        company.Id
+                    );
+                }
 
                 // UPDATE (shared for create & update)
+                _logger.LogInformation(
+                    "[CompanyService] Applying scalar fields for ownerUserId {OwnerUserId}",
+                    ownerUserId
+                );
                 company.Name = dto.Name;
                 company.CompanyRegNo = dto.CompanyRegNo;
                 company.VatNo = dto.VatNo;
@@ -211,23 +238,83 @@ namespace ProbuildBackend.Services
                         : null;
                 company.DeliveryTime = dto.DeliveryTime;
 
+                _logger.LogInformation(
+                    "[CompanyService] Scalar field mapping complete for ownerUserId {OwnerUserId}. MeasurementSystem: {MeasurementSystem}, TemperatureUnit: {TemperatureUnit}, AreaUnit: {AreaUnit}, VolumeUnit: {VolumeUnit}",
+                    ownerUserId,
+                    company.MeasurementSystem,
+                    company.TemperatureUnit,
+                    company.AreaUnit,
+                    company.VolumeUnit
+                );
+
+                _logger.LogInformation(
+                    "[CompanyService] Saving company row for ownerUserId {OwnerUserId}",
+                    ownerUserId
+                );
                 await _db.SaveChangesAsync();
+
+                _logger.LogInformation(
+                    "[CompanyService] Company row saved for ownerUserId {OwnerUserId}. CompanyId: {CompanyId}",
+                    ownerUserId,
+                    company.Id
+                );
 
                 if (dto.BillingAddress != null)
                 {
+                    _logger.LogInformation(
+                        "[CompanyService] Upserting billing address for companyId {CompanyId}: {BillingAddress}",
+                        company.Id,
+                        JsonSerializer.Serialize(dto.BillingAddress)
+                    );
                     UpsertCompanyAddress(company.Id, "BILLING", dto.BillingAddress);
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        "[CompanyService] No billing address supplied for companyId {CompanyId}",
+                        company.Id
+                    );
                 }
 
                 if (dto.PhysicalAddress != null)
                 {
+                    _logger.LogInformation(
+                        "[CompanyService] Upserting physical address for companyId {CompanyId}: {PhysicalAddress}",
+                        company.Id,
+                        JsonSerializer.Serialize(dto.PhysicalAddress)
+                    );
                     UpsertCompanyAddress(company.Id, "PHYSICAL", dto.PhysicalAddress);
                 }
+                else
+                {
+                    _logger.LogInformation(
+                        "[CompanyService] No physical address supplied for companyId {CompanyId}",
+                        company.Id
+                    );
+                }
+
+                _logger.LogInformation(
+                    "[CompanyService] Saving address changes for companyId {CompanyId}",
+                    company.Id
+                );
                 await _db.SaveChangesAsync();
+
+                _logger.LogInformation(
+                    "[CompanyService] SaveCompanyProfileAsync completed for ownerUserId {OwnerUserId}. CompanyId: {CompanyId}",
+                    ownerUserId,
+                    company.Id
+                );
 
                 return company;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                _logger.LogError(
+                    ex,
+                    "[CompanyService] SaveCompanyProfileAsync failed for ownerUserId {OwnerUserId}. Payload: {Payload}",
+                    ownerUserId,
+                    JsonSerializer.Serialize(dto)
+                );
                 throw;
             }
         }
@@ -236,12 +323,24 @@ namespace ProbuildBackend.Services
         {
             try
             {
+                _logger.LogInformation(
+                    "[CompanyService] UpsertCompanyAddress started for companyId {CompanyId}, addressType {AddressType}. Payload: {Payload}",
+                    companyId,
+                    addressType,
+                    JsonSerializer.Serialize(dto)
+                );
+
                 var address = _db.CompanyAddresses.FirstOrDefault(a =>
                     a.CompanyId == companyId && a.AddressType == addressType
                 );
 
                 if (address == null)
                 {
+                    _logger.LogInformation(
+                        "[CompanyService] No existing {AddressType} address for companyId {CompanyId}. Creating new address record.",
+                        addressType,
+                        companyId
+                    );
                     address = new CompanyAddressModel
                     {
                         CompanyId = companyId,
@@ -250,6 +349,15 @@ namespace ProbuildBackend.Services
                     };
 
                     _db.CompanyAddresses.Add(address);
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        "[CompanyService] Existing {AddressType} address found for companyId {CompanyId}. AddressId: {AddressId}",
+                        addressType,
+                        companyId,
+                        address.Id
+                    );
                 }
 
                 address.StreetNumber = dto.StreetNumber;
@@ -263,11 +371,24 @@ namespace ProbuildBackend.Services
                 address.FormattedAddress = dto.FormattedAddress;
                 address.GooglePlaceId = dto.GooglePlaceId;
                 address.UpdatedAt = DateTime.UtcNow;
+
+                _logger.LogInformation(
+                    "[CompanyService] UpsertCompanyAddress mapped successfully for companyId {CompanyId}, addressType {AddressType}",
+                    companyId,
+                    addressType
+                );
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                _logger.LogError(
+                    ex,
+                    "[CompanyService] UpsertCompanyAddress failed for companyId {CompanyId}, addressType {AddressType}. Payload: {Payload}",
+                    companyId,
+                    addressType,
+                    JsonSerializer.Serialize(dto)
+                );
                 throw;
-                }
             }
+        }
         }
 }
