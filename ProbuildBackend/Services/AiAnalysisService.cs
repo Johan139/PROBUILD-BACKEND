@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Linq;
 using System.Collections.Concurrent;
@@ -31,6 +32,8 @@ namespace ProbuildBackend.Services
         private const string BidComparisonPromptKey = "subcontractor-comparison-prompt.txt";
         private const string InitialAnalysisPhaseTitle = "Initial Analysis & Reporting";
         private const double ScopeCostVarianceRejectThreshold = 0.15;
+        private const decimal DirectTotalsMismatchRejectAbsoluteTolerance = 1.00m;
+        private const decimal DirectTotalsMismatchRejectRelativeTolerance = 0.01m;
         private const string RejectionReasonPrefix = "__SCOPE_REJECTION_REASON__:";
         private static readonly ConcurrentDictionary<int, SemaphoreSlim> _analysisLocks = new();
         private static int _jobPromptResultsTableDiagnosticsLogged = 0;
@@ -240,7 +243,11 @@ namespace ProbuildBackend.Services
                     );
 
                     var subPrompt = await _promptManager.GetPromptAsync(null, promptKey);
-                    subPrompt = ApplyDeterministicScopePromptInstructions(promptKey, subPrompt);
+                    subPrompt = await ApplyDeterministicScopePromptInstructionsAsync(
+                        job.Id,
+                        promptKey,
+                        subPrompt
+                    );
                     var phaseTitle = FormatPromptStatusLabel(promptKey);
                     var phasePrefix = BuildPhaseInstructionPrefix(step, phaseTitle);
                     var (analysisResult, _) = await _aiService.ContinueConversationAsync(
@@ -974,7 +981,11 @@ namespace ProbuildBackend.Services
                     );
 
                     var promptText = await _promptManager.GetPromptAsync("", $"{promptName}.txt");
-                    promptText = ApplyDeterministicScopePromptInstructions(promptName, promptText);
+                    promptText = await ApplyDeterministicScopePromptInstructionsAsync(
+                        jobId,
+                        promptName,
+                        promptText
+                    );
                     var phaseTitle = FormatPromptStatusLabel(promptName);
                     var phasePrefix = BuildPhaseInstructionPrefix(phaseNumber, phaseTitle);
                     (lastResponse, _) = await _aiService.ContinueConversationAsync(
@@ -2374,6 +2385,53 @@ WHERE TABLE_NAME = 'JobPromptResults';";
                     )
                 )
                 {
+                    var directAnchors = await GetPrompt04To19DirectTotalsAsync(jobId);
+                    if (directAnchors.hasTotals)
+                    {
+                        if (
+                            TryReadCostBreakdownDirectTotalsFromJson(
+                                extractedJson,
+                                out var currentMaterialTotal,
+                                out var currentLaborTotal
+                            )
+                        )
+                        {
+                            var materialMatches = IsWithinDirectTotalsTolerance(
+                                directAnchors.materialTotal,
+                                currentMaterialTotal
+                            );
+                            var laborMatches = IsWithinDirectTotalsTolerance(
+                                directAnchors.laborTotal,
+                                currentLaborTotal
+                            );
+
+                            if (!materialMatches || !laborMatches)
+                            {
+                                var reason =
+                                    "Direct totals mismatch vs prompt-04..19 anchors (non-blocking). "
+                                    + $"expectedMaterial={directAnchors.materialTotal:F2}, actualMaterial={currentMaterialTotal:F2}; "
+                                    + $"expectedLabor={directAnchors.laborTotal:F2}, actualLabor={currentLaborTotal:F2}.";
+                                _logger.LogWarning(
+                                    "PersistJsonFirstPromptResult: cost_breakdowns.v1 mismatch for JobId={JobId}. {Reason}",
+                                    jobId,
+                                    reason
+                                );
+                            }
+                        }
+
+                        if (
+                            TryApplyPrompt25DirectTotalsAnchors(
+                                extractedJson,
+                                directAnchors.materialTotal,
+                                directAnchors.laborTotal,
+                                out var harmonizedJson
+                            )
+                        )
+                        {
+                            extractedJson = harmonizedJson;
+                        }
+                    }
+
                     var priorParsedCostJson = await _context
                         .JobPromptResults.AsNoTracking()
                         .Where(
@@ -3588,7 +3646,11 @@ END";
                         "RenovationPrompts/",
                         $"{promptName}.txt"
                     );
-                    promptText = ApplyDeterministicScopePromptInstructions(promptName, promptText);
+                    promptText = await ApplyDeterministicScopePromptInstructionsAsync(
+                        jobId,
+                        promptName,
+                        promptText
+                    );
                     var phaseTitle = FormatPromptStatusLabel(promptName);
                     var phasePrefix = BuildPhaseInstructionPrefix(step, phaseTitle);
                     (lastResponse, _) = await _aiService.ContinueConversationAsync(
@@ -4303,7 +4365,8 @@ END";
             );
         }
 
-        private static string ApplyDeterministicScopePromptInstructions(
+        private async Task<string> ApplyDeterministicScopePromptInstructionsAsync(
+            int jobId,
             string? promptKeyOrName,
             string promptText
         )
@@ -4316,7 +4379,17 @@ END";
             var schema = GetExpectedScopeSchemaVersion(promptKeyOrName);
             if (string.IsNullOrWhiteSpace(schema))
             {
-                return promptText;
+                // Even when no strict JSON schema contract is required, keep cross-phase anchors
+                // stable between Scope Review and Estimating prompts.
+                var valueLockOnly = await BuildCrossPhaseValueLockContractAsync(
+                    jobId,
+                    promptKeyOrName
+                );
+                if (string.IsNullOrWhiteSpace(valueLockOnly))
+                {
+                    return promptText;
+                }
+                return $"{valueLockOnly}\n\n{promptText}";
             }
 
             var contract = $@"OUTPUT CONTRACT (MANDATORY):
@@ -4329,7 +4402,472 @@ END";
 - If an input is missing, keep the field present and set it to null or an empty array/object as appropriate.
 - All returned JSON must be parseable by a strict JSON parser.";
 
-            return $"{contract}\n\n{promptText}";
+            var valueLockContract = await BuildCrossPhaseValueLockContractAsync(jobId, promptKeyOrName);
+            if (string.IsNullOrWhiteSpace(valueLockContract))
+            {
+                return $"{contract}\n\n{promptText}";
+            }
+
+            return $"{contract}\n\n{valueLockContract}\n\n{promptText}";
+        }
+
+        private async Task<string?> BuildCrossPhaseValueLockContractAsync(
+            int jobId,
+            string? promptKeyOrName
+        )
+        {
+            var key = NormalizePromptKey(promptKeyOrName);
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return null;
+            }
+
+            // Keep prompt-25 and executive summary locked as well; other scope snapshot prompts remain isolated.
+            var isPrompt25 = string.Equals(
+                key,
+                "prompt-25-cost-breakdowns",
+                StringComparison.OrdinalIgnoreCase
+            );
+            var isExecutiveSummary = string.Equals(
+                key,
+                "executive-summary-prompt",
+                StringComparison.OrdinalIgnoreCase
+            );
+            if (string.Equals(key, "prompt-00-initial-analysis", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            if (IsScopeSnapshotPromptKey(key) && !isPrompt25 && !isExecutiveSummary)
+            {
+                return null;
+            }
+
+            if (!Regex.IsMatch(key, @"^prompt-\d{2}-", RegexOptions.IgnoreCase))
+            {
+                return null;
+            }
+
+            var timelineRow = await _context
+                .JobPromptResults.AsNoTracking()
+                .Where(
+                    r =>
+                        r.JobId == jobId
+                        && (
+                            r.PromptKey == "prompt-21-timeline"
+                            || r.PromptKey == "prompt-21-timeline.txt"
+                        )
+                        && r.ParsedJson != null
+                )
+                .OrderByDescending(r => r.CreatedAt)
+                .Select(r => r.ParsedJson)
+                .FirstOrDefaultAsync();
+
+            var costRow = await _context
+                .JobPromptResults.AsNoTracking()
+                .Where(
+                    r =>
+                        r.JobId == jobId
+                        && (
+                            r.PromptKey == "prompt-25-cost-breakdowns"
+                            || r.PromptKey == "prompt-25-cost-breakdowns.txt"
+                        )
+                        && r.ParsedJson != null
+                )
+                .OrderByDescending(r => r.CreatedAt)
+                .Select(r => r.ParsedJson)
+                .FirstOrDefaultAsync();
+
+            var initialRow = await _context
+                .JobPromptResults.AsNoTracking()
+                .Where(
+                    r =>
+                        r.JobId == jobId
+                        && (
+                            r.PromptKey == "prompt-00-initial-analysis"
+                            || r.PromptKey == "prompt-00-initial-analysis.txt"
+                        )
+                        && r.ParsedJson != null
+                )
+                .OrderByDescending(r => r.CreatedAt)
+                .Select(r => r.ParsedJson)
+                .FirstOrDefaultAsync();
+
+            string? currencyCode = null;
+            string? unitsSystem = null;
+            string? projectStartDate = null;
+            double? grandTotalBidPrice = null;
+            double? directInsurableSubtotal = null;
+            double? conditionedAreaValue = null;
+
+            if (!string.IsNullOrWhiteSpace(timelineRow))
+            {
+                try
+                {
+                    using var tDoc = JsonDocument.Parse(timelineRow);
+                    if (TryGetPropertyCaseInsensitive(tDoc.RootElement, "currencyCode", out var c))
+                    {
+                        currencyCode = c.GetString();
+                    }
+                    if (TryGetPropertyCaseInsensitive(tDoc.RootElement, "unitsSystem", out var u))
+                    {
+                        unitsSystem = u.GetString();
+                    }
+                    if (
+                        TryGetPropertyCaseInsensitive(tDoc.RootElement, "data", out var d)
+                        && d.ValueKind == JsonValueKind.Object
+                        && TryGetPropertyCaseInsensitive(d, "projectStartDate", out var psd)
+                    )
+                    {
+                        projectStartDate = psd.ValueKind == JsonValueKind.String ? psd.GetString() : null;
+                    }
+                }
+                catch { }
+            }
+
+            if (!string.IsNullOrWhiteSpace(costRow))
+            {
+                try
+                {
+                    using var cDoc = JsonDocument.Parse(costRow);
+                    if (
+                        string.IsNullOrWhiteSpace(currencyCode)
+                        && TryGetPropertyCaseInsensitive(cDoc.RootElement, "currencyCode", out var cc)
+                    )
+                    {
+                        currencyCode = cc.GetString();
+                    }
+                    if (
+                        string.IsNullOrWhiteSpace(unitsSystem)
+                        && TryGetPropertyCaseInsensitive(cDoc.RootElement, "unitsSystem", out var us)
+                    )
+                    {
+                        unitsSystem = us.GetString();
+                    }
+                    if (
+                        TryGetPropertyCaseInsensitive(cDoc.RootElement, "data", out var d)
+                        && d.ValueKind == JsonValueKind.Object
+                    )
+                    {
+                        if (TryGetFiniteNumber(d, "grandTotalBidPrice", out var gt))
+                        {
+                            grandTotalBidPrice = gt;
+                        }
+                        if (TryGetFiniteNumber(d, "directInsurableSubtotal", out var ds))
+                        {
+                            directInsurableSubtotal = ds;
+                        }
+                        if (
+                            TryGetPropertyCaseInsensitive(d, "conditionedArea", out var ca)
+                            && ca.ValueKind == JsonValueKind.Object
+                            && TryGetFiniteNumber(ca, "value", out var cv)
+                        )
+                        {
+                            conditionedAreaValue = cv;
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            if (!string.IsNullOrWhiteSpace(initialRow))
+            {
+                try
+                {
+                    using var iDoc = JsonDocument.Parse(initialRow);
+                    if (
+                        string.IsNullOrWhiteSpace(currencyCode)
+                        && TryGetPropertyCaseInsensitive(iDoc.RootElement, "currencyCode", out var cc)
+                    )
+                    {
+                        currencyCode = cc.GetString();
+                    }
+                    if (
+                        string.IsNullOrWhiteSpace(unitsSystem)
+                        && TryGetPropertyCaseInsensitive(iDoc.RootElement, "unitsSystem", out var us)
+                    )
+                    {
+                        unitsSystem = us.GetString();
+                    }
+                    if (
+                        !conditionedAreaValue.HasValue
+                        && TryGetFiniteNumber(iDoc.RootElement, "buildingSize", out var bs)
+                    )
+                    {
+                        conditionedAreaValue = bs;
+                    }
+                }
+                catch { }
+            }
+
+            var anchors = new List<string>();
+            if (!string.IsNullOrWhiteSpace(currencyCode))
+                anchors.Add($@"- currencyCode = ""{currencyCode}""");
+            if (!string.IsNullOrWhiteSpace(unitsSystem))
+                anchors.Add($@"- unitsSystem = ""{unitsSystem}""");
+            if (!string.IsNullOrWhiteSpace(projectStartDate))
+                anchors.Add($@"- projectStartDate = ""{projectStartDate}""");
+            if (grandTotalBidPrice.HasValue)
+                anchors.Add($"- grandTotalBidPrice = {grandTotalBidPrice.Value:F2}");
+            if (directInsurableSubtotal.HasValue)
+                anchors.Add($"- directInsurableSubtotal = {directInsurableSubtotal.Value:F2}");
+            if (conditionedAreaValue.HasValue)
+                anchors.Add($"- conditionedArea.value = {conditionedAreaValue.Value:F2}");
+
+            if (isPrompt25)
+            {
+                var phaseDirectTotals = await GetPrompt04To19DirectTotalsAsync(jobId);
+                if (phaseDirectTotals.hasTotals)
+                {
+                    anchors.Add($"- prompt04to19.totalMaterialCost = {phaseDirectTotals.materialTotal:F2}");
+                    anchors.Add($"- prompt04to19.totalLaborCost = {phaseDirectTotals.laborTotal:F2}");
+                    anchors.Add($"- prompt04to19.directSubtotal = {phaseDirectTotals.directTotal:F2}");
+                }
+            }
+
+            if (anchors.Count == 0)
+            {
+                return null;
+            }
+
+            var prompt25HardLock = isPrompt25
+                ? @"
+- For prompt-25-cost-breakdowns specifically:
+  - `data.totalMaterialCost` MUST equal `prompt04to19.totalMaterialCost`.
+  - `data.totalLaborCost` MUST equal `prompt04to19.totalLaborCost`.
+  - `data.totalMaterialCost + data.totalLaborCost` MUST equal `prompt04to19.directSubtotal`."
+                : string.Empty;
+
+            return $@"CROSS-PHASE VALUE LOCK (MANDATORY):
+- This prompt is in Estimating/Downstream flow. Reuse these anchor values EXACTLY from Scope Review.
+- Do NOT recalculate, reinterpret, round to a different value, or switch units/currency for these anchors.
+- If a required output cannot match these anchors, keep your best estimate for other fields but add a clear mismatch note in any review/flags section.
+{prompt25HardLock}
+Anchors:
+{string.Join("\n", anchors)}";
+        }
+
+        private async Task<(bool hasTotals, decimal materialTotal, decimal laborTotal, decimal directTotal)> GetPrompt04To19DirectTotalsAsync(
+            int jobId
+        )
+        {
+            var targetKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "prompt-04-groundwork",
+                "prompt-05-framing",
+                "prompt-06-roofing",
+                "prompt-07-exterior",
+                "prompt-08-electrical",
+                "prompt-09-plumbing",
+                "prompt-10-hvac",
+                "prompt-11-fire-protection",
+                "prompt-12-insulation",
+                "prompt-13-drywall",
+                "prompt-14-painting",
+                "prompt-15-trim",
+                "prompt-16-kitchen-bath",
+                "prompt-17-flooring",
+                "prompt-18-exterior-flatwork",
+                "prompt-19-cleaning",
+            };
+
+            var rawRows = await _context
+                .JobPromptResults.AsNoTracking()
+                .Where(r => r.JobId == jobId && r.RawResponse != null)
+                .Select(r => new
+                {
+                    r.PromptKey,
+                    r.RawResponse,
+                    r.CreatedAt,
+                })
+                .ToListAsync();
+
+            var latestByPrompt = rawRows
+                .Select(r => new
+                {
+                    NormalizedKey = NormalizePromptKey(r.PromptKey),
+                    r.RawResponse,
+                    r.CreatedAt,
+                })
+                .Where(r => targetKeys.Contains(r.NormalizedKey))
+                .GroupBy(r => r.NormalizedKey, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.OrderByDescending(x => x.CreatedAt).First())
+                .ToList();
+
+            decimal materialTotal = 0;
+            decimal laborTotal = 0;
+
+            foreach (var row in latestByPrompt)
+            {
+                if (
+                    TryExtractDirectTotalsFromPromptResponse(
+                        row.RawResponse ?? string.Empty,
+                        out var material,
+                        out var labor
+                    )
+                )
+                {
+                    materialTotal += material;
+                    laborTotal += labor;
+                }
+            }
+
+            materialTotal = Math.Round(materialTotal, 2);
+            laborTotal = Math.Round(laborTotal, 2);
+            var directTotal = Math.Round(materialTotal + laborTotal, 2);
+            var hasTotals = directTotal > 0;
+            return (hasTotals, materialTotal, laborTotal, directTotal);
+        }
+
+        private static bool TryExtractDirectTotalsFromPromptResponse(
+            string response,
+            out decimal materialTotal,
+            out decimal laborTotal
+        )
+        {
+            materialTotal = 0;
+            laborTotal = 0;
+            if (string.IsNullOrWhiteSpace(response))
+            {
+                return false;
+            }
+
+            var phaseBlocks = ExtractPhaseBlocks(response);
+            foreach (var phaseBlock in phaseBlocks)
+            {
+                var outputOneTable = ExtractMarkdownTableAfterMarker(
+                    phaseBlock,
+                    "Output 1:",
+                    "Item"
+                );
+                var outputTwoTable = ExtractMarkdownTableAfterMarker(
+                    phaseBlock,
+                    "Output 2: Subcontractor Cost Breakdown",
+                    "Trade"
+                ) ?? ExtractMarkdownTableAfterMarker(phaseBlock, "Output 2:", "Trade");
+
+                var materialsByCsi = ParseMaterialTotalsByCsi(outputOneTable);
+                if (materialsByCsi.Count > 0)
+                {
+                    materialTotal += materialsByCsi.Values.Sum(v => Math.Max(0, v));
+                }
+
+                if (outputTwoTable?.Rows?.Any() == true)
+                {
+                    var tradeRows = ParseOutputTwoTradeRows(outputTwoTable);
+                    laborTotal += tradeRows.Sum(t => Math.Max(0, t.LaborBudget));
+                }
+            }
+
+            materialTotal = Math.Round(materialTotal, 2);
+            laborTotal = Math.Round(laborTotal, 2);
+            return materialTotal > 0 || laborTotal > 0;
+        }
+
+        private static bool TryReadCostBreakdownDirectTotalsFromJson(
+            string json,
+            out decimal materialTotal,
+            out decimal laborTotal
+        )
+        {
+            materialTotal = 0;
+            laborTotal = 0;
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return false;
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                if (
+                    !TryGetPropertyCaseInsensitive(doc.RootElement, "data", out var data)
+                    || data.ValueKind != JsonValueKind.Object
+                )
+                {
+                    return false;
+                }
+
+                if (TryGetFiniteNumber(data, "totalMaterialCost", out var m))
+                {
+                    materialTotal = Math.Round((decimal)m, 2);
+                }
+                else if (TryGetFiniteNumber(data, "materialCost", out var mLegacy))
+                {
+                    materialTotal = Math.Round((decimal)mLegacy, 2);
+                }
+
+                if (TryGetFiniteNumber(data, "totalLaborCost", out var l))
+                {
+                    laborTotal = Math.Round((decimal)l, 2);
+                }
+                else if (TryGetFiniteNumber(data, "laborCost", out var lLegacy))
+                {
+                    laborTotal = Math.Round((decimal)lLegacy, 2);
+                }
+
+                return materialTotal > 0 || laborTotal > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TryApplyPrompt25DirectTotalsAnchors(
+            string json,
+            decimal materialTotal,
+            decimal laborTotal,
+            out string harmonizedJson
+        )
+        {
+            harmonizedJson = json;
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return false;
+            }
+
+            try
+            {
+                var rootNode = JsonNode.Parse(json) as JsonObject;
+                if (rootNode == null)
+                {
+                    return false;
+                }
+
+                var dataNode = rootNode["data"] as JsonObject;
+                if (dataNode == null)
+                {
+                    dataNode = new JsonObject();
+                    rootNode["data"] = dataNode;
+                }
+
+                dataNode["totalMaterialCost"] = Math.Round(materialTotal, 2);
+                dataNode["totalLaborCost"] = Math.Round(laborTotal, 2);
+                dataNode["directSubtotal"] = Math.Round(materialTotal + laborTotal, 2);
+
+                harmonizedJson = rootNode.ToJsonString(
+                    new JsonSerializerOptions { WriteIndented = false }
+                );
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsWithinDirectTotalsTolerance(decimal expected, decimal actual)
+        {
+            if (expected <= 0)
+            {
+                return false;
+            }
+
+            var absDelta = Math.Abs(expected - actual);
+            var relativeTolerance = expected * DirectTotalsMismatchRejectRelativeTolerance;
+            var allowed = Math.Max(DirectTotalsMismatchRejectAbsoluteTolerance, relativeTolerance);
+            return absDelta <= allowed;
         }
 
         private static string? GetExpectedScopeSchemaVersion(string? promptKeyOrName)
