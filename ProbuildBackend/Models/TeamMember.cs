@@ -26,6 +26,18 @@ namespace ProbuildBackend.Models
         [Required]
         public string Role { get; set; }
 
+        [MaxLength(50)]
+        public string? HourlyRate { get; set; }
+
+        [MaxLength(50)]
+        public string? YearsExperience { get; set; }
+
+        public string? Certifications { get; set; }
+
+        public string? Specialties { get; set; }
+
+        public string? CertificationFilesJson { get; set; }
+
         public string? PasswordHash { get; set; }
 
         [Required]
@@ -41,5 +53,8 @@ namespace ProbuildBackend.Models
         public virtual UserModel Inviter { get; set; }
 
         public ICollection<TeamMemberPermission> TeamMemberPermissions { get; set; }
+
+        public ICollection<TeamMemberCertificationDocument> CertificationDocuments { get; set; } =
+            new List<TeamMemberCertificationDocument>();
     }
 }

@@ -1,5 +1,4 @@
-﻿using iText.Layout.Element;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models.DTO;
@@ -31,76 +30,74 @@ namespace ProbuildBackend.Services
                     })
                     .ToListAsync();
 
-                var archivedQuotes =
-                          await (
-                              from q in _context.Quotes
-                              join u in _context.Users
-                                  on q.SentTo equals u.Id into userJoin
-                              from u in userJoin.DefaultIfEmpty()
-                              where q.ArchivedAt != null && q.CreatedID == userId
-                              select new ArchivedItemDto
-                              {
-                                  Id = q.Id.ToString(),
-                                  Type = q.DocumentType,
-                                  Title = q.Number ?? "",
-                                  Status = q.Status ?? "",
-                                  ArchivedAt = q.ArchivedAt,
+                var archivedQuotes = await (
+                    from q in _context.Quotes
+                    join u in _context.Users on q.SentTo equals u.Id into userJoin
+                    from u in userJoin.DefaultIfEmpty()
+                    where q.ArchivedAt != null && q.CreatedID == userId
+                    select new ArchivedItemDto
+                    {
+                        Id = q.Id.ToString(),
+                        Type = q.DocumentType,
+                        Title = q.Number ?? "",
+                        Status = q.Status ?? "",
+                        ArchivedAt = q.ArchivedAt,
 
-                                  Client =
-                                      u == null
-                                          ? ""
-                                          : !string.IsNullOrWhiteSpace(u.FirstName) || !string.IsNullOrWhiteSpace(u.LastName)
-                                              ? (u.FirstName + " " + u.LastName).Trim()
-                                              : u.Email,
+                        Client =
+                            u == null ? ""
+                            : !string.IsNullOrWhiteSpace(u.FirstName)
+                            || !string.IsNullOrWhiteSpace(u.LastName)
+                                ? (u.FirstName + " " + u.LastName).Trim()
+                            : u.Email,
 
-                                  Amount =
-                                      _context.QuoteVersions
-                                          .Where(v => v.QuoteId == q.Id)
-                                          .OrderByDescending(v => v.Version) // or VersionNumber
-                                          .Select(v => v.Total)
-                                          .FirstOrDefault()
-                              }
-                          ).ToListAsync();
+                        Amount = _context
+                            .QuoteVersions.Where(v => v.QuoteId == q.Id)
+                            .OrderByDescending(v => v.Version) // or VersionNumber
+                            .Select(v => v.Total)
+                            .FirstOrDefault(),
+                    }
+                ).ToListAsync();
 
-                var archivedTradePackages = await _context.TradePackages
-    .Where(tp => tp.ArchivedAt != null)
-    .Join(
-        _context.Jobs.Where(j => j.UserId == userId),
-        tp => tp.JobId,
-        j => j.Id,
-        (tp, j) => new ArchivedItemDto
-        {
-            Id = tp.Id.ToString(),
-            JobId = "job-" + tp.JobId.ToString(),
-            Type = "TRADE_PACKAGE",
-            Title = tp.ScopeOfWork ?? tp.TradeName ?? "Untitled Job",
-            TradeName = tp.TradeName ?? tp.Category ?? "",
-            Status = tp.Status ?? "Posted",
-            BidsCount = _context.Bids.Count(b => b.TradePackageId == tp.Id),
-            ArchivedAt = tp.ArchivedAt ?? DateTime.MinValue
-        }
-    )
-    .ToListAsync();
-                var archivedDocuments = await _context.ProfileDocuments
-.Where(d => d.ArchivedAt != null && d.UserId == userId)
-.Select(d => new ArchivedItemDto
-{
-Id = d.Id.ToString(),
-Type = "DOCUMENT",
-Title = d.FileName,
-Project = "",
-DocumentType = "Profile",
-Size = 0,
-ArchivedAt = d.ArchivedAt.Value
-})
-.ToListAsync();
+                var archivedTradePackages = await _context
+                    .TradePackages.Where(tp => tp.ArchivedAt != null)
+                    .Join(
+                        _context.Jobs.Where(j => j.UserId == userId),
+                        tp => tp.JobId,
+                        j => j.Id,
+                        (tp, j) =>
+                            new ArchivedItemDto
+                            {
+                                Id = tp.Id.ToString(),
+                                JobId = "job-" + tp.JobId.ToString(),
+                                Type = "TRADE_PACKAGE",
+                                Title = tp.ScopeOfWork ?? tp.TradeName ?? "Untitled Job",
+                                TradeName = tp.TradeName ?? tp.Category ?? "",
+                                Status = tp.Status ?? "Posted",
+                                BidsCount = _context.Bids.Count(b => b.TradePackageId == tp.Id),
+                                ArchivedAt = tp.ArchivedAt ?? DateTime.MinValue,
+                            }
+                    )
+                    .ToListAsync();
+                var archivedDocuments = await _context
+                    .ProfileDocuments.Where(d => d.ArchivedAt != null && d.UserId == userId)
+                    .Select(d => new ArchivedItemDto
+                    {
+                        Id = d.Id.ToString(),
+                        Type = "DOCUMENT",
+                        Title = d.FileName,
+                        Project = "",
+                        DocumentType = "Profile",
+                        Size = 0,
+                        ArchivedAt = d.ArchivedAt.Value,
+                    })
+                    .ToListAsync();
 
                 var archivedItems = archivedJobs
-         .Concat(archivedQuotes)
-         .Concat(archivedDocuments)
-         .Concat(archivedTradePackages)
-         .OrderByDescending(x => x.ArchivedAt)
-         .ToList();
+                    .Concat(archivedQuotes)
+                    .Concat(archivedDocuments)
+                    .Concat(archivedTradePackages)
+                    .OrderByDescending(x => x.ArchivedAt)
+                    .ToList();
 
                 return archivedItems;
             }
@@ -197,14 +194,17 @@ ArchivedAt = d.ArchivedAt.Value
                         break;
                     }
                     case "TRADE_PACKAGE":
-                        {
-                            var tradePackage = await _context.TradePackages.FirstOrDefaultAsync(t => t.Id == Convert.ToInt32(itemId));
+                    {
+                        var tradePackage = await _context.TradePackages.FirstOrDefaultAsync(t =>
+                            t.Id == Convert.ToInt32(itemId)
+                        );
 
-                            if (tradePackage == null) return false;
+                        if (tradePackage == null)
+                            return false;
 
-                            tradePackage.ArchivedAt = null;
-                            break;
-                        }
+                        tradePackage.ArchivedAt = null;
+                        break;
+                    }
                     default:
                         return false;
                 }
@@ -218,7 +218,11 @@ ArchivedAt = d.ArchivedAt.Value
             }
         }
 
-        public async Task<bool> DeleteArchivedItemAsync(string itemId, string itemType, string userId)
+        public async Task<bool> DeleteArchivedItemAsync(
+            string itemId,
+            string itemType,
+            string userId
+        )
         {
             try
             {
@@ -298,26 +302,27 @@ ArchivedAt = d.ArchivedAt.Value
                         if (quote == null)
                             return false;
 
-
-                            quote.ArchivedAt = null;
-                            break;
-                        }
+                        quote.ArchivedAt = null;
+                        break;
+                    }
                     case "TRADE_PACKAGE":
-                        {
-                            var tp = await _context.TradePackages
-                                .FirstOrDefaultAsync(t => t.Id == Convert.ToInt32(itemId));
+                    {
+                        var tp = await _context.TradePackages.FirstOrDefaultAsync(t =>
+                            t.Id == Convert.ToInt32(itemId)
+                        );
 
-                            if (tp == null) return false;
+                        if (tp == null)
+                            return false;
 
-                            tp.ArchivedAt = null;
-                            break;
-                        }
+                        tp.ArchivedAt = null;
+                        break;
+                    }
 
                     case "DOCUMENT":
                     {
                         var documentId = Convert.ToInt32(itemId);
-                        var profileDocument = await _context.ProfileDocuments.FirstOrDefaultAsync(d =>
-                            d.Id == documentId && d.UserId == userId && d.ArchivedAt != null
+                        var profileDocument = await _context.ProfileDocuments.FirstOrDefaultAsync(
+                            d => d.Id == documentId && d.UserId == userId && d.ArchivedAt != null
                         );
 
                         if (profileDocument == null)

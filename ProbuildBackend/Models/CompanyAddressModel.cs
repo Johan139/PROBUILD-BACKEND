@@ -1,8 +1,7 @@
 ﻿using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
 using NetTopologySuite.Geometries;
-using System.ComponentModel.DataAnnotations.Schema;
-using System.Text.Json.Serialization;
+
 namespace ProbuildBackend.Models
 {
     public class CompanyAddressModel
@@ -14,8 +13,6 @@ namespace ProbuildBackend.Models
         public string? State { get; set; }
         public string? PostalCode { get; set; }
         public string? Country { get; set; }
-
-
 
         public decimal? Latitude { get; set; }
         public decimal? Longitude { get; set; }

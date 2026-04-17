@@ -1,9 +1,8 @@
-using System.Globalization;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO.Compression;
 using System.Security.Claims;
 using Hangfire;
-using Hangfire.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -74,7 +73,10 @@ namespace ProbuildBackend.Controllers
 
         private string GetCorrelationId()
         {
-            if (Request?.Headers != null && Request.Headers.TryGetValue("X-Correlation-Id", out var cid))
+            if (
+                Request?.Headers != null
+                && Request.Headers.TryGetValue("X-Correlation-Id", out var cid)
+            )
             {
                 var val = cid.ToString();
                 if (!string.IsNullOrWhiteSpace(val))
@@ -84,23 +86,27 @@ namespace ProbuildBackend.Controllers
             }
             return HttpContext?.TraceIdentifier ?? Guid.NewGuid().ToString("N");
         }
+
         [HttpGet("{jobId}/analysis-state")]
         public async Task<ActionResult<JobAnalysisState>> GetAnalysisState(
-           int jobId,
-           CancellationToken cancellationToken
-       )
+            int jobId,
+            CancellationToken cancellationToken
+        )
         {
             var cacheKey = $"analysis-state:{jobId}";
             try
             {
-                if (_cache.TryGetValue(cacheKey, out JobAnalysisState? cachedState) && cachedState != null)
+                if (
+                    _cache.TryGetValue(cacheKey, out JobAnalysisState? cachedState)
+                    && cachedState != null
+                )
                 {
                     return Ok(cachedState);
                 }
 
                 // Keep this endpoint extremely cheap: it is polled by the UI.
-                var state = await _context.JobAnalysisStates
-                    .AsNoTracking()
+                var state = await _context
+                    .JobAnalysisStates.AsNoTracking()
                     .Where(s => s.JobId == jobId)
                     .Select(s => new JobAnalysisState
                     {
@@ -150,6 +156,7 @@ namespace ProbuildBackend.Controllers
                 return Ok(fallbackState);
             }
         }
+
         private async Task<bool> UserCanAccessJobAsync(int jobId, string userId)
         {
             if (string.IsNullOrWhiteSpace(userId))
@@ -157,8 +164,12 @@ namespace ProbuildBackend.Controllers
                 return false;
             }
 
-            return await _context.Jobs.AsNoTracking().AnyAsync(j => j.Id == jobId && j.UserId == userId)
-                || await _context.JobAssignments.AsNoTracking().AnyAsync(a => a.JobId == jobId && a.UserId == userId);
+            return await _context
+                    .Jobs.AsNoTracking()
+                    .AnyAsync(j => j.Id == jobId && j.UserId == userId)
+                || await _context
+                    .JobAssignments.AsNoTracking()
+                    .AnyAsync(a => a.JobId == jobId && a.UserId == userId);
         }
 
         [HttpGet("{jobId}/planning-data")]
@@ -320,6 +331,7 @@ namespace ProbuildBackend.Controllers
                 return StatusCode(500, "An error occurred while retrieving the job.");
             }
         }
+
         [HttpGet("public")]
         public async Task<ActionResult<IEnumerable<object>>> GetPublicJobs()
         {
@@ -350,12 +362,12 @@ namespace ProbuildBackend.Controllers
 
                 _logger.LogInformation("GetPublicJobs: distinct userIds {Count}", userIds.Count);
 
-                var users = await _context.Users
-                    .Where(u => userIds.Contains(u.Id))
+                var users = await _context
+                    .Users.Where(u => userIds.Contains(u.Id))
                     .ToDictionaryAsync(u => u.Id);
 
-                var ratingsByUser = await _context.Ratings
-                    .Where(r => userIds.Contains(r.RatedUserId))
+                var ratingsByUser = await _context
+                    .Ratings.Where(r => userIds.Contains(r.RatedUserId))
                     .GroupBy(r => r.RatedUserId)
                     .Select(g => new { UserId = g.Key, Avg = g.Average(r => r.RatingValue) })
                     .ToDictionaryAsync(g => g.UserId, g => g.Avg);
@@ -366,31 +378,37 @@ namespace ProbuildBackend.Controllers
                         var job = tp.Job;
                         var address = job?.JobAddress;
 
-                        var displayBudget = tp.EffectiveBudget > 0
-                            ? tp.EffectiveBudget
-                            : (tp.TotalBudget > 0 ? tp.TotalBudget : tp.Budget);
+                        var displayBudget =
+                            tp.EffectiveBudget > 0
+                                ? tp.EffectiveBudget
+                                : (tp.TotalBudget > 0 ? tp.TotalBudget : tp.Budget);
 
-                        var displayEstimatedManHours = tp.EstimatedManHours > 0
-                            ? tp.EstimatedManHours
-                            : (
-                                tp.LaborBudget > 0 && tp.HourlyRate > 0
-                                    ? Math.Round(tp.LaborBudget / tp.HourlyRate, 2)
-                                    : 0
-                            );
+                        var displayEstimatedManHours =
+                            tp.EstimatedManHours > 0
+                                ? tp.EstimatedManHours
+                                : (
+                                    tp.LaborBudget > 0 && tp.HourlyRate > 0
+                                        ? Math.Round(tp.LaborBudget / tp.HourlyRate, 2)
+                                        : 0
+                                );
 
-                        var displayEstimatedDuration = !string.IsNullOrWhiteSpace(tp.EstimatedDuration)
+                        var displayEstimatedDuration = !string.IsNullOrWhiteSpace(
+                            tp.EstimatedDuration
+                        )
                             ? tp.EstimatedDuration
                             : "TBD";
 
-                        var user = job != null && !string.IsNullOrWhiteSpace(job.UserId)
-                            ? users.GetValueOrDefault(job.UserId)
-                            : null;
-                        var clientRating = job != null && !string.IsNullOrWhiteSpace(job.UserId)
-                            ? ratingsByUser.GetValueOrDefault(job.UserId, 0)
-                            : 0;
+                        var user =
+                            job != null && !string.IsNullOrWhiteSpace(job.UserId)
+                                ? users.GetValueOrDefault(job.UserId)
+                                : null;
+                        var clientRating =
+                            job != null && !string.IsNullOrWhiteSpace(job.UserId)
+                                ? ratingsByUser.GetValueOrDefault(job.UserId, 0)
+                                : 0;
 
-                        var formattedAddress = job?.Address
-                            ?? (address != null ? address.FormattedAddress : "");
+                        var formattedAddress =
+                            job?.Address ?? (address != null ? address.FormattedAddress : "");
 
                         return new
                         {
@@ -421,16 +439,14 @@ namespace ProbuildBackend.Controllers
                             trades = new[] { tp.TradeName },
                             tradeBudgets = new[]
                             {
-                                new
-                                {
-                                    tradeName = tp.TradeName,
-                                    budget = (double)displayBudget,
-                                },
+                                new { tradeName = tp.TradeName, budget = (double)displayBudget },
                             },
                             potentialStartDate = tp.StartDate,
                             biddingStartDate = tp.BidDeadline ?? tp.CreatedAt,
                             createdAt = tp.CreatedAt,
-                            clientName = user != null ? $"{user.FirstName} {user.LastName}" : string.Empty,
+                            clientName = user != null
+                                ? $"{user.FirstName} {user.LastName}"
+                                : string.Empty,
                             clientCompanyName = user?.CompanyName,
                             clientRating = clientRating,
                             tradePackageLaborBudgetVisible = tp.LaborBudgetVisible,
@@ -449,9 +465,13 @@ namespace ProbuildBackend.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "GetPublicJobs failed");
-                return StatusCode(500, new { error = "GetPublicJobs failed", details = ex.Message });
+                return StatusCode(
+                    500,
+                    new { error = "GetPublicJobs failed", details = ex.Message }
+                );
             }
         }
+
         [HttpGet("download/{documentId}")]
         public async Task<IActionResult> DownloadBlob(int documentId)
         {
@@ -633,10 +653,12 @@ namespace ProbuildBackend.Controllers
             try
             {
                 var currentUserId =
-                   _httpContextAccessor.HttpContext?.User.FindFirstValue("UserId") ??
-                   _httpContextAccessor.HttpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier) ??
-                   _httpContextAccessor.HttpContext?.User.FindFirstValue("sub") ??
-                   _httpContextAccessor.HttpContext?.User.FindFirstValue("userId");
+                    _httpContextAccessor.HttpContext?.User.FindFirstValue("UserId")
+                    ?? _httpContextAccessor.HttpContext?.User.FindFirstValue(
+                        ClaimTypes.NameIdentifier
+                    )
+                    ?? _httpContextAccessor.HttpContext?.User.FindFirstValue("sub")
+                    ?? _httpContextAccessor.HttpContext?.User.FindFirstValue("userId");
                 if (string.IsNullOrWhiteSpace(currentUserId))
                 {
                     return Unauthorized();
@@ -670,7 +692,11 @@ namespace ProbuildBackend.Controllers
                     .OrderByDescending(r => r.CreatedAt)
                     .ThenByDescending(r => r.Id)
                     .ToListAsync();
-                _cache.Set(cacheKey, results ?? new List<DocumentProcessingResult>(), TimeSpan.FromSeconds(10));
+                _cache.Set(
+                    cacheKey,
+                    results ?? new List<DocumentProcessingResult>(),
+                    TimeSpan.FromSeconds(10)
+                );
 
                 // Empty is valid (e.g. race after UI shows complete, or results not persisted yet).
                 // Returning 500 here caused the SPA to log errors and retry aggressively on every call.
@@ -704,10 +730,11 @@ namespace ProbuildBackend.Controllers
                 );
             }
         }
+
         [HttpGet("processing-results-front-end/{jobId}")]
-        public async Task<ActionResult<IEnumerable<DocumentProcessingResult>>> GetProcessingResultsFrontEnd(
-          int jobId
-      )
+        public async Task<
+            ActionResult<IEnumerable<DocumentProcessingResult>>
+        > GetProcessingResultsFrontEnd(int jobId)
         {
             var correlationId = GetCorrelationId();
             var endpointSw = Stopwatch.StartNew();
@@ -715,8 +742,6 @@ namespace ProbuildBackend.Controllers
             var cacheKey = $"processing-results:{jobId}";
             try
             {
-
-
                 if (
                     _cache.TryGetValue(cacheKey, out List<DocumentProcessingResult>? cachedResults)
                     && cachedResults != null
@@ -740,7 +765,11 @@ namespace ProbuildBackend.Controllers
                     .OrderByDescending(r => r.CreatedAt)
                     .ThenByDescending(r => r.Id)
                     .ToListAsync();
-                _cache.Set(cacheKey, results ?? new List<DocumentProcessingResult>(), TimeSpan.FromSeconds(10));
+                _cache.Set(
+                    cacheKey,
+                    results ?? new List<DocumentProcessingResult>(),
+                    TimeSpan.FromSeconds(10)
+                );
 
                 // Empty is valid (e.g. race after UI shows complete, or results not persisted yet).
                 // Returning 500 here caused the SPA to log errors and retry aggressively on every call.
@@ -774,6 +803,7 @@ namespace ProbuildBackend.Controllers
                 );
             }
         }
+
         [HttpGet("processing-status/{jobId}")]
         [Authorize]
         public async Task<IActionResult> GetProcessingStatus(int jobId)
@@ -871,7 +901,6 @@ namespace ProbuildBackend.Controllers
             {
                 return BadRequest("Project name is required.");
             }
-
 
             var strategy = _context.Database.CreateExecutionStrategy();
             return await strategy.ExecuteAsync(async () =>
@@ -1047,8 +1076,9 @@ namespace ProbuildBackend.Controllers
 
                     await transaction.CommitAsync();
                     var raw = Request.Headers["X-Forwarded-For"].FirstOrDefault();
-                    ipAddress = raw?.Split(',').First().Trim()
-                                ?? HttpContext.Connection.RemoteIpAddress?.ToString();
+                    ipAddress =
+                        raw?.Split(',').First().Trim()
+                        ?? HttpContext.Connection.RemoteIpAddress?.ToString();
                     if (documentUrls.Any())
                     {
                         string connectionId =
@@ -1069,7 +1099,6 @@ namespace ProbuildBackend.Controllers
                                     jobRequest.BudgetLevel,
                                     jobRequest.isFrontEnd,
                                     ipAddress
-
                                 )
                             );
                         }
@@ -1122,16 +1151,17 @@ namespace ProbuildBackend.Controllers
         [HttpGet("check-limit")]
         public async Task<IActionResult> CheckLimit()
         {
-
             var raw = Request.Headers["X-Forwarded-For"].FirstOrDefault();
-            var ip = raw?.Split(',').First().Trim()
-                     ?? HttpContext.Connection.RemoteIpAddress?.ToString();
+            var ip =
+                raw?.Split(',').First().Trim()
+                ?? HttpContext.Connection.RemoteIpAddress?.ToString();
 
             if (string.IsNullOrEmpty(ip))
                 return Ok(new { allowed = true });
 
-            var tracker = await _context.WebsiteJobTracker
-                .FirstOrDefaultAsync(x => x.IpAddress == ip);
+            var tracker = await _context.WebsiteJobTracker.FirstOrDefaultAsync(x =>
+                x.IpAddress == ip
+            );
 
             var allowed = tracker == null || tracker.JobCount < 2;
 
@@ -1625,8 +1655,10 @@ namespace ProbuildBackend.Controllers
                     {
                         JobId = g.Key,
                         TotalDays = g.Sum(x => x.Days),
-                        CompletedDays = g
-                            .Where(x => x.Status != null && (x.Status == "Completed" || x.Status == "completed"))
+                        CompletedDays = g.Where(x =>
+                                x.Status != null
+                                && (x.Status == "Completed" || x.Status == "completed")
+                            )
                             .Sum(x => x.Days),
                     })
                     .ToDictionaryAsync(x => x.JobId);
@@ -1650,12 +1682,9 @@ namespace ProbuildBackend.Controllers
                     })
                     .ToDictionaryAsync(u => u.Id);
 
-                var dashboardProjects = jobs
-                    .Select(job =>
+                var dashboardProjects = jobs.Select(job =>
                     {
-                        var progressRow = progressByJobId.TryGetValue(job.Id, out var p)
-                            ? p
-                            : null;
+                        var progressRow = progressByJobId.TryGetValue(job.Id, out var p) ? p : null;
 
                         var totalDays = progressRow?.TotalDays ?? 0;
                         var completedDays = progressRow?.CompletedDays ?? 0;
@@ -1664,9 +1693,7 @@ namespace ProbuildBackend.Controllers
                                 ? (int)Math.Round((double)completedDays / totalDays * 100)
                                 : 0;
 
-                        var teamSize = teamCounts.TryGetValue(job.Id, out var team)
-                            ? team
-                            : 0;
+                        var teamSize = teamCounts.TryGetValue(job.Id, out var team) ? team : 0;
 
                         var clientName = "";
                         if (owners.TryGetValue(job.OwnerId, out var owner))
@@ -1784,8 +1811,6 @@ namespace ProbuildBackend.Controllers
             return NoContent();
         }
 
-
-
         [HttpPut("{jobId}/unarchive")]
         public async Task<IActionResult> UnarchiveJob(int jobId)
         {
@@ -1838,7 +1863,13 @@ namespace ProbuildBackend.Controllers
             var jobs = await _context
                 .Jobs.AsNoTracking()
                 .Where(j => j.ArchivedAt == null)
-                .Select(j => new { j.Id, j.ProjectName, j.JobType, j.Status })
+                .Select(j => new
+                {
+                    j.Id,
+                    j.ProjectName,
+                    j.JobType,
+                    j.Status,
+                })
                 .ToListAsync();
 
             var jobIds = jobs.Select(j => j.Id).ToList();
@@ -1854,11 +1885,12 @@ namespace ProbuildBackend.Controllers
                 })
                 .ToDictionaryAsync(x => x.JobId);
 
-            var jobDtos = jobs
-                .Select(job =>
+            var jobDtos = jobs.Select(job =>
                 {
                     var total = progressByJobId.TryGetValue(job.Id, out var p) ? p.Total : 0;
-                    var completed = progressByJobId.TryGetValue(job.Id, out var p2) ? p2.Completed : 0;
+                    var completed = progressByJobId.TryGetValue(job.Id, out var p2)
+                        ? p2.Completed
+                        : 0;
                     var progress = total > 0 ? (int)Math.Round((double)completed / total * 100) : 0;
 
                     return new JobDto

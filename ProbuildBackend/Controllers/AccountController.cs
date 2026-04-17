@@ -1,5 +1,10 @@
-using Elastic.Apm.Api;
-using Google.Api.Ads.AdWords.v201809;
+using System.Diagnostics;
+using System.IdentityModel.Tokens.Jwt;
+using System.Net;
+using System.Net.Sockets;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using Google.Apis.Auth;
 using Hangfire;
 using Microsoft.AspNetCore.DataProtection;
@@ -8,22 +13,12 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Models.Enums;
 using ProbuildBackend.Services;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
-using System.Diagnostics;
-using System.Net;
-using System.Net.Http;
-using System.Net.Sockets;
-using static Google.Api.Ads.AdWords.Util.Reports.v201809.PaidOrganicQueryReportReportRow;
 using IEmailSender = ProbuildBackend.Interface.IEmailSender;
 
 namespace ProbuildBackend.Controllers
@@ -217,7 +212,6 @@ namespace ProbuildBackend.Controllers
                     };
                 }
 
-
                 // ================== SEED NOTIFICATION PREFERENCES ==================
 
                 var preferenceList = new List<UserNotificationPreference>();
@@ -226,15 +220,17 @@ namespace ProbuildBackend.Controllers
                 {
                     foreach (NotificationChannel channel in Enum.GetValues<NotificationChannel>())
                     {
-                        preferenceList.Add(new UserNotificationPreference
-                        {
-                            Id = Guid.NewGuid(),
-                            UserId = user.Id,
-                            NotificationType = type,
-                            Channel = channel,
-                            IsEnabled = true,
-                            CreatedDate = DateTime.UtcNow
-                        });
+                        preferenceList.Add(
+                            new UserNotificationPreference
+                            {
+                                Id = Guid.NewGuid(),
+                                UserId = user.Id,
+                                NotificationType = type,
+                                Channel = channel,
+                                IsEnabled = true,
+                                CreatedDate = DateTime.UtcNow,
+                            }
+                        );
                     }
                 }
 
@@ -261,9 +257,6 @@ namespace ProbuildBackend.Controllers
                     .Replace("{{Header}}", EmailConfirmation.HeaderHtml)
                     .Replace("{{Footer}}", EmailConfirmation.FooterHtml);
                 await _emailSender.SendEmailAsync(EmailConfirmation, model.Email);
-
-
-
 
                 // Fetch the automation rule from DB
                 // Schedule all active rules using their DelayHours
@@ -895,8 +888,8 @@ namespace ProbuildBackend.Controllers
         [HttpPost("forgotpassword")]
         public async Task<IActionResult> ForgotPassword(ForgotPasswordModel model)
         {
-            var user = await _context.Users
-                .AsNoTracking()
+            var user = await _context
+                .Users.AsNoTracking()
                 .FirstOrDefaultAsync(u => u.Email == model.Email);
 
             if (user != null)
@@ -918,22 +911,24 @@ namespace ProbuildBackend.Controllers
                     $"{frontendBaseUrl}/reset-password?email={Uri.EscapeDataString(user.Email)}&token={Uri.EscapeDataString(token)}";
 
                 var template = await _emailTemplate.GetTemplateAsync("PasswordResetEmail");
-                    
-                template.Body = template.Body
-                    .Replace("{{ResetLink}}", callbackUrl)
-                .Replace("{{UserName}}", $"{user.FirstName} {user.LastName}")
-                .Replace("{{Header}}", template.HeaderHtml)
-                .Replace("{{Footer}}", template.FooterHtml); 
-                    
+
+                template.Body = template
+                    .Body.Replace("{{ResetLink}}", callbackUrl)
+                    .Replace("{{UserName}}", $"{user.FirstName} {user.LastName}")
+                    .Replace("{{Header}}", template.HeaderHtml)
+                    .Replace("{{Footer}}", template.FooterHtml);
+
                 await _emailSender.SendEmailAsync(template, user.Email);
             }
 
             await Task.Delay(300); // prevent timing attacks
 
-            return Ok(new
-            {
-                message = "If an account exists with this email address, you will receive a password reset link."
-            });
+            return Ok(
+                new
+                {
+                    message = "If an account exists with this email address, you will receive a password reset link.",
+                }
+            );
         }
 
         public class ResetPasswordDto
@@ -1326,10 +1321,7 @@ namespace ProbuildBackend.Controllers
 
             if (string.IsNullOrEmpty(ip) || !IsSafeClientIpForLookup(ip))
             {
-                return Content(
-                    ClientGeoHintFallbackJson(ip, cfCountry),
-                    "application/json"
-                );
+                return Content(ClientGeoHintFallbackJson(ip, cfCountry), "application/json");
             }
 
             var client = _httpClientFactory.CreateClient();
@@ -1342,10 +1334,7 @@ namespace ProbuildBackend.Controllers
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
                 if (!response.IsSuccessStatusCode || string.IsNullOrWhiteSpace(body))
                 {
-                    return Content(
-                        ClientGeoHintFallbackJson(ip, cfCountry),
-                        "application/json"
-                    );
+                    return Content(ClientGeoHintFallbackJson(ip, cfCountry), "application/json");
                 }
 
                 return Content(body, "application/json");
@@ -1353,10 +1342,7 @@ namespace ProbuildBackend.Controllers
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "client-geo-hint: ipapi request failed for {Ip}", ip);
-                return Content(
-                    ClientGeoHintFallbackJson(ip, cfCountry),
-                    "application/json"
-                );
+                return Content(ClientGeoHintFallbackJson(ip, cfCountry), "application/json");
             }
         }
 
@@ -1418,12 +1404,12 @@ namespace ProbuildBackend.Controllers
             if (!string.IsNullOrWhiteSpace(forwarded))
             {
                 var first = forwarded
-                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Split(
+                        ',',
+                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+                    )
                     .FirstOrDefault();
-                if (
-                    !string.IsNullOrEmpty(first)
-                    && IPAddress.TryParse(first, out var fwdAddr)
-                )
+                if (!string.IsNullOrEmpty(first) && IPAddress.TryParse(first, out var fwdAddr))
                 {
                     return FormatIpString(fwdAddr);
                 }

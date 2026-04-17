@@ -1,11 +1,10 @@
-using Elastic.Apm.Api;
+using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using NetTopologySuite.Geometries;
 using ProbuildBackend.Interface;
 using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
-using System.Text.Json;
 
 namespace ProbuildBackend.Services
 {
@@ -144,14 +143,19 @@ namespace ProbuildBackend.Services
                 var email = new EmailTemplate
                 {
                     Subject = baseTemplate.Subject,
-                    Body = baseTemplate.Body
-        .Replace("{{UserName}}", user.FirstName + " " + user.LastName)
-        .Replace("{{JobTitle}}", job.ProjectName)
-        .Replace("{{JobLocation}}", job.Address)
-        .Replace("{{JobDescription}}", "A new job is available that matches your skills.")
-        .Replace("{{JobDetailsLink}}", $"https://app.probuildai.com/jobs/{job.Id}")
-        .Replace("{{UnsubscribeLink}}",
-            $"https://app.probuildai.com/subscription/unsubscribe?email={user.Email}")
+                    Body = baseTemplate
+                        .Body.Replace("{{UserName}}", user.FirstName + " " + user.LastName)
+                        .Replace("{{JobTitle}}", job.ProjectName)
+                        .Replace("{{JobLocation}}", job.Address)
+                        .Replace(
+                            "{{JobDescription}}",
+                            "A new job is available that matches your skills."
+                        )
+                        .Replace("{{JobDetailsLink}}", $"https://app.probuildai.com/jobs/{job.Id}")
+                        .Replace(
+                            "{{UnsubscribeLink}}",
+                            $"https://app.probuildai.com/subscription/unsubscribe?email={user.Email}"
+                        ),
                 };
 
                 await _emailSender.SendEmailAsync(email, user.Email);
@@ -183,23 +187,23 @@ namespace ProbuildBackend.Services
                     var email = new EmailTemplate
                     {
                         Subject = baseTemplate.Subject,
-                        Body = baseTemplate.Body.Replace("{{UserName}}", externalUser.name)
-                        .Replace("{{JobTitle}}", job.ProjectName)
-                        .Replace("{{JobLocation}}", job.Address)
-                        .Replace(
-                            "{{JobDescription}}",
-                            "A new job is available that matches your skills."
-                        )
-                        .Replace(
-                            "{{JobDetailsLink}}",
-                            $"https://app.probuildai.com/register?email={externalUser.email}"
-                        ) // TODO: Link to registration with pre-filled email. Do something similar to the TeamMember flow where we read from the URL query string
-                        .Replace(
-                            "{{UnsubscribeLink}}",
-                            $"https://app.probuildai.com/subscription/unsubscribe?email={externalUser.email}"
-                        )
+                        Body = baseTemplate
+                            .Body.Replace("{{UserName}}", externalUser.name)
+                            .Replace("{{JobTitle}}", job.ProjectName)
+                            .Replace("{{JobLocation}}", job.Address)
+                            .Replace(
+                                "{{JobDescription}}",
+                                "A new job is available that matches your skills."
+                            )
+                            .Replace(
+                                "{{JobDetailsLink}}",
+                                $"https://app.probuildai.com/register?email={externalUser.email}"
+                            ) // TODO: Link to registration with pre-filled email. Do something similar to the TeamMember flow where we read from the URL query string
+                            .Replace(
+                                "{{UnsubscribeLink}}",
+                                $"https://app.probuildai.com/subscription/unsubscribe?email={externalUser.email}"
+                            ),
                     };
-                  
 
                     await _emailSender.SendEmailAsync(email, externalUser.email);
 

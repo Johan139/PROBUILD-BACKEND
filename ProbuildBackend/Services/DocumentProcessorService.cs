@@ -1,7 +1,6 @@
 using System.Text.Json;
 using System.Web;
 using Hangfire;
-using Hangfire.Storage;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using ProbuildBackend.Interface;
@@ -70,9 +69,12 @@ namespace ProbuildBackend.Services
                     throw new InvalidOperationException($"Job with ID {jobId} not found.");
                 }
                 using var userAnalysisLock = AcquireUserAnalysisLock(job.UserId);
-                using var jobLock = JobStorage.Current
-                    .GetConnection()
-                    .AcquireDistributedLock($"analysis:comprehensive:job:{jobId}", TimeSpan.FromHours(1));
+                using var jobLock = JobStorage
+                    .Current.GetConnection()
+                    .AcquireDistributedLock(
+                        $"analysis:comprehensive:job:{jobId}",
+                        TimeSpan.FromHours(1)
+                    );
 
                 var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == job.UserId);
                 if (user == null)
@@ -107,15 +109,13 @@ namespace ProbuildBackend.Services
 
                 job.Status = "PRELIMINARY";
 
-                var analysisState = await _context.JobAnalysisStates
-                    .FirstOrDefaultAsync(s => s.JobId == jobId);
+                var analysisState = await _context.JobAnalysisStates.FirstOrDefaultAsync(s =>
+                    s.JobId == jobId
+                );
 
                 if (analysisState == null)
                 {
-                    analysisState = new JobAnalysisState
-                    {
-                        JobId = jobId,
-                    };
+                    analysisState = new JobAnalysisState { JobId = jobId };
                     _context.JobAnalysisStates.Add(analysisState);
                 }
 
@@ -131,19 +131,22 @@ namespace ProbuildBackend.Services
 
                 if (isFrontEnd == true && !string.IsNullOrEmpty(ipAddress))
                 {
-                    var existing = await _context.WebsiteJobTracker
-                        .FirstOrDefaultAsync(x => x.IpAddress == ipAddress);
+                    var existing = await _context.WebsiteJobTracker.FirstOrDefaultAsync(x =>
+                        x.IpAddress == ipAddress
+                    );
 
                     if (existing == null)
                     {
-                        _context.WebsiteJobTracker.Add(new WebsiteJobTrackerModel
-                        {
-                            Id = Guid.NewGuid(),
-                            IpAddress = ipAddress,
-                            JobCount = 1,
-                            FirstSeenAt = DateTime.UtcNow,
-                            LastSeenAt = DateTime.UtcNow
-                        });
+                        _context.WebsiteJobTracker.Add(
+                            new WebsiteJobTrackerModel
+                            {
+                                Id = Guid.NewGuid(),
+                                IpAddress = ipAddress,
+                                JobCount = 1,
+                                FirstSeenAt = DateTime.UtcNow,
+                                LastSeenAt = DateTime.UtcNow,
+                            }
+                        );
                     }
                     else
                     {
@@ -162,7 +165,9 @@ namespace ProbuildBackend.Services
                     var jobAddress = await _context
                         .JobAddresses.Where(j => j.JobId == job.Id)
                         .FirstOrDefaultAsync();
-                    var jobDocument = await _context.JobDocuments.Where(d => d.JobId == job.Id).ToListAsync();
+                    var jobDocument = await _context
+                        .JobDocuments.Where(d => d.JobId == job.Id)
+                        .ToListAsync();
                     var frontendUrl =
                         Environment.GetEnvironmentVariable("FRONTEND_URL")
                         ?? "http://localhost:4200";
@@ -228,10 +233,7 @@ namespace ProbuildBackend.Services
                         {
                             await _hubContext
                                 .Clients.Client(connectionId)
-                                .SendAsync(
-                                    "AnalysisEmailSent",
-                                    new { JobId = jobId }
-                                );
+                                .SendAsync("AnalysisEmailSent", new { JobId = jobId });
                         }
 
                         await MarkEmailSentAsync(jobId);
@@ -282,15 +284,13 @@ namespace ProbuildBackend.Services
                     job.Status = "FAILED";
                 }
 
-                var analysisState = await _context.JobAnalysisStates
-                    .FirstOrDefaultAsync(s => s.JobId == jobId);
+                var analysisState = await _context.JobAnalysisStates.FirstOrDefaultAsync(s =>
+                    s.JobId == jobId
+                );
 
                 if (analysisState == null)
                 {
-                    analysisState = new JobAnalysisState
-                    {
-                        JobId = jobId,
-                    };
+                    analysisState = new JobAnalysisState { JobId = jobId };
                     _context.JobAnalysisStates.Add(analysisState);
                 }
 
@@ -397,7 +397,9 @@ namespace ProbuildBackend.Services
                     var jobAddress = await _context
                         .JobAddresses.Where(j => j.JobId == job.Id)
                         .FirstOrDefaultAsync();
-                    var jobDocument = await _context.JobDocuments.Where(d => d.JobId == job.Id).ToListAsync();
+                    var jobDocument = await _context
+                        .JobDocuments.Where(d => d.JobId == job.Id)
+                        .ToListAsync();
                     var frontendUrl =
                         Environment.GetEnvironmentVariable("FRONTEND_URL")
                         ?? "http://localhost:4200";
@@ -618,7 +620,9 @@ namespace ProbuildBackend.Services
                     var jobAddress = await _context
                         .JobAddresses.Where(j => j.JobId == job.Id)
                         .FirstOrDefaultAsync();
-                    var jobDocuments = await _context.JobDocuments.Where(d => d.JobId == job.Id).ToListAsync();
+                    var jobDocuments = await _context
+                        .JobDocuments.Where(d => d.JobId == job.Id)
+                        .ToListAsync();
                     var frontendUrl =
                         Environment.GetEnvironmentVariable("FRONTEND_URL")
                         ?? "http://localhost:4200";
@@ -702,7 +706,11 @@ namespace ProbuildBackend.Services
                     {
                         await _hubContext
                             .Clients.Client(connectionId)
-                            .SendAsync("AnalysisComplete", jobId, "Renovation analysis is complete.");
+                            .SendAsync(
+                                "AnalysisComplete",
+                                jobId,
+                                "Renovation analysis is complete."
+                            );
                     }
                     catch (Exception signalrEx)
                     {
@@ -737,8 +745,9 @@ namespace ProbuildBackend.Services
 
         private async Task MarkEmailSentAsync(int jobId)
         {
-             var emailSentAtIso = DateTime.UtcNow.ToString("O");
-            var rows = await _context.Database.ExecuteSqlInterpolatedAsync($@"
+            var emailSentAtIso = DateTime.UtcNow.ToString("O");
+            var rows = await _context.Database.ExecuteSqlInterpolatedAsync(
+                $@"
 UPDATE [JobAnalysisStates]
 SET [ExtractedDataJson] = JSON_MODIFY(
         JSON_MODIFY(
@@ -751,7 +760,8 @@ SET [ExtractedDataJson] = JSON_MODIFY(
     ),
     [LastUpdated] = SYSUTCDATETIME()
 WHERE [JobId] = {jobId};
-");
+"
+            );
 
             if (rows == 0)
             {
@@ -761,12 +771,13 @@ WHERE [JobId] = {jobId};
                     {
                         JobId = jobId,
                         ExtractedDataJson = "{}",
-                        LastUpdated = DateTime.UtcNow
+                        LastUpdated = DateTime.UtcNow,
                     }
                 );
                 await _context.SaveChangesAsync();
 
-                await _context.Database.ExecuteSqlInterpolatedAsync($@"
+                await _context.Database.ExecuteSqlInterpolatedAsync(
+                    $@"
 UPDATE [JobAnalysisStates]
 SET [ExtractedDataJson] = JSON_MODIFY(
         JSON_MODIFY(
@@ -779,15 +790,16 @@ SET [ExtractedDataJson] = JSON_MODIFY(
     ),
     [LastUpdated] = SYSUTCDATETIME()
 WHERE [JobId] = {jobId};
-");
+"
+                );
             }
         }
 
         private IDisposable AcquireUserAnalysisLock(string? userId)
         {
             var key = string.IsNullOrWhiteSpace(userId) ? "unknown" : userId.Trim();
-            return JobStorage.Current
-                .GetConnection()
+            return JobStorage
+                .Current.GetConnection()
                 .AcquireDistributedLock($"analysis:user:{key}", TimeSpan.FromHours(1));
         }
     }

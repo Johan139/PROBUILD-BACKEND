@@ -1,10 +1,5 @@
-﻿using Elastic.Apm.Api;
-using Hangfire.Common;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.AspNetCore.Mvc;
 using ProbuildBackend.Interface;
-using ProbuildBackend.Models.DTO;
-using ProbuildBackend.Services;
 
 namespace ProbuildBackend.Controllers
 {

@@ -47,6 +47,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<QuoteVersionModel> QuoteVersions { get; set; }
     public DbSet<RefreshToken> RefreshTokens { get; set; }
     public DbSet<TeamMember> TeamMembers { get; set; }
+    public DbSet<TeamMemberCertificationDocument> TeamMemberCertificationDocuments { get; set; }
     public DbSet<Permission> Permissions { get; set; }
     public DbSet<TeamMemberPermission> TeamMemberPermissions { get; set; }
     public DbSet<WebsiteJobTrackerModel> WebsiteJobTracker { get; set; }
@@ -383,6 +384,13 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .OnDelete(DeleteBehavior.SetNull);
 
         modelBuilder.Entity<TeamMember>().HasIndex(t => new { t.InviterId, t.Email }).IsUnique();
+
+        modelBuilder
+            .Entity<TeamMemberCertificationDocument>()
+            .HasOne(d => d.TeamMember)
+            .WithMany(t => t.CertificationDocuments)
+            .HasForeignKey(d => d.TeamMemberId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder
             .Entity<TeamMemberPermission>()

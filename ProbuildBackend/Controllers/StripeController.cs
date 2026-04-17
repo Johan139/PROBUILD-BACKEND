@@ -2,7 +2,6 @@
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using ProbuildBackend.Interface;
-using Newtonsoft.Json.Linq;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Services;
@@ -72,12 +71,12 @@ namespace ProbuildBackend.Controllers
                 stripePriceId = stripeModel.StripeProductIdAnually;
             }
             var metadata = new Dictionary<string, string>
-{
-    { "userId", request.UserId },
-    { "package", request.PackageName },
-    { "amount", request.Amount.ToString() },
-    { "dbTrialRecordId", request.SubscriptionId } // <-- add this
-};
+            {
+                { "userId", request.UserId },
+                { "package", request.PackageName },
+                { "amount", request.Amount.ToString() },
+                { "dbTrialRecordId", request.SubscriptionId }, // <-- add this
+            };
             if (!string.IsNullOrWhiteSpace(teamMemberUserId))
             {
                 metadata["assignedUser"] = teamMemberUserId;
@@ -97,8 +96,13 @@ namespace ProbuildBackend.Controllers
                     Metadata = new Dictionary<string, string>(metadata),
                 },
 
-                SuccessUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["FrontEnd:FRONTEND_URL"] + $"/payment-success?source={request.Source}",
-                CancelUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? _configuration["FrontEnd:FRONTEND_URL"] + "/payment-cancel",
+                SuccessUrl =
+                    Environment.GetEnvironmentVariable("FRONTEND_URL")
+                    ?? _configuration["FrontEnd:FRONTEND_URL"]
+                        + $"/payment-success?source={request.Source}",
+                CancelUrl =
+                    Environment.GetEnvironmentVariable("FRONTEND_URL")
+                    ?? _configuration["FrontEnd:FRONTEND_URL"] + "/payment-cancel",
                 Customer = customerId, // Ensure this returns a valid Customer ID
                 AutomaticTax = new SessionAutomaticTaxOptions { Enabled = false },
             };
@@ -139,8 +143,9 @@ namespace ProbuildBackend.Controllers
             {
                 var stripeEvent = EventUtility.ConstructEvent(
                     json,
-                     Request.Headers["Stripe-Signature"],
-                      Environment.GetEnvironmentVariable("StripeWebHookKey") ?? _configuration["StripeAPI:StripeWebHookKey"]
+                    Request.Headers["Stripe-Signature"],
+                    Environment.GetEnvironmentVariable("StripeWebHookKey")
+                        ?? _configuration["StripeAPI:StripeWebHookKey"]
                 );
 
                 string userId;
@@ -229,11 +234,11 @@ namespace ProbuildBackend.Controllers
                                 ? b
                                 : null;
 
-
-                        var trialRecordId = chosenLine?.Metadata != null
-                                                    && chosenLine.Metadata.TryGetValue("dbTrialRecordId", out var dbTrialId)
-                                                        ? dbTrialId
-                                                        : null;
+                        var trialRecordId =
+                            chosenLine?.Metadata != null
+                            && chosenLine.Metadata.TryGetValue("dbTrialRecordId", out var dbTrialId)
+                                ? dbTrialId
+                                : null;
                         // After: var invoice = (JObject)root["data"]?["object"];
                         string invoiceNumber = invoices.Number; // fallback to "in_..." if null
 
@@ -280,12 +285,23 @@ namespace ProbuildBackend.Controllers
                             PaymentRecordId = SavedPayment.Id;
 
                             // Always insert into PaymentRecordsHistory for both new subscription and renewal
-                            await SavePaymentRecordHistory(PaymentRecordId, PaidAt, invoiceNumber, subscriptionAmount, subscriptionValidDate, subscriptionId, subscriptionPackageName);
+                            await SavePaymentRecordHistory(
+                                PaymentRecordId,
+                                PaidAt,
+                                invoiceNumber,
+                                subscriptionAmount,
+                                subscriptionValidDate,
+                                subscriptionId,
+                                subscriptionPackageName
+                            );
 
                             if (!string.IsNullOrEmpty(trialRecordId))
                             {
-                                var trial = await _context.PaymentRecords
-                                    .Where(x => x.SubscriptionID.ToString() == trialRecordId && x.Status == "Active")
+                                var trial = await _context
+                                    .PaymentRecords.Where(x =>
+                                        x.SubscriptionID.ToString() == trialRecordId
+                                        && x.Status == "Active"
+                                    )
                                     .FirstOrDefaultAsync();
 
                                 if (trial != null)
@@ -306,10 +322,11 @@ namespace ProbuildBackend.Controllers
 
                                 if (user != null)
                                 {
-                                    var template =
-                                        await _context.EmailTemplates
-                                            .AsNoTracking()
-                                            .FirstOrDefaultAsync(t => t.TemplateName == "ProWelcomeSetup");
+                                    var template = await _context
+                                        .EmailTemplates.AsNoTracking()
+                                        .FirstOrDefaultAsync(t =>
+                                            t.TemplateName == "ProWelcomeSetup"
+                                        );
 
                                     if (template != null)
                                     {
@@ -343,7 +360,6 @@ namespace ProbuildBackend.Controllers
                             PaymentRecordId = existingRecord[0].Id;
                         }
 
-
                         break;
 
                     default:
@@ -374,16 +390,18 @@ namespace ProbuildBackend.Controllers
             {
                 string Amount = string.Empty;
                 string stripePriceId = string.Empty;
-                if (string.IsNullOrWhiteSpace(payload.subscriptionId) || string.IsNullOrWhiteSpace(payload.packageName))
+                if (
+                    string.IsNullOrWhiteSpace(payload.subscriptionId)
+                    || string.IsNullOrWhiteSpace(payload.packageName)
+                )
                     return BadRequest("subscriptionId and packageName are required.");
 
-                var teamMemberUserId =
-                    await (
-                        from tm in _context.TeamMembers
-                        join u in _context.Users on tm.Email equals u.Email
-                        where tm.Id == payload.AssignedUser
-                        select u.Id
-                    ).SingleOrDefaultAsync();
+                var teamMemberUserId = await (
+                    from tm in _context.TeamMembers
+                    join u in _context.Users on tm.Email equals u.Email
+                    where tm.Id == payload.AssignedUser
+                    select u.Id
+                ).SingleOrDefaultAsync();
 
                 StripeConfiguration.ApiKey =
                     Environment.GetEnvironmentVariable("StripeAPIKey")
@@ -423,11 +441,11 @@ namespace ProbuildBackend.Controllers
 
                 // Build metadata
                 var metadata = new Dictionary<string, string>
-        {
-            { "userId", payload.userId },
-            { "package", payload.packageName },
-            { "amount", Amount }
-        };
+                {
+                    { "userId", payload.userId },
+                    { "package", payload.packageName },
+                    { "amount", Amount },
+                };
 
                 if (!string.IsNullOrWhiteSpace(teamMemberUserId))
                     metadata["assignedUser"] = teamMemberUserId;
@@ -454,24 +472,23 @@ namespace ProbuildBackend.Controllers
                 }
 
                 // Perform subscription update
-                var updated = await subs.UpdateAsync(payload.subscriptionId, new SubscriptionUpdateOptions
-                {
-                    Items = new List<SubscriptionItemOptions>
-            {
-                new SubscriptionItemOptions
-                {
-                    Id = itemId,
-                    Price = stripePriceId
-                }
-            },
-                    ProrationBehavior = "create_prorations",
-                    BillingCycleAnchor = anchor,
-                    Metadata = metadata
-                });
+                var updated = await subs.UpdateAsync(
+                    payload.subscriptionId,
+                    new SubscriptionUpdateOptions
+                    {
+                        Items = new List<SubscriptionItemOptions>
+                        {
+                            new SubscriptionItemOptions { Id = itemId, Price = stripePriceId },
+                        },
+                        ProrationBehavior = "create_prorations",
+                        BillingCycleAnchor = anchor,
+                        Metadata = metadata,
+                    }
+                );
 
                 // Update your DB
-                var paymentRecord = await _context.PaymentRecords
-                    .Where(x => x.SubscriptionID == payload.subscriptionId)
+                var paymentRecord = await _context
+                    .PaymentRecords.Where(x => x.SubscriptionID == payload.subscriptionId)
                     .FirstOrDefaultAsync();
 
                 if (paymentRecord != null)
@@ -485,18 +502,13 @@ namespace ProbuildBackend.Controllers
                     await _context.SaveChangesAsync();
                 }
 
-                return Ok(new
-                {
-                    status = "ok",
-                    subscriptionId = updated.Id
-                });
+                return Ok(new { status = "ok", subscriptionId = updated.Id });
             }
             catch (Exception ex)
             {
                 throw;
             }
         }
-
 
         // Shared method to save payment record
         private async Task<PaymentRecord> SavePaymentRecord(
@@ -607,7 +619,9 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-                var customerId = await _context.Users.Where(x => x.Id == userId).FirstOrDefaultAsync();
+                var customerId = await _context
+                    .Users.Where(x => x.Id == userId)
+                    .FirstOrDefaultAsync();
                 if (customerId == null)
                 {
                     return "User not found";
@@ -706,10 +720,10 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-
                 string productPriceId = string.Empty;
-            StripeConfiguration.ApiKey = Environment.GetEnvironmentVariable("StripeAPIKey")
-                                          ?? _configuration["StripeAPI:StripeKey"];
+                StripeConfiguration.ApiKey =
+                    Environment.GetEnvironmentVariable("StripeAPIKey")
+                    ?? _configuration["StripeAPI:StripeKey"];
 
                 // 1) Resolve the target Price ID from the selected package value
                 //    (Your method must return a PRICE id like "price_...", not a product id)
@@ -717,26 +731,26 @@ namespace ProbuildBackend.Controllers
                 if (string.IsNullOrWhiteSpace(target?.StripeProductId))
                     return BadRequest("Unknown package/price mapping.");
 
-
-            if(req.BillingCycle == "yearly")
+                if (req.BillingCycle == "yearly")
                 {
                     productPriceId = target.StripeProductIdAnually;
                 }
-            else
+                else
                 {
                     productPriceId = target.StripeProductId;
                 }
-                    // 2) Load the subscription to infer customer + existing item
-                    var subSvc = new Stripe.SubscriptionService();
-            var subscription = await subSvc.GetAsync(
-                req.SubscriptionId,
-                new SubscriptionGetOptions
-                {
-                    // expand if you need product info to choose which line to replace
-                    Expand = new List<string> { "items.data.price.product" }
-                }
-            );
-            if (subscription == null) return NotFound("Subscription not found.");
+                // 2) Load the subscription to infer customer + existing item
+                var subSvc = new Stripe.SubscriptionService();
+                var subscription = await subSvc.GetAsync(
+                    req.SubscriptionId,
+                    new SubscriptionGetOptions
+                    {
+                        // expand if you need product info to choose which line to replace
+                        Expand = new List<string> { "items.data.price.product" },
+                    }
+                );
+                if (subscription == null)
+                    return NotFound("Subscription not found.");
 
                 var customerId = subscription.CustomerId;
                 // Pick the primary item; adapt if you have multiple items per sub
@@ -751,27 +765,30 @@ namespace ProbuildBackend.Controllers
                     .FromUnixTimeSeconds(prorationUnix)
                     .UtcDateTime;
 
-            // 4) Build invoice preview with proration
-            var invoiceSvc = new InvoiceService();
-            var preview = await invoiceSvc.CreatePreviewAsync(new InvoiceCreatePreviewOptions
-            {
-                Customer = customerId,
-                Subscription = req.SubscriptionId,
-                SubscriptionDetails = new InvoiceSubscriptionDetailsOptions
-                {
-                    ProrationBehavior = "create_prorations",
-                    ProrationDate = prorationInstant,
-                    BillingCycleAnchor = InvoiceSubscriptionDetailsBillingCycleAnchor.Unchanged,
-                    Items = new List<InvoiceSubscriptionDetailsItemOptions>
-            {
-                new()
-                {
-                    Id = existingItem.Id,                   // replace current item
-                    Price = productPriceId          // with new PRICE id
-                }
-            }
-                }
-            });
+                // 4) Build invoice preview with proration
+                var invoiceSvc = new InvoiceService();
+                var preview = await invoiceSvc.CreatePreviewAsync(
+                    new InvoiceCreatePreviewOptions
+                    {
+                        Customer = customerId,
+                        Subscription = req.SubscriptionId,
+                        SubscriptionDetails = new InvoiceSubscriptionDetailsOptions
+                        {
+                            ProrationBehavior = "create_prorations",
+                            ProrationDate = prorationInstant,
+                            BillingCycleAnchor =
+                                InvoiceSubscriptionDetailsBillingCycleAnchor.Unchanged,
+                            Items = new List<InvoiceSubscriptionDetailsItemOptions>
+                            {
+                                new()
+                                {
+                                    Id = existingItem.Id, // replace current item
+                                    Price = productPriceId, // with new PRICE id
+                                },
+                            },
+                        },
+                    }
+                );
 
                 // 5) Map proration lines
                 var lines = preview
@@ -832,6 +849,7 @@ namespace ProbuildBackend.Controllers
                 return StatusCode(500, $"Error processing finders fee: {ex.Message}");
             }
         }
+
         [HttpGet("user-subscriptions/{userId}")]
         public async Task<IActionResult> GetUserStripeSubscriptions(string userId)
         {
@@ -840,7 +858,8 @@ namespace ProbuildBackend.Controllers
                 var normUserId = (userId ?? "").Trim().ToLower();
 
                 // Pre-load user email
-                var viewerEmail = await _context.Users.AsNoTracking()
+                var viewerEmail = await _context
+                    .Users.AsNoTracking()
                     .Where(u => u.Id.ToLower() == normUserId)
                     .Select(u => u.Email)
                     .FirstOrDefaultAsync();
@@ -848,12 +867,12 @@ namespace ProbuildBackend.Controllers
                 var normEmail = (viewerEmail ?? "").Trim().ToLower();
 
                 // Pre-normalize columns BEFORE query (EF can inline these)
-                var records = await _context.PaymentRecords
-                    .AsNoTracking()
+                var records = await _context
+                    .PaymentRecords.AsNoTracking()
                     .Where(pr =>
-                        pr.UserId.ToLower() == normUserId ||
-                        pr.AssignedUser.ToLower() == normUserId ||
-                        (normEmail != "" && pr.AssignedUser.ToLower() == normEmail)
+                        pr.UserId.ToLower() == normUserId
+                        || pr.AssignedUser.ToLower() == normUserId
+                        || (normEmail != "" && pr.AssignedUser.ToLower() == normEmail)
                     )
                     .ToListAsync();
 
@@ -872,26 +891,29 @@ namespace ProbuildBackend.Controllers
 
                 var tasks = records.Select(async rec =>
                 {
-                    bool isStripe = !string.IsNullOrWhiteSpace(rec.SubscriptionID) &&
-                                    rec.SubscriptionID.StartsWith("sub_");
+                    bool isStripe =
+                        !string.IsNullOrWhiteSpace(rec.SubscriptionID)
+                        && rec.SubscriptionID.StartsWith("sub_");
 
                     if (!isStripe)
                     {
-                        long? validUnix = rec.ValidUntil == DateTime.MinValue
-                            ? null
-                            : new DateTimeOffset(rec.ValidUntil).ToUnixTimeSeconds();
+                        long? validUnix =
+                            rec.ValidUntil == DateTime.MinValue
+                                ? null
+                                : new DateTimeOffset(rec.ValidUntil).ToUnixTimeSeconds();
 
-                        return (object)new
-                        {
-                            subscriptionId = rec.SubscriptionID,
-                            package = rec.Package,
-                            amount = rec.Amount,
-                            status = rec.Status,
-                            cancel_at_period_end = false,
-                            current_period_end = validUnix,
-                            validUntil = validUnix,
-                            assignedUser = rec.AssignedUser
-                        };
+                        return (object)
+                            new
+                            {
+                                subscriptionId = rec.SubscriptionID,
+                                package = rec.Package,
+                                amount = rec.Amount,
+                                status = rec.Status,
+                                cancel_at_period_end = false,
+                                current_period_end = validUnix,
+                                validUntil = validUnix,
+                                assignedUser = rec.AssignedUser,
+                            };
                     }
 
                     try
@@ -900,7 +922,7 @@ namespace ProbuildBackend.Controllers
                             rec.SubscriptionID,
                             new SubscriptionGetOptions
                             {
-                                Expand = new List<string> { "items", "items.data" }
+                                Expand = new List<string> { "items", "items.data" },
                             }
                         );
 
@@ -911,32 +933,34 @@ namespace ProbuildBackend.Controllers
                             ? new DateTimeOffset(dt.Value).ToUnixTimeSeconds()
                             : (long?)null;
 
-                        return (object)new
-                        {
-                            subscriptionId = rec.SubscriptionID,
-                            package = rec.Package,
-                            amount = rec.Amount,
-                            status = sub.Status,
-                            cancel_at_period_end = sub.CancelAtPeriodEnd,
-                            current_period_end = nextEnd,
-                            validUntil = nextEnd,
-                            assignedUser = rec.AssignedUser
-                        };
+                        return (object)
+                            new
+                            {
+                                subscriptionId = rec.SubscriptionID,
+                                package = rec.Package,
+                                amount = rec.Amount,
+                                status = sub.Status,
+                                cancel_at_period_end = sub.CancelAtPeriodEnd,
+                                current_period_end = nextEnd,
+                                validUntil = nextEnd,
+                                assignedUser = rec.AssignedUser,
+                            };
                     }
                     catch (StripeException ex)
                     {
-                        return (object)new
-                        {
-                            subscriptionId = rec.SubscriptionID,
-                            package = rec.Package,
-                            amount = rec.Amount,
-                            status = "not_found_on_stripe",
-                            cancel_at_period_end = false,
-                            current_period_end = (long?)null,
-                            validUntil = (long?)null,
-                            assignedUser = rec.AssignedUser,
-                            message = ex.Message
-                        };
+                        return (object)
+                            new
+                            {
+                                subscriptionId = rec.SubscriptionID,
+                                package = rec.Package,
+                                amount = rec.Amount,
+                                status = "not_found_on_stripe",
+                                cancel_at_period_end = false,
+                                current_period_end = (long?)null,
+                                validUntil = (long?)null,
+                                assignedUser = rec.AssignedUser,
+                                message = ex.Message,
+                            };
                     }
                 });
 
@@ -946,7 +970,6 @@ namespace ProbuildBackend.Controllers
                 // Run in parallel
                 var finalResults = await Task.WhenAll(taskList);
 
-
                 return Ok(finalResults);
             }
             catch
@@ -954,8 +977,6 @@ namespace ProbuildBackend.Controllers
                 return StatusCode(500, "Failed to load subscriptions.");
             }
         }
-
-
 
         [HttpPost("undo-cancellation/{subscriptionId}")]
         public async Task<IActionResult> UndoCancellation(string subscriptionId)
@@ -971,16 +992,13 @@ namespace ProbuildBackend.Controllers
 
                 var service = new Stripe.SubscriptionService();
 
-                var options = new SubscriptionUpdateOptions
-                {
-                    CancelAtPeriodEnd = false
-                };
+                var options = new SubscriptionUpdateOptions { CancelAtPeriodEnd = false };
 
                 var updated = await service.UpdateAsync(subscriptionId, options);
 
                 // --- Update your DB ---
-                var subscription = await _context.PaymentRecords
-                    .Where(s => s.SubscriptionID == subscriptionId)
+                var subscription = await _context
+                    .PaymentRecords.Where(s => s.SubscriptionID == subscriptionId)
                     .FirstOrDefaultAsync();
 
                 if (subscription != null)
@@ -996,12 +1014,14 @@ namespace ProbuildBackend.Controllers
                     await _context.SaveChangesAsync();
                 }
 
-                return Ok(new
-                {
-                    message = "Subscription cancellation undone.",
-                    subscriptionId = updated.Id,
-                    cancelAtPeriodEnd = updated.CancelAtPeriodEnd
-                });
+                return Ok(
+                    new
+                    {
+                        message = "Subscription cancellation undone.",
+                        subscriptionId = updated.Id,
+                        cancelAtPeriodEnd = updated.CancelAtPeriodEnd,
+                    }
+                );
             }
             catch (StripeException ex)
             {
@@ -1012,10 +1032,7 @@ namespace ProbuildBackend.Controllers
                 return StatusCode(500, new { message = $"Unexpected error: {ex.Message}" });
             }
         }
-
     }
-
-
 
     public class PaymentIntentRequest
     {

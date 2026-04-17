@@ -1,4 +1,4 @@
-﻿using Elastic.Apm.Api;
+﻿using System.IO.Compression;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
@@ -8,9 +8,6 @@ using ProbuildBackend.Middleware;
 using ProbuildBackend.Models;
 using ProbuildBackend.Models.DTO;
 using ProbuildBackend.Services;
-using System.IO.Compression;
-using System.IO.Compression;
-using System.Security.Claims;
 
 namespace ProbuildBackend.Controllers
 {
@@ -58,7 +55,11 @@ namespace ProbuildBackend.Controllers
         public async Task<IActionResult> GetUserDocuments(string UserId)
         {
             var documents = await _context
-                .ProfileDocuments.Where(doc => doc.UserId == UserId && (doc.Deleted == false || doc.Deleted == null) && doc.ArchivedAt == null)
+                .ProfileDocuments.Where(doc =>
+                    doc.UserId == UserId
+                    && (doc.Deleted == false || doc.Deleted == null)
+                    && doc.ArchivedAt == null
+                )
                 .ToListAsync();
 
             if (documents == null || !documents.Any())
@@ -78,6 +79,15 @@ namespace ProbuildBackend.Controllers
                             doc.Id,
                             doc.UserId,
                             doc.FileName,
+                            doc.Category,
+                            doc.SubType,
+                            doc.DocumentName,
+                            doc.Issuer,
+                            doc.Number,
+                            doc.IssueDate,
+                            doc.ExpirationDate,
+                            doc.CoverageAmount,
+                            doc.AggregateLimit,
                             Size = properties.Content.Length,
                         }
                     );
@@ -93,6 +103,15 @@ namespace ProbuildBackend.Controllers
                             doc.Id,
                             doc.UserId,
                             doc.FileName,
+                            doc.Category,
+                            doc.SubType,
+                            doc.DocumentName,
+                            doc.Issuer,
+                            doc.Number,
+                            doc.IssueDate,
+                            doc.ExpirationDate,
+                            doc.CoverageAmount,
+                            doc.AggregateLimit,
                             Size = 0L,
                         }
                     );
@@ -126,18 +145,20 @@ namespace ProbuildBackend.Controllers
                 throw;
             }
         }
+
         [HttpGet("GetUserAddresses/{userid}")]
         public async Task<IActionResult> GetUserAddress(string userid)
         {
-
             if (string.IsNullOrEmpty(userid))
             {
                 return Unauthorized();
             }
 
-            var userAddresses = await _context.UserAddress
-            .Where(a => a.UserId == userid && a.Deleted != true && !string.IsNullOrEmpty(a.StreetName))
-            .ToListAsync();
+            var userAddresses = await _context
+                .UserAddress.Where(a =>
+                    a.UserId == userid && a.Deleted != true && !string.IsNullOrEmpty(a.StreetName)
+                )
+                .ToListAsync();
 
             if (userAddresses == null || userAddresses.Count == 0)
             {
@@ -145,7 +166,6 @@ namespace ProbuildBackend.Controllers
             }
 
             return Ok(userAddresses);
-
         }
 
         [HttpGet("GetProfile/{id}")]
@@ -153,8 +173,6 @@ namespace ProbuildBackend.Controllers
         {
             try
             {
-
-
                 if (string.IsNullOrWhiteSpace(id))
                     return BadRequest("Id parameter cannot be null or empty.");
 
@@ -167,7 +185,8 @@ namespace ProbuildBackend.Controllers
                     return NotFound("No user found with the specified id.");
 
                 user.UserAddresses = _context
-                    .UserAddress.Where(a => a.UserId == id && a.Deleted != true && !string.IsNullOrEmpty(a.StreetName)
+                    .UserAddress.Where(a =>
+                        a.UserId == id && a.Deleted != true && !string.IsNullOrEmpty(a.StreetName)
                     )
                     .ToList();
                 return Ok(user);
@@ -200,27 +219,27 @@ namespace ProbuildBackend.Controllers
                 user.CompanyRegNo = model.CompanyRegNo;
                 user.VatNo = model.VatNo;
                 user.UserType = model.UserType;
-                user.ConstructionType = model.ConstructionType != null
-        ? string.Join(",", model.ConstructionType)
-        : null;
+                user.ConstructionType =
+                    model.ConstructionType != null
+                        ? string.Join(",", model.ConstructionType)
+                        : null;
                 user.NrEmployees = model.NrEmployees;
                 user.YearsOfOperation = model.YearsOfOperation;
                 user.CertificationStatus = model.CertificationStatus;
                 user.CertificationDocumentPath = model.CertificationDocumentPath;
                 user.Availability = model.Availability;
                 user.Trade = model.Trade;
-                user.ProductsOffered = model.ProductsOffered != null
-        ? string.Join(",", model.ProductsOffered)
-        : null;
+                user.ProductsOffered =
+                    model.ProductsOffered != null ? string.Join(",", model.ProductsOffered) : null;
                 user.SupplierType = model.SupplierType;
-                user.JobPreferences = model.JobPreferences != null
-        ? string.Join(",", model.JobPreferences)
-        : null;
-                user.DeliveryArea = model.DeliveryArea != null
-        ? string.Join(",", model.DeliveryArea)
-        : null;
+                user.JobPreferences =
+                    model.JobPreferences != null ? string.Join(",", model.JobPreferences) : null;
+                user.DeliveryArea =
+                    model.DeliveryArea != null ? string.Join(",", model.DeliveryArea) : null;
                 user.DeliveryTime = model.DeliveryTime;
                 user.CountryNumberCode = model.CountryNumberCode;
+                user.DefaultLanding = model.DefaultLanding;
+                user.ThemeMode = model.ThemeMode;
                 //user.Country = model.Country;
                 //user.State = model.State;
                 //user.City = model.City;
@@ -239,7 +258,6 @@ namespace ProbuildBackend.Controllers
                         .Replace("{{Footer}}", upgradeEmail.FooterHtml)
                         .Replace("{{setup_url}}", "");
                 }
-
 
                 // Add address (can be done before save)
                 //var address = new UserAddressModel
@@ -260,7 +278,7 @@ namespace ProbuildBackend.Controllers
                 //};
                 //_context.UserAddress.Add(address);
 
-                // Update documents -- Comment out- Lets just save the document when they upload it. 
+                // Update documents -- Comment out- Lets just save the document when they upload it.
                 //if (!string.IsNullOrEmpty(model.SessionId))
                 //{
                 //    var documents = await _context
@@ -277,7 +295,6 @@ namespace ProbuildBackend.Controllers
 
                 // Now commit all changes once
 
-
                 Console.WriteLine($"Profile ({user.Id}) updated successfully.");
                 return Ok(new { message = "Profile updated successfully." });
             }
@@ -289,7 +306,10 @@ namespace ProbuildBackend.Controllers
 
         [HttpPost("UploadImage/{userId}")]
         [RequestSizeLimit(200 * 1024 * 1024)]
-        public async Task<IActionResult> UploadImage([FromForm] UploadDocumentDTO jobRequest, string userId)
+        public async Task<IActionResult> UploadImage(
+            [FromForm] UploadDocumentDTO jobRequest,
+            string userId
+        )
         {
             try
             {
@@ -349,6 +369,15 @@ namespace ProbuildBackend.Controllers
                         BlobUrl = url,
                         sessionId = jobRequest.sessionId,
                         UploadedAt = DateTime.Now,
+                        Category = jobRequest.Category,
+                        SubType = jobRequest.SubType,
+                        DocumentName = jobRequest.DocumentName,
+                        Issuer = jobRequest.Issuer,
+                        Number = jobRequest.Number,
+                        IssueDate = jobRequest.IssueDate,
+                        ExpirationDate = jobRequest.ExpirationDate,
+                        CoverageAmount = jobRequest.CoverageAmount,
+                        AggregateLimit = jobRequest.AggregateLimit,
                     };
                     _context.ProfileDocuments.Add(Document);
                 }
@@ -479,6 +508,7 @@ namespace ProbuildBackend.Controllers
                 return StatusCode(500, $"An error occurred while fetching the blob: {ex.Message}");
             }
         }
+
         [HttpPost("AddUserAddress")]
         public async Task<IActionResult> AddUserAddress(UserAddressDTO address)
         {
@@ -487,7 +517,6 @@ namespace ProbuildBackend.Controllers
 
             try
             {
-
                 var userAddressModel = new UserAddressModel
                 {
                     StreetNumber = address.StreetNumber,
@@ -505,7 +534,6 @@ namespace ProbuildBackend.Controllers
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow,
                     AddressType = address.AddressType,
-
                 };
                 _context.UserAddress.Add(userAddressModel);
                 await _context.SaveChangesAsync();
@@ -514,12 +542,18 @@ namespace ProbuildBackend.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Failed to add user address", details = ex.Message });
+                return StatusCode(
+                    500,
+                    new { error = "Failed to add user address", details = ex.Message }
+                );
             }
         }
 
         [HttpPut("UpdateUserAddress/{id:int}")]
-        public async Task<IActionResult> UpdateUserAddress(int id, [FromBody] UserAddressModel updated)
+        public async Task<IActionResult> UpdateUserAddress(
+            int id,
+            [FromBody] UserAddressModel updated
+        )
         {
             if (updated == null)
                 return BadRequest("Invalid payload.");
@@ -549,7 +583,10 @@ namespace ProbuildBackend.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Failed to update address", details = ex.Message });
+                return StatusCode(
+                    500,
+                    new { error = "Failed to update address", details = ex.Message }
+                );
             }
         }
 
@@ -567,10 +604,12 @@ namespace ProbuildBackend.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Failed to archive document", details = ex.Message });
+                return StatusCode(
+                    500,
+                    new { error = "Failed to archive document", details = ex.Message }
+                );
             }
         }
-
 
         [HttpDelete("DeleteUserAddress/{id:int}")]
         public async Task<IActionResult> DeleteUserAddress(int id)
@@ -579,7 +618,7 @@ namespace ProbuildBackend.Controllers
             if (address == null)
                 return NotFound("Address not found.");
 
-            address.Deleted = true;   // soft delete
+            address.Deleted = true; // soft delete
 
             try
             {
@@ -588,7 +627,10 @@ namespace ProbuildBackend.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Failed to delete address", details = ex.Message });
+                return StatusCode(
+                    500,
+                    new { error = "Failed to delete address", details = ex.Message }
+                );
             }
         }
 
@@ -630,7 +672,3 @@ namespace ProbuildBackend.Controllers
         }
     }
 }
-
-
-    
-

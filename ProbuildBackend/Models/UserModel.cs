@@ -28,6 +28,8 @@ namespace ProbuildBackend.Models
         public string? State { get; set; }
         public string? City { get; set; }
         public string? SubscriptionPackage { get; set; }
+        public string? DefaultLanding { get; set; }
+        public string? ThemeMode { get; set; }
 
         public string? CountryNumberCode { get; set; }
         public string? StripeCustomerId { get; set; }

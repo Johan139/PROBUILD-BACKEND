@@ -1,5 +1,3 @@
-using System;
-
 namespace ProbuildBackend.Models.DTO
 {
     public class PdfBidDto

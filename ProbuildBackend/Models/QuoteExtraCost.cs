@@ -1,12 +1,10 @@
-﻿using System.ComponentModel.DataAnnotations;
-
-namespace ProbuildBackend.Models
+﻿namespace ProbuildBackend.Models
 {
     public class QuoteExtraCost
     {
         public Guid Id { get; set; }
 
-        public Guid QuoteVersionId { get; set; }   // <-- REQUIRED
+        public Guid QuoteVersionId { get; set; }
         public QuoteVersionModel QuoteVersion { get; set; }
 
         public string Type { get; set; }
@@ -15,5 +13,4 @@ namespace ProbuildBackend.Models
 
         public string Title { get; set; }
     }
-
 }
