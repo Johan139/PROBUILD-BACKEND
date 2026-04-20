@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -2500,6 +2501,45 @@ WHERE TABLE_NAME = 'JobPromptResults';";
                     }
                 }
 
+                if (
+                    string.Equals(
+                        normalizedPromptKey,
+                        "executive-summary-prompt",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    var latestCostJson = await _context
+                        .JobPromptResults.AsNoTracking()
+                        .Where(
+                            r =>
+                                r.JobId == jobId
+                                && (
+                                    r.PromptKey == "prompt-25-cost-breakdowns"
+                                    || r.PromptKey == "prompt-25-cost-breakdowns.txt"
+                                )
+                                && r.ParsedJson != null
+                        )
+                        .OrderByDescending(r => r.CreatedAt)
+                        .Select(r => r.ParsedJson)
+                        .FirstOrDefaultAsync();
+
+                    if (
+                        !string.IsNullOrWhiteSpace(latestCostJson)
+                        && TryGetGrandTotalBidPrice(latestCostJson, out var costGrandTotal)
+                        && costGrandTotal > 0
+                        && TryApplyExecutiveSummaryFinancialAnchors(
+                            extractedJson,
+                            latestCostJson,
+                            costGrandTotal,
+                            out var harmonizedExecutiveJson
+                        )
+                    )
+                    {
+                        extractedJson = harmonizedExecutiveJson;
+                    }
+                }
+
                 _context.JobPromptResults.Add(
                     new Models.JobPromptResult
                     {
@@ -3238,11 +3278,11 @@ END";
                 return totals;
             }
 
-            var totalCostIdx = FindHeaderIndex(table.Headers, "Total Item Cost", "Total Cost");
+            var totalCostIdx = FindMaterialLineCostColumnIndex(table.Headers);
             var csiIdx = FindHeaderIndex(table.Headers, "CSI MasterFormat Code", "CSI");
             var itemIdx = FindHeaderIndex(table.Headers, "Item");
 
-            if (totalCostIdx < 0 || csiIdx < 0)
+            if (totalCostIdx < 0)
             {
                 return totals;
             }
@@ -3255,10 +3295,11 @@ END";
                     continue;
                 }
 
-                var csi = csiIdx < row.Count ? NormalizeCsiCode(row[csiIdx]) : string.Empty;
-                if (string.IsNullOrWhiteSpace(csi))
+                var csi = "__NO_CSI__";
+                if (csiIdx >= 0 && csiIdx < row.Count)
                 {
-                    continue;
+                    var normalized = NormalizeCsiCode(row[csiIdx]);
+                    csi = string.IsNullOrWhiteSpace(normalized) ? "__NO_CSI__" : normalized;
                 }
 
                 var cost = totalCostIdx < row.Count ? ParseMoneyLikeValue(row[totalCostIdx]) : 0;
@@ -3288,7 +3329,7 @@ END";
                 "Hourly Rate",
                 "Rate"
             );
-            var totalIdx = FindHeaderIndex(table.Headers, "Total Estimated Cost", "Total Cost");
+            var totalIdx = FindSubcontractorPackageCostColumnIndex(table.Headers);
             var csiIdx = FindHeaderIndex(table.Headers, "CSI MasterFormat Code", "CSI");
 
             foreach (var row in table.Rows)
@@ -3316,7 +3357,11 @@ END";
                     totalIdx >= 0 && totalIdx < row.Count ? ParseMoneyLikeValue(row[totalIdx]) : 0;
                 var csi = csiIdx >= 0 && csiIdx < row.Count ? NormalizeCsiCode(row[csiIdx]) : null;
 
-                var laborBudget = totalCost > 0 ? totalCost : Math.Round(manHours * hourlyRate, 2);
+                // Prefer man-hours * rate when both are present. "Total Estimated Cost" in Output 2
+                // is often a full trade package (materials + labor), which would double-count vs Output 1.
+                var computedLabor =
+                    manHours > 0 && hourlyRate > 0 ? Math.Round(manHours * hourlyRate, 2) : 0m;
+                var laborBudget = computedLabor > 0 ? computedLabor : totalCost;
                 if (laborBudget <= 0)
                 {
                     continue;
@@ -3477,6 +3522,72 @@ END";
             return -1;
         }
 
+        /// <summary>
+        /// BOM tables often include multiple columns whose headers contain the substring "Total Cost"
+        /// (for example "Insurance Total Cost"). Prefer an explicit materials line-total column instead.
+        /// </summary>
+        private static int FindMaterialLineCostColumnIndex(IReadOnlyList<string> headers)
+        {
+            for (var i = 0; i < headers.Count; i++)
+            {
+                if (headers[i].Contains("Total Item Cost", StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+
+            for (var i = 0; i < headers.Count; i++)
+            {
+                if (headers[i].Contains("Line Total", StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+
+            for (var i = 0; i < headers.Count; i++)
+            {
+                var h = headers[i];
+                if (
+                    h.Contains("Extended", StringComparison.OrdinalIgnoreCase)
+                    && h.Contains("Total", StringComparison.OrdinalIgnoreCase)
+                )
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private static int FindSubcontractorPackageCostColumnIndex(IReadOnlyList<string> headers)
+        {
+            for (var i = 0; i < headers.Count; i++)
+            {
+                if (headers[i].Contains("Total Estimated Cost", StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+
+            for (var i = 0; i < headers.Count; i++)
+            {
+                if (headers[i].Contains("Total Trade Cost", StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+
+            for (var i = 0; i < headers.Count; i++)
+            {
+                if (headers[i].Contains("Subcontractor Total", StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
         private static string NormalizeCsiCode(string? raw)
         {
             if (string.IsNullOrWhiteSpace(raw))
@@ -3552,17 +3663,77 @@ END";
         {
             if (string.IsNullOrWhiteSpace(raw))
             {
-                return 0;
-            }
-          
-            var cleaned = Regex.Replace(raw, @"[^0-9\.-]", "");
-            cleaned = cleaned.Replace(".", ",");
-            if (decimal.TryParse(cleaned, out var parsed))
-            {
-                return parsed;
+                return 0m;
             }
 
-            return 0;
+            // Keep digits, separators, minus. Strip currency symbols, spaces, letters.
+            var s = Regex.Replace(raw.Trim(), @"[^0-9,\.\-]", "");
+            if (string.IsNullOrWhiteSpace(s))
+            {
+                return 0m;
+            }
+
+            var negative = false;
+            if (s.StartsWith('-'))
+            {
+                negative = true;
+                s = s.TrimStart('-');
+            }
+
+            var lastDot = s.LastIndexOf('.');
+            var lastComma = s.LastIndexOf(',');
+
+            if (lastDot >= 0 && lastComma >= 0)
+            {
+                // If both separators exist, the rightmost one is the decimal separator.
+                if (lastDot > lastComma)
+                {
+                    // US-style: 1,234,567.89
+                    s = s.Replace(",", string.Empty);
+                }
+                else
+                {
+                    // EU-style: 1.234.567,89
+                    s = s.Replace(".", string.Empty);
+                    s = s.Replace(",", ".");
+                }
+            }
+            else if (lastComma >= 0 && lastDot < 0)
+            {
+                // Only commas: either thousands (1,234,567) or decimal (1234,56).
+                var afterComma = s[(lastComma + 1)..];
+                if (afterComma.Length is > 0 and <= 2 && afterComma.All(char.IsDigit))
+                {
+                    s = s.Replace(",", ".");
+                }
+                else
+                {
+                    s = s.Replace(",", string.Empty);
+                }
+            }
+            else if (lastDot >= 0 && lastComma < 0)
+            {
+                // Only dots: either thousands (1.234.567) or decimal (1234.56).
+                var afterDot = s[(lastDot + 1)..];
+                if (afterDot.Length == 3 && s.Count(c => c == '.') > 1)
+                {
+                    s = s.Replace(".", string.Empty);
+                }
+            }
+
+            if (
+                !decimal.TryParse(
+                    s,
+                    NumberStyles.Number,
+                    CultureInfo.InvariantCulture,
+                    out var parsed
+                )
+            )
+            {
+                return 0m;
+            }
+
+            return negative ? -parsed : parsed;
         }
 
         private async Task<string> ExecuteSequentialRenovationPromptsAsync(
@@ -4448,7 +4619,12 @@ END";
                 return null;
             }
 
-            if (!Regex.IsMatch(key, @"^prompt-\d{2}-", RegexOptions.IgnoreCase))
+            // Executive summary is not named prompt-NN-*, but it must still receive the same
+            // financial anchors as cost_breakdowns.v1 so the model cannot invent a second "contract value".
+            if (
+                !Regex.IsMatch(key, @"^prompt-\d{2}-", RegexOptions.IgnoreCase)
+                && !isExecutiveSummary
+            )
             {
                 return null;
             }
@@ -4720,8 +4896,128 @@ Anchors:
             materialTotal = Math.Round(materialTotal, 2);
             laborTotal = Math.Round(laborTotal, 2);
             var directTotal = Math.Round(materialTotal + laborTotal, 2);
+            var softCap = await GetResidentialDirectTotalSoftCapAsync(jobId);
+            if (softCap.HasValue && directTotal > softCap.Value)
+            {
+                _logger.LogWarning(
+                    "GetPrompt04To19DirectTotalsAsync: computed direct total exceeds soft cap; discarding anchors. jobId={JobId} directTotal={DirectTotal} cap={Cap}",
+                    jobId,
+                    directTotal,
+                    softCap.Value
+                );
+                return (false, 0m, 0m, 0m);
+            }
+
             var hasTotals = directTotal > 0;
             return (hasTotals, materialTotal, laborTotal, directTotal);
+        }
+
+        private async Task<decimal?> GetResidentialDirectTotalSoftCapAsync(int jobId)
+        {
+            var initialJson = await _context
+                .JobPromptResults.AsNoTracking()
+                .Where(
+                    r =>
+                        r.JobId == jobId
+                        && (
+                            r.PromptKey == "prompt-00-initial-analysis"
+                            || r.PromptKey == "prompt-00-initial-analysis.txt"
+                        )
+                        && r.ParsedJson != null
+                )
+                .OrderByDescending(r => r.CreatedAt)
+                .Select(r => r.ParsedJson)
+                .FirstOrDefaultAsync();
+
+            if (string.IsNullOrWhiteSpace(initialJson))
+            {
+                return null;
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(initialJson);
+                var root = doc.RootElement;
+                if (root.ValueKind != JsonValueKind.Object)
+                {
+                    return null;
+                }
+
+                if (!TryGetFiniteNumber(root, "buildingSize", out var sqft) || sqft <= 0)
+                {
+                    return null;
+                }
+
+                // Guardrail: materials+labor should not exceed an extreme $/sf multiple for typical SFH.
+                var cap = Math.Round((decimal)sqft * 3500m, 2);
+                return Math.Max(cap, 5_000_000m);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static decimal ChooseConsistentLineSumVsFooter(decimal lineSum, decimal footer)
+        {
+            if (footer <= 0m)
+            {
+                return lineSum;
+            }
+
+            if (lineSum <= 0m)
+            {
+                return footer;
+            }
+
+            if (lineSum > footer * 5m)
+            {
+                return footer;
+            }
+
+            if (footer > lineSum * 5m)
+            {
+                return lineSum;
+            }
+
+            return footer;
+        }
+
+        private static bool TryParseMarkdownFooterMoney(
+            MarkdownTable table,
+            int moneyColumnIdx,
+            int labelColumnIdx,
+            out decimal footerMoney
+        )
+        {
+            footerMoney = 0m;
+            if (moneyColumnIdx < 0 || !table.Rows.Any())
+            {
+                return false;
+            }
+
+            for (var i = table.Rows.Count - 1; i >= 0; i--)
+            {
+                var row = table.Rows[i];
+                var label =
+                    labelColumnIdx >= 0 && labelColumnIdx < row.Count
+                        ? row[labelColumnIdx]
+                        : string.Empty;
+                if (!label.Contains("TOTAL", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var money =
+                    moneyColumnIdx < row.Count ? ParseMoneyLikeValue(row[moneyColumnIdx]) : 0m;
+                if (money > 0m)
+                {
+                    footerMoney = Math.Round(money, 2);
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static bool TryExtractDirectTotalsFromPromptResponse(
@@ -4738,29 +5034,91 @@ Anchors:
             }
 
             var phaseBlocks = ExtractPhaseBlocks(response);
-            foreach (var phaseBlock in phaseBlocks)
+            if (!phaseBlocks.Any())
             {
-                var outputOneTable = ExtractMarkdownTableAfterMarker(
-                    phaseBlock,
-                    "Output 1:",
-                    "Item"
-                );
-                var outputTwoTable = ExtractMarkdownTableAfterMarker(
-                    phaseBlock,
+                phaseBlocks = new List<string> { response };
+            }
+
+            // Models sometimes echo multiple "### Phase ..." sections in one reply. Summing every
+            // section double-counts the same BOM/cost tables. Use the first block that contains each output.
+            var materialSource =
+                phaseBlocks.FirstOrDefault(b =>
+                    b.Contains("Output 1:", StringComparison.OrdinalIgnoreCase)
+                ) ?? phaseBlocks[0];
+            var laborSource =
+                phaseBlocks.FirstOrDefault(b =>
+                    b.Contains("Output 2", StringComparison.OrdinalIgnoreCase)
+                ) ?? materialSource;
+
+            var outputOneTable = ExtractMarkdownTableAfterMarker(
+                materialSource,
+                "Output 1:",
+                "Item"
+            );
+            var outputTwoTable =
+                ExtractMarkdownTableAfterMarker(
+                    laborSource,
                     "Output 2: Subcontractor Cost Breakdown",
                     "Trade"
-                ) ?? ExtractMarkdownTableAfterMarker(phaseBlock, "Output 2:", "Trade");
+                ) ?? ExtractMarkdownTableAfterMarker(laborSource, "Output 2:", "Trade");
 
-                var materialsByCsi = ParseMaterialTotalsByCsi(outputOneTable);
-                if (materialsByCsi.Count > 0)
+            var materialsByCsi = ParseMaterialTotalsByCsi(outputOneTable);
+            var materialLineSum = materialsByCsi.Count > 0
+                ? materialsByCsi.Values.Sum(v => Math.Max(0, v))
+                : 0m;
+
+            var materialMoneyCol = outputOneTable != null
+                ? FindMaterialLineCostColumnIndex(outputOneTable.Headers)
+                : -1;
+            var materialItemCol = outputOneTable != null
+                ? FindHeaderIndex(outputOneTable.Headers, "Item")
+                : -1;
+
+            var materialChosen = materialLineSum;
+            if (
+                outputOneTable != null
+                && materialMoneyCol >= 0
+                && TryParseMarkdownFooterMoney(
+                    outputOneTable,
+                    materialMoneyCol,
+                    materialItemCol,
+                    out var materialFooter
+                )
+            )
+            {
+                materialChosen = ChooseConsistentLineSumVsFooter(materialLineSum, materialFooter);
+            }
+
+            if (materialChosen > 0m)
+            {
+                materialTotal += materialChosen;
+            }
+
+            if (outputTwoTable?.Rows?.Any() == true)
+            {
+                var tradeRows = ParseOutputTwoTradeRows(outputTwoTable);
+                var laborLineSum = tradeRows.Sum(t => Math.Max(0, t.LaborBudget));
+
+                var laborMoneyCol = FindSubcontractorPackageCostColumnIndex(outputTwoTable.Headers);
+                var laborTradeCol = FindHeaderIndex(outputTwoTable.Headers, "Trade");
+
+                var laborChosen = laborLineSum;
+                if (
+                    laborMoneyCol >= 0
+                    && TryParseMarkdownFooterMoney(
+                        outputTwoTable,
+                        laborMoneyCol,
+                        laborTradeCol,
+                        out var laborFooter
+                    )
+                )
                 {
-                    materialTotal += materialsByCsi.Values.Sum(v => Math.Max(0, v));
+                    laborChosen = ChooseConsistentLineSumVsFooter(laborLineSum, laborFooter);
                 }
 
-                if (outputTwoTable?.Rows?.Any() == true)
+                if (laborChosen > 0m)
                 {
-                    var tradeRows = ParseOutputTwoTradeRows(outputTwoTable);
-                    laborTotal += tradeRows.Sum(t => Math.Max(0, t.LaborBudget));
+                    laborTotal += laborChosen;
                 }
             }
 
@@ -4965,6 +5323,114 @@ Anchors:
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Forces executive_summary.v1 money fields to match the latest persisted cost_breakdowns.v1
+        /// so UI and downstream prompts cannot show a divergent "contract value".
+        /// </summary>
+        private static bool TryApplyExecutiveSummaryFinancialAnchors(
+            string executiveJson,
+            string costJson,
+            double costGrandTotal,
+            out string harmonizedJson
+        )
+        {
+            harmonizedJson = executiveJson;
+            if (string.IsNullOrWhiteSpace(executiveJson) || !double.IsFinite(costGrandTotal) || costGrandTotal <= 0)
+            {
+                return false;
+            }
+
+            try
+            {
+                var grandTotal = Math.Round((decimal)costGrandTotal, 2);
+                decimal? suggestedMarket = null;
+                try
+                {
+                    using var costDoc = JsonDocument.Parse(costJson);
+                    if (
+                        TryGetPropertyCaseInsensitive(costDoc.RootElement, "data", out var costData)
+                        && costData.ValueKind == JsonValueKind.Object
+                        && TryGetFiniteNumber(costData, "suggestedMarketBidPrice", out var sm)
+                        && sm > 0
+                    )
+                    {
+                        suggestedMarket = Math.Round((decimal)sm, 2);
+                    }
+                }
+                catch
+                {
+                    // Ignore optional market field.
+                }
+
+                var rootNode = JsonNode.Parse(executiveJson) as JsonObject;
+                if (rootNode == null)
+                {
+                    return false;
+                }
+
+                var dataNode = rootNode["data"] as JsonObject;
+                if (dataNode == null)
+                {
+                    dataNode = new JsonObject();
+                    rootNode["data"] = dataNode;
+                }
+
+                var financial = dataNode["financialSnapshot"] as JsonObject;
+                if (financial == null)
+                {
+                    financial = new JsonObject();
+                    dataNode["financialSnapshot"] = financial;
+                }
+
+                financial["estimatedProjectCost"] = grandTotal;
+                financial["costRangeMax"] = grandTotal;
+                if (suggestedMarket.HasValue && suggestedMarket.Value > 0)
+                {
+                    financial["costRangeMin"] = suggestedMarket.Value;
+                }
+
+                if (dataNode["keyHighlights"] is JsonArray highlights)
+                {
+                    foreach (var item in highlights)
+                    {
+                        if (item is not JsonObject highlight)
+                        {
+                            continue;
+                        }
+
+                        var label = highlight["label"]?.ToString() ?? string.Empty;
+                        var lower = label.ToLowerInvariant();
+                        if (lower.Contains("anchor") || lower.Contains("system cost"))
+                        {
+                            highlight["value"] = grandTotal.ToString("F0", CultureInfo.InvariantCulture);
+                            highlight["note"] =
+                                "Aligned to latest prompt-25-cost-breakdowns (grandTotalBidPrice).";
+                        }
+                        else if (
+                            suggestedMarket.HasValue
+                            && lower.Contains("market")
+                            && lower.Contains("build")
+                        )
+                        {
+                            highlight["value"] = suggestedMarket.Value.ToString(
+                                "F0",
+                                CultureInfo.InvariantCulture
+                            );
+                        }
+                    }
+                }
+
+                harmonizedJson = rootNode.ToJsonString(
+                    new JsonSerializerOptions { WriteIndented = false }
+                );
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static bool IsWithinDirectTotalsTolerance(decimal expected, decimal actual)
