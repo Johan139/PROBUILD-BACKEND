@@ -55,8 +55,15 @@ builder.Services.AddCors(options =>
                     || origin == "https://buildig.com"
                     || origin == "https://www.buildig.com"
                     || origin == "http://localhost:3000"
+                     || origin == "https://app.probuildai.com"
+                    || origin == "https://www.app.probuildai.com"
+                    || origin == "https://probuildai.com"
+                    || origin == "https://app.probuild.com"
+                    || origin == "https://www.app.probuild.com"
+                    || origin == "https://probuild.com"
+                    || origin == "https://www.probuild.com"
                     || origin
-                        == "https://buildig-web-qa-a2cyd0eygke4gfbu.centralus-01.azurewebsites.net"
+                        == "https://probuildai-web-qa-a2cyd0eygke4gfbu.centralus-01.azurewebsites.net"
                     || origin.EndsWith(".azurecontainerapps.io")
                 )
                 .AllowAnyHeader()
