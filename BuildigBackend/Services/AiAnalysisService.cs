@@ -2377,6 +2377,7 @@ WHERE TABLE_NAME = 'JobPromptResults';";
                     return true;
                 }
 
+                var appliedPrompt25Anchors = false;
                 if (
                     string.Equals(
                         normalizedPromptKey,
@@ -2429,6 +2430,7 @@ WHERE TABLE_NAME = 'JobPromptResults';";
                         )
                         {
                             extractedJson = harmonizedJson;
+                            appliedPrompt25Anchors = true;
                         }
                     }
 
@@ -2448,9 +2450,12 @@ WHERE TABLE_NAME = 'JobPromptResults';";
                         .FirstOrDefaultAsync();
 
                     if (
+                        !appliedPrompt25Anchors
+                        && (
                         TryGetGrandTotalBidPrice(priorParsedCostJson, out var priorTotal)
                         && TryGetGrandTotalBidPrice(extractedJson, out var currentTotal)
                         && priorTotal > 0
+                        )
                     )
                     {
                         var pctDelta = Math.Abs(currentTotal - priorTotal) / priorTotal;
@@ -4844,7 +4849,52 @@ Anchors:
 
                 dataNode["totalMaterialCost"] = Math.Round(materialTotal, 2);
                 dataNode["totalLaborCost"] = Math.Round(laborTotal, 2);
-                dataNode["directSubtotal"] = Math.Round(materialTotal + laborTotal, 2);
+                var directSubtotal = Math.Round(materialTotal + laborTotal, 2);
+                dataNode["directSubtotal"] = directSubtotal;
+
+                // Recompute downstream rollups from anchored direct totals to prevent
+                // pathological model outputs (e.g., inflated pre-tax and grand totals).
+                var generalConditions = ReadNonNegativeAmount(dataNode, "totalGeneralConditionsSiteServices");
+                var permits = ReadNonNegativeAmount(dataNode, "totalPermitsAdminFees");
+                var insuranceBonds = ReadNonNegativeAmount(dataNode, "insuranceBonds");
+
+                var directInsurableSubtotal = Math.Round(
+                    directSubtotal + generalConditions + permits + insuranceBonds,
+                    2
+                );
+                dataNode["directInsurableSubtotal"] = directInsurableSubtotal;
+
+                var overheadPercent = NormalizePercent(dataNode, "overheadProfitPercent");
+                var contingencyPercent = NormalizePercent(dataNode, "contingencyPercent");
+                var escalationPercent = NormalizePercent(dataNode, "costEscalationPercent");
+                var taxPercent = NormalizePercent(dataNode, "taxPercent");
+
+                var overheadAmount = Math.Round(directInsurableSubtotal * overheadPercent / 100m, 2);
+                dataNode["overheadProfitAmount"] = overheadAmount;
+
+                var contingencyAmount = Math.Round(
+                    (directInsurableSubtotal + overheadAmount) * contingencyPercent / 100m,
+                    2
+                );
+                dataNode["contingencyAmount"] = contingencyAmount;
+
+                var escalationAmount = Math.Round(
+                    (directInsurableSubtotal + overheadAmount + contingencyAmount)
+                        * escalationPercent
+                        / 100m,
+                    2
+                );
+                dataNode["costEscalationAmount"] = escalationAmount;
+
+                var preTaxSubtotal = Math.Round(
+                    directInsurableSubtotal + overheadAmount + contingencyAmount + escalationAmount,
+                    2
+                );
+                dataNode["preTaxSubtotal"] = preTaxSubtotal;
+
+                var taxAmount = Math.Round(preTaxSubtotal * taxPercent / 100m, 2);
+                dataNode["taxAmount"] = taxAmount;
+                dataNode["grandTotalBidPrice"] = Math.Round(preTaxSubtotal + taxAmount, 2);
 
                 harmonizedJson = rootNode.ToJsonString(
                     new JsonSerializerOptions { WriteIndented = false }
@@ -4855,6 +4905,66 @@ Anchors:
             {
                 return false;
             }
+        }
+
+        private static decimal ReadNonNegativeAmount(JsonObject dataNode, string key)
+        {
+            if (!TryReadDecimalNode(dataNode, key, out var value))
+            {
+                return 0m;
+            }
+
+            return Math.Max(0m, Math.Round(value, 2));
+        }
+
+        private static decimal NormalizePercent(JsonObject dataNode, string key)
+        {
+            if (!TryReadDecimalNode(dataNode, key, out var value))
+            {
+                return 0m;
+            }
+
+            if (value < 0m)
+            {
+                return 0m;
+            }
+
+            // Accept either 0..1 ratio or 0..100 percentage.
+            var normalized = value <= 1m ? value * 100m : value;
+            return Math.Min(100m, Math.Round(normalized, 6));
+        }
+
+        private static bool TryReadDecimalNode(JsonObject obj, string key, out decimal value)
+        {
+            value = 0m;
+            if (obj[key] is not JsonNode node)
+            {
+                return false;
+            }
+
+            if (node is JsonValue jsonValue)
+            {
+                if (jsonValue.TryGetValue<decimal>(out var dec))
+                {
+                    value = dec;
+                    return true;
+                }
+                if (jsonValue.TryGetValue<double>(out var dbl))
+                {
+                    value = (decimal)dbl;
+                    return true;
+                }
+                if (
+                    jsonValue.TryGetValue<string>(out var str)
+                    && decimal.TryParse(str, out var parsed)
+                )
+                {
+                    value = parsed;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static bool IsWithinDirectTotalsTolerance(decimal expected, decimal actual)

@@ -812,27 +812,31 @@ WHERE [JobId] = {jobId};
                 return;
             }
 
-            var now = DateTime.UtcNow;
-            var existingRecent = await _context.JobPromptResults
+            var existingPromptKeys = await _context.JobPromptResults
                 .AsNoTracking()
                 .Where(
                     r =>
                         r.JobId == jobId
-                        && r.CreatedAt >= now.AddMinutes(-5)
                         && (
                             r.PromptKey == "executive-summary-prompt"
+                            || r.PromptKey == "executive-summary-prompt.txt"
                             || r.PromptKey == "prompt-21-timeline"
+                            || r.PromptKey == "prompt-21-timeline.txt"
                             || r.PromptKey == "prompt-25-cost-breakdowns"
+                            || r.PromptKey == "prompt-25-cost-breakdowns.txt"
                         )
                 )
                 .Select(r => r.PromptKey)
-                .Distinct()
                 .ToListAsync();
 
-            var existingSet = new HashSet<string>(existingRecent, StringComparer.OrdinalIgnoreCase);
+            var existingSet = new HashSet<string>(
+                existingPromptKeys.Select(CanonicalizeScopePromptKey),
+                StringComparer.OrdinalIgnoreCase
+            );
             foreach (var kvp in extracted)
             {
-                if (existingSet.Contains(kvp.Key))
+                var canonicalPromptKey = CanonicalizeScopePromptKey(kvp.Key);
+                if (existingSet.Contains(canonicalPromptKey))
                 {
                     continue;
                 }
@@ -848,10 +852,21 @@ WHERE [JobId] = {jobId};
                         CreatedAt = DateTime.UtcNow,
                     }
                 );
+                existingSet.Add(canonicalPromptKey);
             }
         }
 
         private sealed record ScopeJsonExtract(string SchemaVersion, string Json);
+
+        private static string CanonicalizeScopePromptKey(string? promptKey)
+        {
+            var key = (promptKey ?? string.Empty).Trim();
+            if (key.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
+            {
+                key = key[..^4];
+            }
+            return key;
+        }
 
         private static Dictionary<string, ScopeJsonExtract> ExtractScopeJsonBySchema(string report)
         {
