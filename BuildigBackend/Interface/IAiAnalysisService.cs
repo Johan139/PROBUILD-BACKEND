@@ -1,0 +1,56 @@
+﻿using BuildigBackend.Models;
+using BuildigBackend.Models.DTO;
+
+namespace BuildigBackend.Interface
+{
+    public interface IAiAnalysisService
+    {
+        Task<string> PerformSelectedAnalysisAsync(
+            string userId,
+            AnalysisRequestDto requestDto,
+            bool generateDetailsWithAi,
+            string budgetLevel,
+            string? conversationId = null,
+            string? connectionId = null
+        );
+        Task<string> PerformComprehensiveAnalysisAsync(
+            string userId,
+            IEnumerable<string> documentUris,
+            JobModel jobDetails,
+            bool generateDetailsWithAi,
+            string userContextText,
+            string userContextFileUrl,
+            string budgetLevel,
+            string? connectionId = null,
+            string promptKey = "prompt-00-initial-analysis.txt"
+        );
+        Task<string> PerformRenovationAnalysisAsync(
+            string userId,
+            IEnumerable<string> documentUris,
+            JobModel jobDetails,
+            bool generateDetailsWithAi,
+            string userContextText,
+            string userContextFileUrl,
+            string budgetLevel,
+            string? connectionId = null,
+            string promptKey = "renovation-00-initial-analysis.txt"
+        );
+        Task<AnalysisResponseDto> PerformComparisonAnalysisAsync(
+            ComparisonAnalysisRequestDto request,
+            List<IFormFile> pdfFiles
+        );
+        Task<string> GenerateRebuttalAsync(string conversationId, string clientQuery);
+        Task<string> GenerateRevisionAsync(string conversationId, string revisionRequest);
+        Task<string> AnalyzeBidsAsync(
+            List<BidModel> bids,
+            string comparisonType,
+            TradePackage? tradePackage = null
+        );
+        Task<string> GenerateFeedbackForUnsuccessfulBidderAsync(BidModel bid, BidModel winningBid);
+        Task ParseAndSaveAiJobDetails(int jobId, string aiResponse);
+        Task<int> BackfillJobPromptResultsParsedJsonAsync(int jobId, IEnumerable<string>? promptKeys = null);
+        Task<PlanningDataDto> GetPlanningDataAsync(int jobId);
+        Task RefreshTradePackagesAsync(int jobId);
+    }
+}
+

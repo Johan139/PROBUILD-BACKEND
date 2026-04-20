@@ -1,0 +1,17 @@
+﻿namespace BuildigBackend.Interface
+{
+    public interface IConversationRepository
+    {
+        Task<string> CreateConversationAsync(string userId, string title, List<string>? promptKeys = null);
+        Task<Conversation?> GetConversationAsync(string conversationId);
+        Task<IEnumerable<Conversation>> GetByUserIdAsync(string userId);
+        Task<List<Message>> GetMessagesAsync(string conversationId, bool includeSummarized = true);
+        Task<List<Message>> GetUnsummarizedMessagesAsync(string conversationId);
+        Task AddMessageAsync(Message message);
+        Task AddMessageIfNotExistsAsync(Message message);
+        Task UpdateConversationSummaryAsync(string conversationId, string? newSummary);
+        Task MarkMessagesAsSummarizedAsync(IEnumerable<long> messageIds);
+        Task UpdateConversationTitleAsync(string conversationId, string newTitle);
+    }
+}
+

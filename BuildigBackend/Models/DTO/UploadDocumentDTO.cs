@@ -1,0 +1,17 @@
+﻿using System.ComponentModel.DataAnnotations;
+
+namespace BuildigBackend.Models.DTO
+{
+    public class UploadDocumentDTO
+    {
+        [Required]
+        public List<IFormFile> Blueprint { get; set; }
+        public int? JobId { get; set; }
+        public string? Title { get; set; }
+        public string? Description { get; set; }
+        public string? Type { get; set; }
+        public string? connectionId { get; set; }
+        public string? sessionId { get; set; }
+    }
+}
+
