@@ -306,7 +306,7 @@ builder.Services.AddHangfire(config =>
 builder.Services.AddHangfireServer(options =>
 {
   options.WorkerCount = 4;
-  options.ServerName = $"Buildig-Hangfire-Server:{Environment.MachineName}:{System.Diagnostics.Process.GetCurrentProcess().Id}";
+  options.ServerName = $"probuildai-Hangfire-Server:{Environment.MachineName}:{System.Diagnostics.Process.GetCurrentProcess().Id}";
 });
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IEmailSender, EmailSender>();
