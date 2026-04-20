@@ -1,7 +1,7 @@
-# === Build Stage ===
+﻿# === Build Stage ===
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /app
-COPY /ProbuildBackend/ ./
+COPY /BuildigBackend/ ./
 RUN dotnet restore
 RUN dotnet publish -c Release -o out
 
@@ -39,4 +39,4 @@ RUN ls -l /app/runtimes/linux-x64/native/ && \
 RUN chmod +x /app/runtimes/linux-x64/native/libpdfium.so
 
 EXPOSE 443
-ENTRYPOINT ["dotnet", "ProbuildBackend.dll"]
+ENTRYPOINT ["dotnet", "BuildigBackend.dll"]

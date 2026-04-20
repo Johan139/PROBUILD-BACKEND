@@ -1,0 +1,26 @@
+﻿namespace BuildigBackend.Models.DTO
+{
+    public class CompanyProfileDto
+    {
+        public string? Name { get; set; }
+        public string? CompanyRegNo { get; set; }
+        public string? VatNo { get; set; }
+        public List<string>? ConstructionType { get; set; }
+        public string? NrEmployees { get; set; }
+        public string? YearsOfOperation { get; set; }
+        public string? CertificationStatus { get; set; }
+        public string? CertificationDocumentPath { get; set; }
+        public string? Trade { get; set; }
+        public string? SupplierType { get; set; }
+        public List<string>? ProductsOffered { get; set; }
+        public List<string>? JobPreferences { get; set; }
+        public List<string>? DeliveryArea { get; set; }
+        public string? DeliveryTime { get; set; }
+        public string? CountryNumberCode { get; set; }
+        public string? Email { get; set; }
+        public string? PhoneNumber { get; set; }
+        public CompanyAddressDTO? BillingAddress { get; set; }
+        public CompanyAddressDTO? PhysicalAddress { get; set; }
+    }
+}
+

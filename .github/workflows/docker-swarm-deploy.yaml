@@ -1,4 +1,4 @@
-name: Build and Deploy to Azure Container Apps (Dev + Prod)
+﻿name: Build and Deploy to Azure Container Apps (Dev + Prod)
 
 on:
   push:
@@ -20,9 +20,9 @@ jobs:
       - name: Ensure PromptTemplates directory is included
         run: |
           echo "Ensuring PromptTemplates is available in build context..."
-          mkdir -p ./ProbuildBackend/PromptTemplates
-          cp -r ./PromptTemplates/* ./ProbuildBackend/PromptTemplates/ || true
-          ls -al ./ProbuildBackend/PromptTemplates || echo "No templates found"
+          mkdir -p ./BuildigBackend/PromptTemplates
+          cp -r ./PromptTemplates/* ./BuildigBackend/PromptTemplates/ || true
+          ls -al ./BuildigBackend/PromptTemplates || echo "No templates found"
 
       - name: Log in to Azure
         uses: azure/login@v1
@@ -30,7 +30,7 @@ jobs:
           creds: '{"clientId":"${{ secrets.AZURE_CLIENT_ID }}","clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}","tenantId":"${{ secrets.AZURE_TENANT_ID }}","subscriptionId":"0e6dc202-bcae-4b8b-b1de-a8f3a04341d6"}'
 
       - name: Log in to ACR
-        run: az acr login --name probuild
+        run: az acr login --name buildig
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -40,18 +40,18 @@ jobs:
         run: |
           if [ "${{ env.IS_PROD }}" = "true" ]; then
             echo "IMAGE_TAG=prod-${{ github.sha }}" >> $GITHUB_ENV
-            echo "APP_NAME=probuildai-backend" >> $GITHUB_ENV
+            echo "APP_NAME=buildigai-backend" >> $GITHUB_ENV
             echo "PORT=8080" >> $GITHUB_ENV
             echo "DOTNET_ENVIRONMENT=Production" >> $GITHUB_ENV
-            echo "DB_CONNECTION_STRING=Server=tcp:azsql-probuild.database.windows.net,1433;Initial Catalog=ProbuildQA;Persist Security Info=False;User ID=${{ secrets.SQL_USER }};Password=${{ secrets.SQL_PASSWORD }};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;" >> $GITHUB_ENV
-            echo "AZURE_BLOB_CONNECTION=DefaultEndpointsProtocol=https;AccountName=qastorageprobuildaiblob;AccountKey=${{ secrets.AZURE_BLOB_KEY }};EndpointSuffix=core.windows.net" >> $GITHUB_ENV
+            echo "DB_CONNECTION_STRING=Server=tcp:azsql-buildig.database.windows.net,1433;Initial Catalog=BuildigQA;Persist Security Info=False;User ID=${{ secrets.SQL_USER }};Password=${{ secrets.SQL_PASSWORD }};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;" >> $GITHUB_ENV
+            echo "AZURE_BLOB_CONNECTION=DefaultEndpointsProtocol=https;AccountName=qastoragebuildigaiblob;AccountKey=${{ secrets.AZURE_BLOB_KEY }};EndpointSuffix=core.windows.net" >> $GITHUB_ENV
           else
             echo "IMAGE_TAG=dev-${{ github.sha }}" >> $GITHUB_ENV
-            echo "APP_NAME=probuildai-backend-dev" >> $GITHUB_ENV
+            echo "APP_NAME=buildigai-backend-dev" >> $GITHUB_ENV
             echo "PORT=8081" >> $GITHUB_ENV
             echo "DOTNET_ENVIRONMENT=Development" >> $GITHUB_ENV
-            echo "DB_CONNECTION_STRING=Server=tcp:azsql-probuild.database.windows.net,1433;Initial Catalog=Probuild_DEV;Persist Security Info=False;User ID=${{ secrets.SQL_USER }};Password=${{ secrets.SQL_PASSWORD }};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;" >> $GITHUB_ENV
-            echo "AZURE_BLOB_CONNECTION=DefaultEndpointsProtocol=https;AccountName=qastorageprobuildaiblob;AccountKey=${{ secrets.AZURE_BLOB_KEY }};EndpointSuffix=core.windows.net" >> $GITHUB_ENV
+            echo "DB_CONNECTION_STRING=Server=tcp:azsql-buildig.database.windows.net,1433;Initial Catalog=Buildig_DEV;Persist Security Info=False;User ID=${{ secrets.SQL_USER }};Password=${{ secrets.SQL_PASSWORD }};MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;" >> $GITHUB_ENV
+            echo "AZURE_BLOB_CONNECTION=DefaultEndpointsProtocol=https;AccountName=qastoragebuildigaiblob;AccountKey=${{ secrets.AZURE_BLOB_KEY }};EndpointSuffix=core.windows.net" >> $GITHUB_ENV
           fi
 
       - name: Build and push Docker image
@@ -59,21 +59,21 @@ jobs:
         with:
           context: .
           push: true
-          tags: probuild.azurecr.io/probuildai-backend:${{ env.IMAGE_TAG }}
+          tags: buildig.azurecr.io/buildigai-backend:${{ env.IMAGE_TAG }}
 
       - name: Deploy to Azure Container Apps
         run: |
           az containerapp update \
             --name ${{ env.APP_NAME }} \
-            --resource-group rg-Probuild \
-            --image probuild.azurecr.io/probuildai-backend:${{ env.IMAGE_TAG }} \
+            --resource-group rg-Buildig \
+            --image buildig.azurecr.io/buildigai-backend:${{ env.IMAGE_TAG }} \
             --set-env-vars \
               DOTNET_ENVIRONMENT="${{ env.DOTNET_ENVIRONMENT }}" \
               ConnectionStrings__DefaultConnection="${{ env.DB_CONNECTION_STRING }}" \
               ConnectionStrings__AzureBlobConnection="${{ env.AZURE_BLOB_CONNECTION }}" \
               Jwt__Key="${{ secrets.JWT_KEY }}" \
-              Jwt__Issuer="https://probuildai-backend.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io" \
-              Jwt__Audience="https://probuildai-backend.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io" \
+              Jwt__Issuer="https://buildigai-backend.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io" \
+              Jwt__Audience="https://buildigai-backend.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io" \
               SendGrid__ApiKey="${{ secrets.SENDGRID_API_KEY }}" \
               SendGrid__SendEmail="${{ secrets.SENDGRID_EMAIL }}" \
               SendGrid__Email="${{ secrets.SENDGRID_FROM_EMAIL }}" \
@@ -89,5 +89,6 @@ jobs:
 
       - name: Check Container App Logs
         run: |
-          az containerapp logs show --name ${{ env.APP_NAME }} --resource-group rg-Probuild --follow --tail 100
+          az containerapp logs show --name ${{ env.APP_NAME }} --resource-group rg-Buildig --follow --tail 100
         continue-on-error: true
+

@@ -1,4 +1,4 @@
-trigger:
+﻿trigger:
   branches:
     include:
       - master
@@ -9,11 +9,11 @@ pool:
 
 variables:
   isProd: $[eq(variables['Build.SourceBranchName'], 'master')]
-  ACR_NAME: probuild
-  ACR_IMAGE: $[eq(variables['Build.SourceBranchName'], 'master') ? 'probuild-backend' : 'qa-probuild-backend']
-  AZURE_CONTAINER_APP: $[eq(variables['Build.SourceBranchName'], 'master') ? 'probuild-backend' : 'qa-probuild-backend']
-  AZURE_RESOURCE_GROUP: rg-Probuild
-  FRONTEND_URL: $[eq(variables['Build.SourceBranchName'], 'master') ? 'https://probuildai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io' : 'https://probuildai-backend-dev.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io']
+  ACR_NAME: buildig
+  ACR_IMAGE: $[eq(variables['Build.SourceBranchName'], 'master') ? 'buildig-backend' : 'qa-buildig-backend']
+  AZURE_CONTAINER_APP: $[eq(variables['Build.SourceBranchName'], 'master') ? 'buildig-backend' : 'qa-buildig-backend']
+  AZURE_RESOURCE_GROUP: rg-Buildig
+  FRONTEND_URL: $[eq(variables['Build.SourceBranchName'], 'master') ? 'https://buildigai-ui.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io' : 'https://buildigai-backend-dev.wonderfulgrass-0f331ae8.centralus.azurecontainerapps.io']
   DOCKER_TAG: $[eq(variables['Build.SourceBranchName'], 'master') ? 'latest' : 'qa']
   ASPNETCORE_ENVIRONMENT: $[eq(variables['Build.SourceBranchName'], 'master') ? 'Production' : 'Staging']
 
@@ -73,3 +73,4 @@ stages:
               MapsAPI="$(MapsAPI)" \
               GeminiAPIKey="$(GeminiAPIKey)" \
               ASPNETCORE_ENVIRONMENT="$(ASPNETCORE_ENVIRONMENT)"
+

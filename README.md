@@ -1,8 +1,8 @@
-# PROBUILD BACKEND
+﻿# BUILDIG BACKEND
 
 ![C#](https://img.shields.io/badge/c%23-%23239120.svg?style=for-the-badge&logo=c-sharp&logoColor=white) ![GitHub Actions](https://img.shields.io/badge/github%20actions-%232671E5.svg?style=for-the-badge&logo=githubactions&logoColor=white) ![SonarLint](https://img.shields.io/badge/SonarLint-CB2029?style=for-the-badge&logo=sonarlint&logoColor=white) ![Notepad++](https://img.shields.io/badge/Notepad++-90E59A.svg?style=for-the-badge&logo=notepad%2B%2B&logoColor=black) ![VScode](https://img.shields.io/badge/Visual_Studio_Code-0078D4?style=for-the-badge&logo=visual%20studio%20code&logoColor=white) ![.Net](https://img.shields.io/badge/.NET-5C2D91?style=for-the-badge&logo=.net&logoColor=white)
 
-ProBuild is a comprehensive construction project management API built using ASP.NET Core. It facilitates the management of construction projects by allowing users to register, log in, create projects, submit bids, and receive notifications. The system supports different user roles including Foreman, Contractor, Subcontractor,Product Owner and Client.
+BuildIG is a comprehensive construction project management API built using ASP.NET Core. It facilitates the management of construction projects by allowing users to register, log in, create projects, submit bids, and receive notifications. The system supports different user roles including Foreman, Contractor, Subcontractor,Product Owner and Client.
 
 ## TableofContents
 
@@ -60,10 +60,10 @@ Swagger for API documentation
 
 **1. Install/Restore Dependencies:**
 
-After cloning The Repository change directory to ***ProbuildBackend***.
+After cloning The Repository change directory to ***BuildigBackend***.
 
 ```bash
-cd ProbuildBackend
+cd BuildigBackend
 ```
 
 Install dotnet-ef globlally and restore all dependencies required by application.
@@ -92,13 +92,13 @@ Then export connection string to envrionment variables depending on your OS Dist
 ***Windows***
 
 ```powershell
-[Environment]::SetEnvironmentVariable("DB_CONNECTION_STRING", "Data Source=YOUR_MACHINE_NAME;Initial Catalog=ProBuildDb;Integrated Security=True;Trust Server Certificate=True;", "User")
+[Environment]::SetEnvironmentVariable("DB_CONNECTION_STRING", "Data Source=YOUR_MACHINE_NAME;Initial Catalog=BuildIGDb;Integrated Security=True;Trust Server Certificate=True;", "User")
 ```
 
 ***Unix***
 
 ```bash
-export DB_CONNECTION_STRING="Data Source=YOUR_MACHINE_NAME;Initial Catalog=ProBuildDb;Integrated Security=True;Trust Server Certificate=True;"
+export DB_CONNECTION_STRING="Data Source=YOUR_MACHINE_NAME;Initial Catalog=BuildIGDb;Integrated Security=True;Trust Server Certificate=True;"
 ```
 
 Run the following commands to apply migrations and create the database:
@@ -122,7 +122,7 @@ dotnet run
 When using Docker you will need to download images from Initd-It Service Private Registry in Github
 
 ```bash
-docker pull ghcr.io/initd-itservices/probuild-ui:latest
+docker pull ghcr.io/initd-itservices/buildig-ui:latest
 ```
 
 **NB**: You can only pull images if you actually rights to pull and push into **initd-It Service** Organization in Github meaning you should hava [developer token](https://github.com/settings/tokens) generated
@@ -131,13 +131,13 @@ after whhich set the **DB_CONNECTION_STRING** url as a system variables to your 
 
 ***Windows***
 ```powershell
-[Environment]::SetEnvironmentVariable("DB_CONNECTION_STRING", "Data Source=YOUR_MACHINE_NAME;Initial Catalog=ProBuildDb;Integrated Security=True;Trust Server Certificate=True;", "User")
+[Environment]::SetEnvironmentVariable("DB_CONNECTION_STRING", "Data Source=YOUR_MACHINE_NAME;Initial Catalog=BuildIGDb;Integrated Security=True;Trust Server Certificate=True;", "User")
 ```
 
 ***Unix***
 
 ```bash
-export DB_CONNECTION_STRING="Data Source=YOUR_MACHINE_NAME;Initial Catalog=ProBuildDb;Integrated Security=True;Trust Server Certificate=True;"
+export DB_CONNECTION_STRING="Data Source=YOUR_MACHINE_NAME;Initial Catalog=BuildIGDb;Integrated Security=True;Trust Server Certificate=True;"
 ```
 
 Then lastly run the docker compose file on the root of the project.
@@ -361,3 +361,4 @@ We welcome contributions! Please fork the repository and submit pull requests fo
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](https://) file for details.
+

@@ -1,8 +1,8 @@
-version: '3.8'
+﻿version: '3.8'
 services:
-  probuild-ai-backend:
-    image: ghcr.io/initd-itservices/probuild-backend:latest  # Replace with your image name
-    container_name: probuild-ai-backend
+  buildig-ai-backend:
+    image: ghcr.io/initd-itservices/buildig-backend:latest  # Replace with your image name
+    container_name: buildig-ai-backend
     environment:
       - DB_CONNECTION_STRING=${DB_CONNECTION_STRING}
     ports:
@@ -12,3 +12,4 @@ services:
 networks:
   mssql_network:
     driver: bridge
+
