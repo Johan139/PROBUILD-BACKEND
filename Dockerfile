@@ -2,8 +2,8 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /app
 COPY /BuildigBackend/ ./
-RUN dotnet restore
-RUN dotnet publish -c Release -o out
+RUN dotnet restore "BuildigBackend.csproj"
+RUN dotnet publish "BuildigBackend.csproj" -c Release -o out --no-restore
 
 # === Runtime Stage ===
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
@@ -22,7 +22,7 @@ RUN apt-get update && \
     ln -s /usr/lib/libgdiplus.so /usr/lib/libgdiplus.so.0 || true
 
 # Set environment for Pdfium native libs
-ENV LD_LIBRARY_PATH=/app/runtimes/linux-x64/native:$LD_LIBRARY_PATH
+ENV LD_LIBRARY_PATH=/app/runtimes/linux-x64/native
 
 # Copy the published output
 COPY --from=build /app/out ./
