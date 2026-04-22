@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -37,6 +37,10 @@ namespace BuildigBackend.Services
         private const decimal DirectTotalsMismatchRejectRelativeTolerance = 0.01m;
         private const string RejectionReasonPrefix = "__SCOPE_REJECTION_REASON__:";
         private static readonly ConcurrentDictionary<int, SemaphoreSlim> _analysisLocks = new();
+        private static readonly Lazy<IReadOnlyDictionary<string, string>> _countryNameToCurrencyMap =
+            new(BuildCountryNameToCurrencyMap);
+        private static readonly Lazy<IReadOnlyDictionary<string, string>> _countryCode3ToCurrencyMap =
+            new(BuildCountryCode3ToCurrencyMap);
         private static int _jobPromptResultsTableDiagnosticsLogged = 0;
         private static int _jobPromptResultsTableEnsured = 0;
         private static readonly string _instanceId = Guid.NewGuid().ToString("N");
@@ -441,8 +445,9 @@ namespace BuildigBackend.Services
                     $"{budgetLevel}-budget-prompt.txt"
                 );
 
+                var initialLocalizationGuard = BuildInitialLocalizationGuard(jobDetails);
                 var initialUserPrompt =
-                    $"{budgetPrompt}\n\n{initialAnalysisPrompt}\n\n{userContext}\n\nHere are the project details:\n"
+                    $"{budgetPrompt}\n\n{initialAnalysisPrompt}\n\n{initialLocalizationGuard}\n\n{userContext}\n\nHere are the project details:\n"
                     + $"Project Name: {jobDetails.ProjectName}\n"
                     + $"Job Type: {jobDetails.JobType}\n"
                     + $"Address: {jobDetails.Address}\n"
@@ -632,8 +637,9 @@ namespace BuildigBackend.Services
                     $"{budgetLevel}-budget-prompt.txt"
                 );
 
+                var initialLocalizationGuard = BuildInitialLocalizationGuard(jobDetails);
                 var initialUserPrompt =
-                    $"{budgetPrompt}\n\n{initialAnalysisPrompt}\n\n{userContext}";
+                    $"{budgetPrompt}\n\n{initialAnalysisPrompt}\n\n{initialLocalizationGuard}\n\n{userContext}";
 
                 _logger.LogInformation(
                     "Calling StartMultimodalConversationAsync for renovation analysis."
@@ -2378,6 +2384,62 @@ WHERE TABLE_NAME = 'JobPromptResults';";
                     return true;
                 }
 
+                extractedJson = await HarmonizeLocalizationJsonAsync(
+                    jobId,
+                    normalizedPromptKey,
+                    extractedJson
+                );
+
+                if (
+                    !string.Equals(
+                        normalizedPromptKey,
+                        "prompt-00-initial-analysis",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    var (isLocalizationValid, localizationValidationError) =
+                        await ValidateDownstreamLocalizationLockAsync(
+                            jobId,
+                            normalizedPromptKey,
+                            extractedJson
+                        );
+                    if (isLocalizationValid)
+                    {
+                        goto LocalizationValidated;
+                    }
+
+                    _logger.LogWarning(
+                        "PersistJsonFirstPromptResult: localization lock failed for jobId={JobId} prompt={PromptName}. Reason={Reason}",
+                        jobId,
+                        normalizedPromptKey,
+                        localizationValidationError
+                    );
+                    _context.JobPromptResults.Add(
+                        new Models.JobPromptResult
+                        {
+                            JobId = jobId,
+                            PromptKey = normalizedPromptKey,
+                            SchemaVersion = schemaVersion,
+                            RawResponse = BuildRejectedRawResponse(
+                                response,
+                                localizationValidationError
+                            ),
+                            ParsedJson = null,
+                            CreatedAt = DateTime.UtcNow,
+                        }
+                    );
+                    var rows = await _context.SaveChangesAsync();
+                    _logger.LogInformation(
+                        "PersistJsonFirstPromptResult: SaveChanges wrote {Rows} row(s) for rejected localization mismatch jobId={JobId} promptKey={PromptKey}",
+                        rows,
+                        jobId,
+                        normalizedPromptKey
+                    );
+                    return true;
+                }
+
+            LocalizationValidated:
                 var appliedPrompt25Anchors = false;
                 if (
                     string.Equals(
@@ -2578,6 +2640,419 @@ WHERE TABLE_NAME = 'JobPromptResults';";
                 );
                 return false;
             }
+        }
+
+        private async Task<string> HarmonizeLocalizationJsonAsync(
+            int jobId,
+            string normalizedPromptKey,
+            string extractedJson
+        )
+        {
+            try
+            {
+                var node = JsonNode.Parse(extractedJson) as JsonObject;
+                if (node == null)
+                {
+                    return extractedJson;
+                }
+
+                var initialAnchorJson = await _context
+                    .JobPromptResults.AsNoTracking()
+                    .Where(
+                        r =>
+                            r.JobId == jobId
+                            && (
+                                r.PromptKey == "prompt-00-initial-analysis"
+                                || r.PromptKey == "prompt-00-initial-analysis.txt"
+                            )
+                            && r.ParsedJson != null
+                    )
+                    .OrderByDescending(r => r.CreatedAt)
+                    .Select(r => r.ParsedJson)
+                    .FirstOrDefaultAsync();
+
+                var anchorLocation = TryReadStringFromJson(initialAnchorJson, "sourceLocation");
+                var anchorCurrency = TryReadStringFromJson(initialAnchorJson, "currencyCode");
+                var anchorUnits = TryReadStringFromJson(initialAnchorJson, "unitsSystem");
+                var isInitialPrompt = string.Equals(
+                    normalizedPromptKey,
+                    "prompt-00-initial-analysis",
+                    StringComparison.OrdinalIgnoreCase
+                );
+
+                var currentLocation = TryReadStringCaseInsensitive(node, "sourceLocation");
+                var currentCurrency = TryReadStringCaseInsensitive(node, "currencyCode");
+                var currentUnits = TryReadStringCaseInsensitive(node, "unitsSystem");
+
+                if (string.IsNullOrWhiteSpace(currentLocation))
+                {
+                    currentLocation = !string.IsNullOrWhiteSpace(anchorLocation)
+                        ? anchorLocation
+                        : null;
+
+                    // Only Phase 1 can fallback to project address input.
+                    // Downstream prompts must inherit Source for Location from Phase 1 anchor only.
+                    if (string.IsNullOrWhiteSpace(currentLocation) && isInitialPrompt)
+                    {
+                        currentLocation = await _context
+                            .Jobs.AsNoTracking()
+                            .Where(j => j.Id == jobId)
+                            .Select(j => j.Address)
+                            .FirstOrDefaultAsync();
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(currentLocation))
+                    {
+                        node["sourceLocation"] = currentLocation;
+                    }
+                }
+
+                if (!isInitialPrompt)
+                {
+                    if (!string.IsNullOrWhiteSpace(anchorLocation))
+                    {
+                        node["sourceLocation"] = anchorLocation;
+                        currentLocation = anchorLocation;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(anchorCurrency))
+                    {
+                        node["currencyCode"] = anchorCurrency.ToUpperInvariant();
+                        currentCurrency = anchorCurrency;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(anchorUnits))
+                    {
+                        node["unitsSystem"] = anchorUnits.ToLowerInvariant();
+                        currentUnits = anchorUnits;
+                    }
+                }
+
+                // Generic location->currency fail-safe for all prompts.
+                var locationForCurrency = currentLocation ?? anchorLocation;
+                if (!string.IsNullOrWhiteSpace(locationForCurrency))
+                {
+                    var resolvedCurrency = ResolveCurrencyCodeFromLocation(locationForCurrency);
+                    if (!string.IsNullOrWhiteSpace(resolvedCurrency))
+                    {
+                        if (
+                            string.IsNullOrWhiteSpace(currentCurrency)
+                            || !string.Equals(
+                                currentCurrency,
+                                resolvedCurrency,
+                                StringComparison.OrdinalIgnoreCase
+                            )
+                        )
+                        {
+                            node["currencyCode"] = resolvedCurrency;
+                        }
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(currentUnits))
+                {
+                    node["unitsSystem"] = currentUnits.ToLowerInvariant();
+                }
+
+                return node.ToJsonString();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Localization harmonization skipped for jobId={JobId} promptKey={PromptKey}",
+                    jobId,
+                    normalizedPromptKey
+                );
+                return extractedJson;
+            }
+        }
+
+        private async Task<(bool isValid, string error)> ValidateDownstreamLocalizationLockAsync(
+            int jobId,
+            string normalizedPromptKey,
+            string extractedJson
+        )
+        {
+            try
+            {
+                var anchorJson = await _context
+                    .JobPromptResults.AsNoTracking()
+                    .Where(
+                        r =>
+                            r.JobId == jobId
+                            && (
+                                r.PromptKey == "prompt-00-initial-analysis"
+                                || r.PromptKey == "prompt-00-initial-analysis.txt"
+                            )
+                            && r.ParsedJson != null
+                    )
+                    .OrderByDescending(r => r.CreatedAt)
+                    .Select(r => r.ParsedJson)
+                    .FirstOrDefaultAsync();
+
+                if (string.IsNullOrWhiteSpace(anchorJson))
+                {
+                    return (
+                        false,
+                        "Localization lock failed: no accepted Phase 1 anchor found for this job."
+                    );
+                }
+
+                var anchorLocation = TryReadStringFromJson(anchorJson, "sourceLocation");
+                var anchorCurrency = TryReadStringFromJson(anchorJson, "currencyCode");
+                var anchorUnits = TryReadStringFromJson(anchorJson, "unitsSystem");
+
+                var node = JsonNode.Parse(extractedJson) as JsonObject;
+                if (node == null)
+                {
+                    return (
+                        false,
+                        "Localization lock failed: downstream JSON could not be parsed for validation."
+                    );
+                }
+
+                var currentLocation = TryReadStringCaseInsensitive(node, "sourceLocation");
+                var currentCurrency = TryReadStringCaseInsensitive(node, "currencyCode");
+                var currentUnits = TryReadStringCaseInsensitive(node, "unitsSystem");
+
+                if (!string.IsNullOrWhiteSpace(anchorLocation))
+                {
+                    if (string.IsNullOrWhiteSpace(currentLocation))
+                    {
+                        return (
+                            false,
+                            "Localization lock failed: downstream output missing sourceLocation."
+                        );
+                    }
+
+                    if (
+                        !string.Equals(
+                            anchorLocation.Trim(),
+                            currentLocation.Trim(),
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
+                    {
+                        return (
+                            false,
+                            $"Localization lock failed: sourceLocation mismatch. expected='{anchorLocation}' actual='{currentLocation}'."
+                        );
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(anchorCurrency))
+                {
+                    if (string.IsNullOrWhiteSpace(currentCurrency))
+                    {
+                        return (
+                            false,
+                            "Localization lock failed: downstream output missing currencyCode."
+                        );
+                    }
+
+                    if (
+                        !string.Equals(
+                            anchorCurrency.Trim(),
+                            currentCurrency.Trim(),
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
+                    {
+                        return (
+                            false,
+                            $"Localization lock failed: currencyCode mismatch. expected='{anchorCurrency}' actual='{currentCurrency}'."
+                        );
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(anchorUnits))
+                {
+                    if (string.IsNullOrWhiteSpace(currentUnits))
+                    {
+                        return (
+                            false,
+                            "Localization lock failed: downstream output missing unitsSystem."
+                        );
+                    }
+
+                    if (
+                        !string.Equals(
+                            anchorUnits.Trim(),
+                            currentUnits.Trim(),
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
+                    {
+                        return (
+                            false,
+                            $"Localization lock failed: unitsSystem mismatch. expected='{anchorUnits}' actual='{currentUnits}'."
+                        );
+                    }
+                }
+
+                return (true, string.Empty);
+            }
+            catch (Exception ex)
+            {
+                return (
+                    false,
+                    $"Localization lock validation threw an exception for prompt '{normalizedPromptKey}': {ex.Message}"
+                );
+            }
+        }
+
+        private static string? ResolveCurrencyCodeFromLocation(string sourceLocation)
+        {
+            if (string.IsNullOrWhiteSpace(sourceLocation))
+            {
+                return null;
+            }
+
+            var text = sourceLocation.Trim();
+            var lower = text.ToLowerInvariant();
+
+            // Common abbreviations not reliably present in region names.
+            if (Regex.IsMatch(lower, @"\buk\b|\bunited kingdom\b|\bgreat britain\b"))
+            {
+                return "GBP";
+            }
+            if (Regex.IsMatch(lower, @"\busa\b|\bu\.s\.a\b|\bunited states\b"))
+            {
+                return "USD";
+            }
+            if (Regex.IsMatch(lower, @"\buae\b|\bunited arab emirates\b"))
+            {
+                return "AED";
+            }
+
+            foreach (var kv in _countryNameToCurrencyMap.Value.OrderByDescending(k => k.Key.Length))
+            {
+                if (lower.Contains(kv.Key))
+                {
+                    return kv.Value;
+                }
+            }
+
+            var tokens = Regex
+                .Split(lower, @"[^a-z0-9]+")
+                .Where(t => !string.IsNullOrWhiteSpace(t))
+                .ToList();
+
+            foreach (var token in tokens)
+            {
+                if (_countryCode3ToCurrencyMap.Value.TryGetValue(token.ToUpperInvariant(), out var cur))
+                {
+                    return cur;
+                }
+            }
+
+            return null;
+        }
+
+        private static IReadOnlyDictionary<string, string> BuildCountryNameToCurrencyMap()
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var culture in CultureInfo.GetCultures(CultureTypes.SpecificCultures))
+            {
+                try
+                {
+                    var region = new RegionInfo(culture.Name);
+                    var currency = region.ISOCurrencySymbol?.Trim().ToUpperInvariant();
+                    if (string.IsNullOrWhiteSpace(currency))
+                    {
+                        continue;
+                    }
+
+                    var english = region.EnglishName?.Trim().ToLowerInvariant();
+                    if (!string.IsNullOrWhiteSpace(english))
+                    {
+                        map[english] = currency;
+                    }
+
+                    var native = region.NativeName?.Trim().ToLowerInvariant();
+                    if (!string.IsNullOrWhiteSpace(native))
+                    {
+                        map[native] = currency;
+                    }
+                }
+                catch
+                {
+                    // Ignore invalid cultures.
+                }
+            }
+
+            return map;
+        }
+
+        private static IReadOnlyDictionary<string, string> BuildCountryCode3ToCurrencyMap()
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var culture in CultureInfo.GetCultures(CultureTypes.SpecificCultures))
+            {
+                try
+                {
+                    var region = new RegionInfo(culture.Name);
+                    var iso3 = region.ThreeLetterISORegionName?.Trim().ToUpperInvariant();
+                    var currency = region.ISOCurrencySymbol?.Trim().ToUpperInvariant();
+                    if (string.IsNullOrWhiteSpace(iso3) || string.IsNullOrWhiteSpace(currency))
+                    {
+                        continue;
+                    }
+
+                    map[iso3] = currency;
+                }
+                catch
+                {
+                    // Ignore invalid cultures.
+                }
+            }
+
+            return map;
+        }
+
+        private static string? TryReadStringFromJson(string? json, string propertyName)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return null;
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                return TryGetPropertyCaseInsensitive(doc.RootElement, propertyName, out var value)
+                    && value.ValueKind == JsonValueKind.String
+                    ? value.GetString()
+                    : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string? TryReadStringCaseInsensitive(JsonObject node, string propertyName)
+        {
+            var match = node.FirstOrDefault(kvp =>
+                string.Equals(kvp.Key, propertyName, StringComparison.OrdinalIgnoreCase)
+            );
+            if (string.IsNullOrWhiteSpace(match.Key))
+            {
+                return null;
+            }
+
+            if (match.Value is JsonValue jv)
+            {
+                if (jv.TryGetValue<string>(out var stringValue))
+                {
+                    return stringValue;
+                }
+
+                return jv.ToString();
+            }
+
+            return match.Value?.ToString();
         }
 
         private async Task EnsureJobPromptResultsTableAsync()
@@ -4674,6 +5149,7 @@ END";
                 .Select(r => r.ParsedJson)
                 .FirstOrDefaultAsync();
 
+            string? sourceLocation = null;
             string? currencyCode = null;
             string? unitsSystem = null;
             string? projectStartDate = null;
@@ -4757,6 +5233,13 @@ END";
                 {
                     using var iDoc = JsonDocument.Parse(initialRow);
                     if (
+                        TryGetPropertyCaseInsensitive(iDoc.RootElement, "sourceLocation", out var sl)
+                        && sl.ValueKind == JsonValueKind.String
+                    )
+                    {
+                        sourceLocation = sl.GetString();
+                    }
+                    if (
                         string.IsNullOrWhiteSpace(currencyCode)
                         && TryGetPropertyCaseInsensitive(iDoc.RootElement, "currencyCode", out var cc)
                     )
@@ -4806,6 +5289,11 @@ END";
                 }
             }
 
+            if (!string.IsNullOrWhiteSpace(sourceLocation))
+            {
+                anchors.Add($@"- sourceLocation = ""{sourceLocation}""");
+            }
+
             if (anchors.Count == 0)
             {
                 return null;
@@ -4819,13 +5307,34 @@ END";
   - `data.totalMaterialCost + data.totalLaborCost` MUST equal `prompt04to19.directSubtotal`."
                 : string.Empty;
 
+            var localizationContract = @"
+LOCALIZATION LOCK (MANDATORY):
+- Reuse Source for Location, currencyCode, and unitsSystem from prior validated outputs exactly as established in Phase 1.
+- If those values are present in anchors, they take precedence over narrative text in the same or prior responses.
+- Do NOT switch region, currency, or units mid-analysis.
+- If a mismatch is detected, keep anchored values and add a clear mismatch note.";
+
             return $@"CROSS-PHASE VALUE LOCK (MANDATORY):
 - This prompt is in Estimating/Downstream flow. Reuse these anchor values EXACTLY from Scope Review.
 - Do NOT recalculate, reinterpret, round to a different value, or switch units/currency for these anchors.
 - If a required output cannot match these anchors, keep your best estimate for other fields but add a clear mismatch note in any review/flags section.
 {prompt25HardLock}
+{localizationContract}
 Anchors:
 {string.Join("\n", anchors)}";
+        }
+
+        private string BuildInitialLocalizationGuard(JobModel jobDetails)
+        {
+            var sourceLocation = string.IsNullOrWhiteSpace(jobDetails.Address)
+                ? "unknown"
+                : jobDetails.Address;
+            return $@"LOCALIZATION LOCK (MANDATORY):
+- Provided external location hint: ""{sourceLocation}"".
+- First, extract Source for Location from blueprint/document content.
+- Use external/project address only if blueprint/document address is missing or unusable.
+- Output `sourceLocation`, `currencyCode`, and `unitsSystem` in the JSON block and keep them internally locked for all following phases.
+- Never apply standards, agencies, or pricing references from a different location than the locked `sourceLocation`.";
         }
 
         private async Task<(bool hasTotals, decimal materialTotal, decimal laborTotal, decimal directTotal)> GetPrompt04To19DirectTotalsAsync(
