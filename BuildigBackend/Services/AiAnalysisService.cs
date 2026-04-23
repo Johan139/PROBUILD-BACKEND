@@ -3463,6 +3463,38 @@ END";
                         json,
                         new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
                     );
+                    string? extractedSourceLocation = null;
+                    string? extractedUnitsSystem = null;
+                    try
+                    {
+                        using var jsonDoc = JsonDocument.Parse(json);
+                        if (
+                            TryGetPropertyCaseInsensitive(
+                                jsonDoc.RootElement,
+                                "sourceLocation",
+                                out var sourceLocationElement
+                            )
+                            && sourceLocationElement.ValueKind == JsonValueKind.String
+                        )
+                        {
+                            extractedSourceLocation = sourceLocationElement.GetString();
+                        }
+                        if (
+                            TryGetPropertyCaseInsensitive(
+                                jsonDoc.RootElement,
+                                "unitsSystem",
+                                out var unitsSystemElement
+                            )
+                            && unitsSystemElement.ValueKind == JsonValueKind.String
+                        )
+                        {
+                            extractedUnitsSystem = unitsSystemElement.GetString();
+                        }
+                    }
+                    catch
+                    {
+                        // Best effort only; keep existing behavior if sourceLocation parsing fails.
+                    }
 
                     var jobToUpdate = await _context.Jobs.FindAsync(jobId);
                     if (jobToUpdate != null && extractedData != null)
@@ -3480,10 +3512,40 @@ END";
                             ?? jobToUpdate.ElectricalSupplyNeeds;
                         jobToUpdate.Stories =
                             extractedData.Stories > 0 ? extractedData.Stories : jobToUpdate.Stories;
-                        jobToUpdate.BuildingSize =
-                            extractedData.BuildingSize > 0
-                                ? extractedData.BuildingSize
-                                : jobToUpdate.BuildingSize;
+                        if (extractedData.BuildingSize > 0)
+                        {
+                            var units = (extractedUnitsSystem ?? string.Empty)
+                                .Trim()
+                                .ToLowerInvariant();
+                            // Job.BuildingSize is consumed in multiple legacy UI paths as sq ft.
+                            // Normalize metric phase outputs to sq ft to keep header/flow consistent.
+                            var normalizedSizeSqFt = units == "metric"
+                                ? extractedData.BuildingSize * 10.7639
+                                : extractedData.BuildingSize;
+                            jobToUpdate.BuildingSize = Math.Round(normalizedSizeSqFt, 2);
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(extractedSourceLocation))
+                        {
+                            jobToUpdate.Address = extractedSourceLocation;
+
+                            var jobAddress = await _context.JobAddresses.FirstOrDefaultAsync(a =>
+                                a.JobId == jobId
+                            );
+                            if (jobAddress == null)
+                            {
+                                jobAddress = new AddressModel
+                                {
+                                    JobId = jobId,
+                                    CreatedAt = DateTime.UtcNow,
+                                };
+                                _context.JobAddresses.Add(jobAddress);
+                            }
+
+                            jobAddress.FormattedAddress = extractedSourceLocation;
+                            jobAddress.UpdatedAt = DateTime.UtcNow;
+                        }
+
                         await _context.SaveChangesAsync();
                     }
                 }
