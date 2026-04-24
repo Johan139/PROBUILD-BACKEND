@@ -1,7 +1,0 @@
-namespace ProbuildBackend.Interface
-{
-    public interface IPromptManagerService
-    {
-        Task<string> GetPromptAsync(string userType, string fileName);
-    }
-}
