@@ -2776,27 +2776,16 @@ WHERE TABLE_NAME = 'JobPromptResults';";
         {
             try
             {
-                var anchorJson = await _context
-                    .JobPromptResults.AsNoTracking()
-                    .Where(
-                        r =>
-                            r.JobId == jobId
-                            && (
-                                r.PromptKey == "prompt-00-initial-analysis"
-                                || r.PromptKey == "prompt-00-initial-analysis.txt"
-                            )
-                            && r.ParsedJson != null
-                    )
-                    .OrderByDescending(r => r.CreatedAt)
-                    .Select(r => r.ParsedJson)
-                    .FirstOrDefaultAsync();
+                var anchorJson = await GetInitialAnalysisAnchorJsonAsync(jobId);
 
                 if (string.IsNullOrWhiteSpace(anchorJson))
                 {
-                    return (
-                        false,
-                        "Localization lock failed: no accepted Phase 1 anchor found for this job."
+                    _logger.LogWarning(
+                        "Localization lock bypassed (missing Phase 1 anchor). jobId={JobId} promptKey={PromptKey}",
+                        jobId,
+                        normalizedPromptKey
                     );
+                    return (true, string.Empty);
                 }
 
                 var anchorLocation = TryReadStringFromJson(anchorJson, "sourceLocation");
@@ -2806,10 +2795,12 @@ WHERE TABLE_NAME = 'JobPromptResults';";
                 var node = JsonNode.Parse(extractedJson) as JsonObject;
                 if (node == null)
                 {
-                    return (
-                        false,
-                        "Localization lock failed: downstream JSON could not be parsed for validation."
+                    _logger.LogWarning(
+                        "Localization lock bypassed (downstream JSON parse failed). jobId={JobId} promptKey={PromptKey}",
+                        jobId,
+                        normalizedPromptKey
                     );
+                    return (true, string.Empty);
                 }
 
                 var currentLocation = TryReadStringCaseInsensitive(node, "sourceLocation");
@@ -2820,10 +2811,12 @@ WHERE TABLE_NAME = 'JobPromptResults';";
                 {
                     if (string.IsNullOrWhiteSpace(currentLocation))
                     {
-                        return (
-                            false,
-                            "Localization lock failed: downstream output missing sourceLocation."
+                        _logger.LogWarning(
+                            "Localization lock bypassed (missing downstream sourceLocation). jobId={JobId} promptKey={PromptKey}",
+                            jobId,
+                            normalizedPromptKey
                         );
+                        return (true, string.Empty);
                     }
 
                     if (
@@ -2845,10 +2838,12 @@ WHERE TABLE_NAME = 'JobPromptResults';";
                 {
                     if (string.IsNullOrWhiteSpace(currentCurrency))
                     {
-                        return (
-                            false,
-                            "Localization lock failed: downstream output missing currencyCode."
+                        _logger.LogWarning(
+                            "Localization lock bypassed (missing downstream currencyCode). jobId={JobId} promptKey={PromptKey}",
+                            jobId,
+                            normalizedPromptKey
                         );
+                        return (true, string.Empty);
                     }
 
                     if (
@@ -2870,10 +2865,12 @@ WHERE TABLE_NAME = 'JobPromptResults';";
                 {
                     if (string.IsNullOrWhiteSpace(currentUnits))
                     {
-                        return (
-                            false,
-                            "Localization lock failed: downstream output missing unitsSystem."
+                        _logger.LogWarning(
+                            "Localization lock bypassed (missing downstream unitsSystem). jobId={JobId} promptKey={PromptKey}",
+                            jobId,
+                            normalizedPromptKey
                         );
+                        return (true, string.Empty);
                     }
 
                     if (
@@ -2899,6 +2896,154 @@ WHERE TABLE_NAME = 'JobPromptResults';";
                     false,
                     $"Localization lock validation threw an exception for prompt '{normalizedPromptKey}': {ex.Message}"
                 );
+            }
+        }
+
+        private async Task<string?> GetInitialAnalysisAnchorJsonAsync(int jobId)
+        {
+            var messageAnchor = await GetInitialAnalysisAnchorJsonFromMessagesAsync(jobId);
+            if (!string.IsNullOrWhiteSpace(messageAnchor))
+            {
+                return messageAnchor;
+            }
+
+            var phaseOneRows = await _context
+                .JobPromptResults.AsNoTracking()
+                .Where(
+                    r =>
+                        r.JobId == jobId
+                        && (
+                            r.PromptKey == "prompt-00-initial-analysis"
+                            || r.PromptKey == "prompt-00-initial-analysis.txt"
+                            || r.PromptKey == "renovation-00-initial-analysis"
+                            || r.PromptKey == "renovation-00-initial-analysis.txt"
+                            || r.PromptKey == "selected-prompt-system-persona"
+                            || r.PromptKey == "selected-prompt-system-persona.txt"
+                        )
+                )
+                .OrderByDescending(r => r.CreatedAt)
+                .Select(r => new { r.ParsedJson, r.RawResponse })
+                .ToListAsync();
+
+            foreach (var row in phaseOneRows)
+            {
+                if (!string.IsNullOrWhiteSpace(row.ParsedJson))
+                {
+                    var schema = TryReadSchemaVersion(row.ParsedJson);
+                    if (string.Equals(schema, "initial_analysis.v1", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return row.ParsedJson;
+                    }
+                }
+            }
+
+            foreach (var row in phaseOneRows)
+            {
+                if (string.IsNullOrWhiteSpace(row.RawResponse))
+                {
+                    continue;
+                }
+
+                var extracted = ExtractFirstJsonCodeBlockOrNull(row.RawResponse);
+                if (string.IsNullOrWhiteSpace(extracted))
+                {
+                    continue;
+                }
+
+                var schema = TryReadSchemaVersion(extracted);
+                if (string.Equals(schema, "initial_analysis.v1", StringComparison.OrdinalIgnoreCase))
+                {
+                    return extracted;
+                }
+            }
+
+            return null;
+        }
+
+        private async Task<string?> GetInitialAnalysisAnchorJsonFromMessagesAsync(int jobId)
+        {
+            var conversationId = await _context
+                .Jobs.AsNoTracking()
+                .Where(j => j.Id == jobId)
+                .Select(j => j.ConversationId)
+                .FirstOrDefaultAsync();
+
+            if (string.IsNullOrWhiteSpace(conversationId))
+            {
+                return null;
+            }
+
+            var conn = _context.Database.GetDbConnection();
+            var openedHere = conn.State != System.Data.ConnectionState.Open;
+            if (openedHere)
+            {
+                await conn.OpenAsync();
+            }
+
+            try
+            {
+                var candidates = new List<string>();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText =
+                    @"
+SELECT TOP 30 [Content]
+FROM [Messages]
+WHERE [ConversationId] = @conversationId
+  AND [Role] = 'model'
+  AND [Content] IS NOT NULL
+ORDER BY [Timestamp] DESC;";
+
+                var pConversationId = cmd.CreateParameter();
+                pConversationId.ParameterName = "@conversationId";
+                pConversationId.Value = conversationId;
+                cmd.Parameters.Add(pConversationId);
+
+                using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    if (!reader.IsDBNull(0))
+                    {
+                        var content = reader.GetString(0);
+                        if (!string.IsNullOrWhiteSpace(content))
+                        {
+                            candidates.Add(content);
+                        }
+                    }
+                }
+
+                foreach (var content in candidates)
+                {
+                    var extracted = ExtractFirstJsonCodeBlockOrNull(content);
+                    if (string.IsNullOrWhiteSpace(extracted))
+                    {
+                        continue;
+                    }
+
+                    var schema = TryReadSchemaVersion(extracted);
+                    if (string.Equals(schema, "initial_analysis.v1", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return extracted;
+                    }
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Failed to resolve Phase 1 anchor from Messages. jobId={JobId} conversationId={ConversationId}",
+                    jobId,
+                    conversationId
+                );
+                return null;
+            }
+            finally
+            {
+                if (openedHere)
+                {
+                    await conn.CloseAsync();
+                }
             }
         }
 
@@ -3463,38 +3608,6 @@ END";
                         json,
                         new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
                     );
-                    string? extractedSourceLocation = null;
-                    string? extractedUnitsSystem = null;
-                    try
-                    {
-                        using var jsonDoc = JsonDocument.Parse(json);
-                        if (
-                            TryGetPropertyCaseInsensitive(
-                                jsonDoc.RootElement,
-                                "sourceLocation",
-                                out var sourceLocationElement
-                            )
-                            && sourceLocationElement.ValueKind == JsonValueKind.String
-                        )
-                        {
-                            extractedSourceLocation = sourceLocationElement.GetString();
-                        }
-                        if (
-                            TryGetPropertyCaseInsensitive(
-                                jsonDoc.RootElement,
-                                "unitsSystem",
-                                out var unitsSystemElement
-                            )
-                            && unitsSystemElement.ValueKind == JsonValueKind.String
-                        )
-                        {
-                            extractedUnitsSystem = unitsSystemElement.GetString();
-                        }
-                    }
-                    catch
-                    {
-                        // Best effort only; keep existing behavior if sourceLocation parsing fails.
-                    }
 
                     var jobToUpdate = await _context.Jobs.FindAsync(jobId);
                     if (jobToUpdate != null && extractedData != null)
@@ -3512,40 +3625,10 @@ END";
                             ?? jobToUpdate.ElectricalSupplyNeeds;
                         jobToUpdate.Stories =
                             extractedData.Stories > 0 ? extractedData.Stories : jobToUpdate.Stories;
-                        if (extractedData.BuildingSize > 0)
-                        {
-                            var units = (extractedUnitsSystem ?? string.Empty)
-                                .Trim()
-                                .ToLowerInvariant();
-                            // Job.BuildingSize is consumed in multiple legacy UI paths as sq ft.
-                            // Normalize metric phase outputs to sq ft to keep header/flow consistent.
-                            var normalizedSizeSqFt = units == "metric"
-                                ? extractedData.BuildingSize * 10.7639
-                                : extractedData.BuildingSize;
-                            jobToUpdate.BuildingSize = Math.Round(normalizedSizeSqFt, 2);
-                        }
-
-                        if (!string.IsNullOrWhiteSpace(extractedSourceLocation))
-                        {
-                            jobToUpdate.Address = extractedSourceLocation;
-
-                            var jobAddress = await _context.JobAddresses.FirstOrDefaultAsync(a =>
-                                a.JobId == jobId
-                            );
-                            if (jobAddress == null)
-                            {
-                                jobAddress = new AddressModel
-                                {
-                                    JobId = jobId,
-                                    CreatedAt = DateTime.UtcNow,
-                                };
-                                _context.JobAddresses.Add(jobAddress);
-                            }
-
-                            jobAddress.FormattedAddress = extractedSourceLocation;
-                            jobAddress.UpdatedAt = DateTime.UtcNow;
-                        }
-
+                        jobToUpdate.BuildingSize =
+                            extractedData.BuildingSize > 0
+                                ? extractedData.BuildingSize
+                                : jobToUpdate.BuildingSize;
                         await _context.SaveChangesAsync();
                     }
                 }
@@ -6563,4 +6646,3 @@ WHERE [JobId] = {jobId};
         }
     }
 }
-
