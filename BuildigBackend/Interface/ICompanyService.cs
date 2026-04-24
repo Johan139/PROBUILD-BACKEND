@@ -6,9 +6,7 @@ namespace BuildigBackend.Interface
 {
     public interface ICompanyService
     {
-        Task<CompaniesModel> SaveCompanyProfileAsync(
-            string ownerUserId,
-            CompanyProfileDto dto);
+        Task<CompaniesModel> SaveCompanyProfileAsync(string ownerUserId, CompanyProfileDto dto);
         Task<CompanyProfileResponseDto> GetProfileCompanyByUserId(string UserId);
     }
 }

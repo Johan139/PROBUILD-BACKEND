@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using BuildigBackend.Models;
 
+
 public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
 {
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
@@ -47,6 +48,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<QuoteVersionModel> QuoteVersions { get; set; }
     public DbSet<RefreshToken> RefreshTokens { get; set; }
     public DbSet<TeamMember> TeamMembers { get; set; }
+    public DbSet<TeamMemberCertificationDocument> TeamMemberCertificationDocuments { get; set; }
     public DbSet<Permission> Permissions { get; set; }
     public DbSet<TeamMemberPermission> TeamMemberPermissions { get; set; }
     public DbSet<WebsiteJobTrackerModel> WebsiteJobTracker { get; set; }
@@ -337,6 +339,7 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             entity.Property(e => e.State).HasColumnName("state");
             entity.Property(e => e.PostalCode).HasColumnName("postal_code");
             entity.Property(e => e.Country).HasColumnName("country");
+            entity.Property(e => e.AddressType).HasColumnName("AddressType");
 
             entity.Property(e => e.Latitude).HasColumnName("latitude");
             entity.Property(e => e.Longitude).HasColumnName("longitude");
@@ -384,6 +387,13 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
             .OnDelete(DeleteBehavior.SetNull);
 
         modelBuilder.Entity<TeamMember>().HasIndex(t => new { t.InviterId, t.Email }).IsUnique();
+
+        modelBuilder
+            .Entity<TeamMemberCertificationDocument>()
+            .HasOne(d => d.TeamMember)
+            .WithMany(t => t.CertificationDocuments)
+            .HasForeignKey(d => d.TeamMemberId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder
             .Entity<TeamMemberPermission>()

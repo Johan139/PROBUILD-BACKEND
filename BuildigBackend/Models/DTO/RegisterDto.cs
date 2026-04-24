@@ -29,7 +29,9 @@ namespace BuildigBackend.Models.DTO
         public string? Country { get; set; }
         public string? State { get; set; }
         public string? City { get; set; }
+        public string? DefaultLanding { get; set; }
         public string? SubscriptionPackage { get; set; }
+        public string? ThemeMode { get; set; }
         public string? Password { get; set; }
 
         public string StreetNumber { get; set; }

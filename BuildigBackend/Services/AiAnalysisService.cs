@@ -472,7 +472,10 @@ namespace BuildigBackend.Services
                 var existingConversationId = jobDetails.ConversationId;
                 var completedPrompts = await GetCompletedPromptNames(jobDetails.Id);
 
-                if (!string.IsNullOrWhiteSpace(existingConversationId) && completedPrompts.Count > 0)
+                if (
+                    !string.IsNullOrWhiteSpace(existingConversationId)
+                    && completedPrompts.Count > 0
+                )
                 {
                     _logger.LogInformation(
                         "Resuming analysis for Job {JobId} using existing conversation {ConversationId}.",
@@ -490,13 +493,14 @@ namespace BuildigBackend.Services
                     );
                 }
 
-                var (initialResponse, conversationId) = await _aiService.StartMultimodalConversationAsync(
-                    userId,
-                    documentUris,
-                    systemPersonaPrompt,
-                    initialUserPrompt,
-                    existingConversationId
-                );
+                var (initialResponse, conversationId) =
+                    await _aiService.StartMultimodalConversationAsync(
+                        userId,
+                        documentUris,
+                        systemPersonaPrompt,
+                        initialUserPrompt,
+                        existingConversationId
+                    );
                 _logger.LogInformation(
                     "Started multimodal conversation {ConversationId} for user {UserId}. Initial response length: {Length}",
                     conversationId,
@@ -647,7 +651,10 @@ namespace BuildigBackend.Services
 
                 var existingConversationId = jobDetails.ConversationId;
                 var completedPrompts = await GetCompletedPromptNames(jobDetails.Id);
-                if (!string.IsNullOrWhiteSpace(existingConversationId) && completedPrompts.Count > 0)
+                if (
+                    !string.IsNullOrWhiteSpace(existingConversationId)
+                    && completedPrompts.Count > 0
+                )
                 {
                     _logger.LogInformation(
                         "Resuming renovation analysis for Job {JobId} using existing conversation {ConversationId}.",
@@ -1114,7 +1121,10 @@ namespace BuildigBackend.Services
 
         private async Task<string> BuildFullReportFromConversation(string conversationId)
         {
-            var messages = await _conversationRepo.GetMessagesAsync(conversationId, includeSummarized: true);
+            var messages = await _conversationRepo.GetMessagesAsync(
+                conversationId,
+                includeSummarized: true
+            );
             var modelMessages = messages
                 .Where(m =>
                     string.Equals(m.Role, "model", StringComparison.OrdinalIgnoreCase)
@@ -1139,7 +1149,9 @@ namespace BuildigBackend.Services
             {
                 if (TryExtractFirstPhaseTitle(message, out var phaseTitle))
                 {
-                    normalizedPhaseMessages.Add(EnsurePhaseHeading(message, phaseNumber, phaseTitle));
+                    normalizedPhaseMessages.Add(
+                        EnsurePhaseHeading(message, phaseNumber, phaseTitle)
+                    );
                     phaseNumber++;
                     continue;
                 }
@@ -1165,7 +1177,8 @@ namespace BuildigBackend.Services
 
         private async Task<HashSet<string>> GetCompletedPromptNames(int jobId)
         {
-            var state = await _context.JobAnalysisStates.AsNoTracking()
+            var state = await _context
+                .JobAnalysisStates.AsNoTracking()
                 .FirstOrDefaultAsync(s => s.JobId == jobId);
 
             if (state == null || string.IsNullOrWhiteSpace(state.ExtractedDataJson))
@@ -1175,7 +1188,9 @@ namespace BuildigBackend.Services
 
             try
             {
-                var payload = JsonSerializer.Deserialize<Dictionary<string, object>>(state.ExtractedDataJson);
+                var payload = JsonSerializer.Deserialize<Dictionary<string, object>>(
+                    state.ExtractedDataJson
+                );
                 if (payload == null)
                 {
                     return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1204,16 +1219,15 @@ namespace BuildigBackend.Services
                     return new HashSet<string>(items, StringComparer.OrdinalIgnoreCase);
                 }
             }
-            catch
-            {
-            }
+            catch { }
 
             return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
 
         private async Task<HashSet<string>> GetSavedModelPromptNames(int jobId)
         {
-            var state = await _context.JobAnalysisStates.AsNoTracking()
+            var state = await _context
+                .JobAnalysisStates.AsNoTracking()
                 .FirstOrDefaultAsync(s => s.JobId == jobId);
             if (state == null || string.IsNullOrWhiteSpace(state.ExtractedDataJson))
             {
@@ -1222,7 +1236,9 @@ namespace BuildigBackend.Services
 
             try
             {
-                var payload = JsonSerializer.Deserialize<Dictionary<string, object>>(state.ExtractedDataJson);
+                var payload = JsonSerializer.Deserialize<Dictionary<string, object>>(
+                    state.ExtractedDataJson
+                );
                 if (payload == null)
                 {
                     return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1250,16 +1266,15 @@ namespace BuildigBackend.Services
                     return set;
                 }
             }
-            catch
-            {
-            }
+            catch { }
 
             return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
 
         private async Task MarkModelPromptSaved(int jobId, string promptName)
         {
-            var state = await _context.JobAnalysisStates.AsNoTracking()
+            var state = await _context
+                .JobAnalysisStates.AsNoTracking()
                 .FirstOrDefaultAsync(s => s.JobId == jobId);
 
             var payload = new Dictionary<string, object>();
@@ -1267,8 +1282,10 @@ namespace BuildigBackend.Services
             {
                 try
                 {
-                    payload = JsonSerializer.Deserialize<Dictionary<string, object>>(state.ExtractedDataJson)
-                        ?? new Dictionary<string, object>();
+                    payload =
+                        JsonSerializer.Deserialize<Dictionary<string, object>>(
+                            state.ExtractedDataJson
+                        ) ?? new Dictionary<string, object>();
                 }
                 catch
                 {
@@ -1277,7 +1294,11 @@ namespace BuildigBackend.Services
             }
 
             var saved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (payload.TryGetValue("savedModelPrompts", out var existing) && existing is JsonElement element && element.ValueKind == JsonValueKind.Array)
+            if (
+                payload.TryGetValue("savedModelPrompts", out var existing)
+                && existing is JsonElement element
+                && element.ValueKind == JsonValueKind.Array
+            )
             {
                 foreach (var item in element.EnumerateArray())
                 {
@@ -1295,7 +1316,8 @@ namespace BuildigBackend.Services
             saved.Add(promptName);
             var savedJson = JsonSerializer.Serialize(saved.ToArray());
 
-            var rows = await _context.Database.ExecuteSqlInterpolatedAsync($@"
+            var rows = await _context.Database.ExecuteSqlInterpolatedAsync(
+                $@"
 UPDATE [JobAnalysisStates]
 SET [ExtractedDataJson] = JSON_MODIFY(
         COALESCE(NULLIF([ExtractedDataJson], ''), '{{}}'),
@@ -1304,16 +1326,23 @@ SET [ExtractedDataJson] = JSON_MODIFY(
     ),
     [LastUpdated] = SYSUTCDATETIME()
 WHERE [JobId] = {jobId};
-");
+"
+            );
 
             if (rows == 0)
             {
                 _context.JobAnalysisStates.Add(
-                    new JobAnalysisState { JobId = jobId, ExtractedDataJson = "{}", LastUpdated = DateTime.UtcNow }
+                    new JobAnalysisState
+                    {
+                        JobId = jobId,
+                        ExtractedDataJson = "{}",
+                        LastUpdated = DateTime.UtcNow,
+                    }
                 );
                 await _context.SaveChangesAsync();
 
-                await _context.Database.ExecuteSqlInterpolatedAsync($@"
+                await _context.Database.ExecuteSqlInterpolatedAsync(
+                    $@"
 UPDATE [JobAnalysisStates]
 SET [ExtractedDataJson] = JSON_MODIFY(
         COALESCE(NULLIF([ExtractedDataJson], ''), '{{}}'),
@@ -1322,13 +1351,15 @@ SET [ExtractedDataJson] = JSON_MODIFY(
     ),
     [LastUpdated] = SYSUTCDATETIME()
 WHERE [JobId] = {jobId};
-");
+"
+                );
             }
         }
 
         private async Task MarkPromptCompleted(int jobId, string promptName)
         {
-            var state = await _context.JobAnalysisStates.AsNoTracking()
+            var state = await _context
+                .JobAnalysisStates.AsNoTracking()
                 .FirstOrDefaultAsync(s => s.JobId == jobId);
 
             var payload = new Dictionary<string, object>();
@@ -1336,8 +1367,10 @@ WHERE [JobId] = {jobId};
             {
                 try
                 {
-                    payload = JsonSerializer.Deserialize<Dictionary<string, object>>(state.ExtractedDataJson)
-                        ?? new Dictionary<string, object>();
+                    payload =
+                        JsonSerializer.Deserialize<Dictionary<string, object>>(
+                            state.ExtractedDataJson
+                        ) ?? new Dictionary<string, object>();
                 }
                 catch
                 {
@@ -1346,7 +1379,11 @@ WHERE [JobId] = {jobId};
             }
 
             var completed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (payload.TryGetValue("completedPrompts", out var existing) && existing is JsonElement element && element.ValueKind == JsonValueKind.Array)
+            if (
+                payload.TryGetValue("completedPrompts", out var existing)
+                && existing is JsonElement element
+                && element.ValueKind == JsonValueKind.Array
+            )
             {
                 foreach (var item in element.EnumerateArray())
                 {
@@ -1364,7 +1401,8 @@ WHERE [JobId] = {jobId};
             completed.Add(promptName);
             var completedJson = JsonSerializer.Serialize(completed.ToArray());
 
-            var rows = await _context.Database.ExecuteSqlInterpolatedAsync($@"
+            var rows = await _context.Database.ExecuteSqlInterpolatedAsync(
+                $@"
 UPDATE [JobAnalysisStates]
 SET [ExtractedDataJson] = JSON_MODIFY(
         COALESCE(NULLIF([ExtractedDataJson], ''), '{{}}'),
@@ -1373,16 +1411,23 @@ SET [ExtractedDataJson] = JSON_MODIFY(
     ),
     [LastUpdated] = SYSUTCDATETIME()
 WHERE [JobId] = {jobId};
-");
+"
+            );
 
             if (rows == 0)
             {
                 _context.JobAnalysisStates.Add(
-                    new JobAnalysisState { JobId = jobId, ExtractedDataJson = "{}", LastUpdated = DateTime.UtcNow }
+                    new JobAnalysisState
+                    {
+                        JobId = jobId,
+                        ExtractedDataJson = "{}",
+                        LastUpdated = DateTime.UtcNow,
+                    }
                 );
                 await _context.SaveChangesAsync();
 
-                await _context.Database.ExecuteSqlInterpolatedAsync($@"
+                await _context.Database.ExecuteSqlInterpolatedAsync(
+                    $@"
 UPDATE [JobAnalysisStates]
 SET [ExtractedDataJson] = JSON_MODIFY(
         COALESCE(NULLIF([ExtractedDataJson], ''), '{{}}'),
@@ -1391,7 +1436,8 @@ SET [ExtractedDataJson] = JSON_MODIFY(
     ),
     [LastUpdated] = SYSUTCDATETIME()
 WHERE [JobId] = {jobId};
-");
+"
+                );
             }
         }
 
@@ -6604,7 +6650,8 @@ Anchors:
         {
             try
             {
-                var existing = await _context.JobAnalysisStates.AsNoTracking()
+                var existing = await _context
+                    .JobAnalysisStates.AsNoTracking()
                     .FirstOrDefaultAsync(s => s.JobId == jobId);
 
                 if (existing == null)
@@ -6614,7 +6661,7 @@ Anchors:
                         {
                             JobId = jobId,
                             ExtractedDataJson = "{}",
-                            LastUpdated = DateTime.UtcNow
+                            LastUpdated = DateTime.UtcNow,
                         }
                     );
                     await _context.SaveChangesAsync();
@@ -6625,7 +6672,8 @@ Anchors:
                     ? $"$.{dataType}"
                     : $"$[\"{dataType}\"]";
 
-                await _context.Database.ExecuteSqlInterpolatedAsync($@"
+                await _context.Database.ExecuteSqlInterpolatedAsync(
+                    $@"
 UPDATE [JobAnalysisStates]
 SET [ExtractedDataJson] = JSON_MODIFY(
         COALESCE(NULLIF([ExtractedDataJson], ''), '{{}}'),
@@ -6637,7 +6685,8 @@ SET [ExtractedDataJson] = JSON_MODIFY(
     ),
     [LastUpdated] = SYSUTCDATETIME()
 WHERE [JobId] = {jobId};
-");
+"
+                );
             }
             catch (Exception ex)
             {

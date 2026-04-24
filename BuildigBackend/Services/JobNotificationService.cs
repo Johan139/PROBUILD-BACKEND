@@ -1,4 +1,4 @@
-﻿using Elastic.Apm.Api;
+﻿using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using NetTopologySuite.Geometries;
@@ -199,7 +199,6 @@ namespace BuildigBackend.Services
                             $"https://app.buildig.ai/subscription/unsubscribe?email={externalUser.email}"
                         )
                     };
-                  
 
                     await _emailSender.SendEmailAsync(email, externalUser.email);
 

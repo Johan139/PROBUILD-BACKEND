@@ -397,7 +397,12 @@ namespace BuildigBackend.Controllers
         public async Task<IActionResult> GetJobInvoices(int jobId)
         {
             var invoices = await _context
-                .Quotes.Where(q => q.JobID == jobId && q.DocumentType == "INVOICE" && q.ArchivedAt == null && q.Status == "Approved")
+                .Quotes.Where(q =>
+                    q.JobID == jobId
+                    && q.DocumentType == "INVOICE"
+                    && q.ArchivedAt == null
+                    && q.Status == "Approved"
+                )
                 .OrderByDescending(q => q.CreatedDate)
                 .Select(q => new
                 {
@@ -407,7 +412,9 @@ namespace BuildigBackend.Controllers
                     status = q.Status,
                     createdDate = q.CreatedDate,
                     total = _context
-                        .QuoteVersions.Where(v => v.QuoteId == q.Id && v.Version == q.CurrentVersion - 1)
+                        .QuoteVersions.Where(v =>
+                            v.QuoteId == q.Id && v.Version == q.CurrentVersion - 1
+                        )
                         .Select(v => v.Total)
                         .FirstOrDefault(),
                 })
@@ -857,6 +864,31 @@ namespace BuildigBackend.Controllers
             Guid quoteId
         )
         {
+            var companyBranding = await _context.Companies.FirstOrDefaultAsync(c =>
+                c.OwnerUserId == quote.CreatedID
+            );
+
+            static DeviceRgb ParseHexOrDefault(string? hex, int r, int g, int b)
+            {
+                if (string.IsNullOrWhiteSpace(hex))
+                    return new DeviceRgb(r, g, b);
+                var normalized = hex.Trim().TrimStart('#');
+                if (normalized.Length != 6)
+                    return new DeviceRgb(r, g, b);
+
+                try
+                {
+                    return new DeviceRgb(
+                        Convert.ToInt32(normalized.Substring(0, 2), 16),
+                        Convert.ToInt32(normalized.Substring(2, 2), 16),
+                        Convert.ToInt32(normalized.Substring(4, 2), 16)
+                    );
+                }
+                catch
+                {
+                    return new DeviceRgb(r, g, b);
+                }
+            }
             // Get quote rows
             var rows = await _context
                 .QuoteRows.Where(r => r.QuoteVersionId == version.Id)
@@ -890,12 +922,22 @@ namespace BuildigBackend.Controllers
             var boldFont = PdfFontFactory.CreateFont(StandardFonts.HELVETICA_BOLD);
             var regularFont = PdfFontFactory.CreateFont(StandardFonts.HELVETICA);
 
-            // Define colors (using your brand colors)
-            var primaryYellow = new DeviceRgb(251, 208, 8); // #fbd008
-            var darkerYellow = new DeviceRgb(230, 191, 0); // #e6bf00
-            var darkGray = new DeviceRgb(51, 51, 51); // #333333
+            // Define colors (using saved branding when available)
+            var primaryYellow = ParseHexOrDefault(
+                companyBranding?.DocumentPrimaryColor,
+                251,
+                208,
+                8
+            );
+            var darkerYellow = ParseHexOrDefault(companyBranding?.DocumentGradientEnd, 230, 191, 0);
+            var darkGray = ParseHexOrDefault(companyBranding?.DocumentTextColor, 51, 51, 51);
             var mediumGray = new DeviceRgb(102, 102, 102); // #666666
-            var lightGray = new DeviceRgb(248, 249, 250); // #f8f9fa
+            var lightGray = ParseHexOrDefault(
+                companyBranding?.DocumentSecondaryColor,
+                248,
+                249,
+                250
+            );
             var borderGray = new DeviceRgb(224, 224, 224); // #e0e0e0
             var black = new DeviceRgb(0, 0, 0);
             var white = new DeviceRgb(255, 255, 255);
@@ -1855,8 +1897,8 @@ namespace BuildigBackend.Controllers
             var normalizedStatus = (status ?? string.Empty).Trim();
             if (normalizedStatus == "Approved" || normalizedStatus == "Rejected")
             {
-                var relatedBids = await _context.Bids
-                    .Where(b => b.QuoteId == quoteId)
+                var relatedBids = await _context
+                    .Bids.Where(b => b.QuoteId == quoteId)
                     .ToListAsync();
 
                 if (relatedBids.Count > 0)
@@ -1867,23 +1909,34 @@ namespace BuildigBackend.Controllers
                         {
                             bid.Status = "Awarded";
 
-                            if (bid.JobId > 0 && bid.TradePackageId.HasValue && bid.TradePackageId.Value > 0)
+                            if (
+                                bid.JobId > 0
+                                && bid.TradePackageId.HasValue
+                                && bid.TradePackageId.Value > 0
+                            )
                             {
-                                var tradePackage = await _context.TradePackages
-                                    .FirstOrDefaultAsync(tp => tp.Id == bid.TradePackageId.Value && tp.JobId == bid.JobId);
+                                var tradePackage = await _context.TradePackages.FirstOrDefaultAsync(
+                                    tp => tp.Id == bid.TradePackageId.Value && tp.JobId == bid.JobId
+                                );
 
                                 if (tradePackage != null)
                                 {
                                     tradePackage.AwardedBidId = bid.Id;
-                                    tradePackage.Status = tradePackage.IsInHouse ? "In House" : "Awarded";
+                                    tradePackage.Status = tradePackage.IsInHouse
+                                        ? "In House"
+                                        : "Awarded";
 
-                                    var packageBids = await _context.Bids
-                                        .Where(b => b.JobId == bid.JobId && b.TradePackageId == bid.TradePackageId)
+                                    var packageBids = await _context
+                                        .Bids.Where(b =>
+                                            b.JobId == bid.JobId
+                                            && b.TradePackageId == bid.TradePackageId
+                                        )
                                         .ToListAsync();
 
                                     foreach (var packageBid in packageBids)
                                     {
-                                        packageBid.Status = packageBid.Id == bid.Id ? "Awarded" : "Submitted";
+                                        packageBid.Status =
+                                            packageBid.Id == bid.Id ? "Awarded" : "Submitted";
                                     }
                                 }
                             }

@@ -1,6 +1,4 @@
-﻿using Elastic.Apm.Api;
-using Hangfire.Common;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using BuildigBackend.Interface;
 using BuildigBackend.Models.DTO;

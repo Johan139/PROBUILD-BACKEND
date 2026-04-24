@@ -10,11 +10,12 @@ namespace BuildigBackend.Models
 
         public string Number { get; set; }
 
-        public string DocumentType { get; set; } 
+        public string DocumentType { get; set; }
 
         public string Status { get; set; }
         public int CurrentVersion { get; set; }
-        public ICollection<QuoteVersionModel> Versions { get; set; } = new List<QuoteVersionModel>();
+        public ICollection<QuoteVersionModel> Versions { get; set; } =
+            new List<QuoteVersionModel>();
         public Guid? LogoId { get; set; }
         public LogosModel Logo { get; set; }
         public string CreatedID { get; set; }
@@ -23,6 +24,5 @@ namespace BuildigBackend.Models
         public DateTime CreatedDate { get; set; }
         public DateTime? ArchivedAt { get; set; }
     }
-
 }
 

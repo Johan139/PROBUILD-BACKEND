@@ -1,4 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿
+using System.ComponentModel.DataAnnotations;
 
 namespace BuildigBackend.Models.DTO
 {
@@ -18,6 +19,32 @@ namespace BuildigBackend.Models.DTO
 
         [Required]
         public string Role { get; set; }
+
+        public string? HourlyRate { get; set; }
+
+        public string? YearsExperience { get; set; }
+
+        public string? Certifications { get; set; }
+
+        public List<string>? Specialties { get; set; }
+
+        public List<TeamMemberCertificationFileDto>? CertificationFiles { get; set; }
+    }
+
+    public class UpdateTeamMemberDto
+    {
+        [Required]
+        public string Role { get; set; }
+
+        public string? HourlyRate { get; set; }
+
+        public string? YearsExperience { get; set; }
+
+        public string? Certifications { get; set; }
+
+        public List<string>? Specialties { get; set; }
+
+        public List<TeamMemberCertificationFileDto>? CertificationFiles { get; set; }
     }
 }
 

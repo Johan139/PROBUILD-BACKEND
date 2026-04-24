@@ -6,7 +6,7 @@ namespace BuildigBackend.Models
     {
         public Guid Id { get; set; }
 
-        public Guid QuoteVersionId { get; set; }   // <-- REQUIRED
+        public Guid QuoteVersionId { get; set; }
         public QuoteVersionModel QuoteVersion { get; set; }
 
         public string Type { get; set; }
@@ -15,6 +15,5 @@ namespace BuildigBackend.Models
 
         public string Title { get; set; }
     }
-
 }
 

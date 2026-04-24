@@ -1,4 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace BuildigBackend.Models
@@ -26,6 +27,18 @@ namespace BuildigBackend.Models
         [Required]
         public string Role { get; set; }
 
+        [MaxLength(50)]
+        public string? HourlyRate { get; set; }
+
+        [MaxLength(50)]
+        public string? YearsExperience { get; set; }
+
+        public string? Certifications { get; set; }
+
+        public string? Specialties { get; set; }
+
+        public string? CertificationFilesJson { get; set; }
+
         public string? PasswordHash { get; set; }
 
         [Required]
@@ -41,6 +54,9 @@ namespace BuildigBackend.Models
         public virtual UserModel Inviter { get; set; }
 
         public ICollection<TeamMemberPermission> TeamMemberPermissions { get; set; }
+
+        public ICollection<TeamMemberCertificationDocument> CertificationDocuments { get; set; } =
+            new List<TeamMemberCertificationDocument>();
     }
 }
 

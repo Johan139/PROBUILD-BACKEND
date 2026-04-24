@@ -1,6 +1,5 @@
 ﻿using System.Security.Claims;
 using System.Text.Json;
-using System.Linq;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -74,9 +73,7 @@ namespace BuildigBackend.Controllers
         [HttpGet("{id}/document")]
         public async Task<IActionResult> DownloadBidDocument(int id)
         {
-            var bid = await _context
-                .Bids.AsNoTracking()
-                .FirstOrDefaultAsync(b => b.Id == id);
+            var bid = await _context.Bids.AsNoTracking().FirstOrDefaultAsync(b => b.Id == id);
 
             if (bid == null)
             {
@@ -96,13 +93,17 @@ namespace BuildigBackend.Controllers
                 if (contentType == "application/gzip")
                 {
                     var decompressedStream = new MemoryStream();
-                    using (var gzipStream = new GZipStream(contentStream, CompressionMode.Decompress))
+                    using (
+                        var gzipStream = new GZipStream(contentStream, CompressionMode.Decompress)
+                    )
                     {
                         await gzipStream.CopyToAsync(decompressedStream);
                     }
                     decompressedStream.Position = 0;
 
-                    var inferredContentType = FileHelpers.GetContentTypeFromFileName(originalFileName);
+                    var inferredContentType = FileHelpers.GetContentTypeFromFileName(
+                        originalFileName
+                    );
                     return File(decompressedStream, inferredContentType, originalFileName);
                 }
 
@@ -120,113 +121,118 @@ namespace BuildigBackend.Controllers
         {
             try
             {
+                var bids = await _context
+                    .Bids.Where(b => b.JobId == jobId)
+                    .AsNoTracking()
+                    .Include(b => b.User)
+                    .ToListAsync();
 
-     
-            var bids = await _context
-                .Bids.Where(b => b.JobId == jobId)
-                .AsNoTracking()
-                .Include(b => b.User)
-                .ToListAsync();
+                var userIds = bids.Select(b => b.UserId)
+                    .Where(id => !string.IsNullOrWhiteSpace(id))
+                    .Distinct()
+                    .ToList();
 
-            var userIds = bids
-                .Select(b => b.UserId)
-                .Where(id => !string.IsNullOrWhiteSpace(id))
-                .Distinct()
-                .ToList();
+                var companiesByOwnerId = await _context
+                    .Companies.AsNoTracking()
+                    .Where(c => userIds.Contains(c.OwnerUserId))
+                    .ToDictionaryAsync(c => c.OwnerUserId);
 
-            var companiesByOwnerId = await _context.Companies
-                .AsNoTracking()
-                .Where(c => userIds.Contains(c.OwnerUserId))
-                .ToDictionaryAsync(c => c.OwnerUserId);
+                var result = bids.Select(b =>
+                    {
+                        var u = b.User;
+                        var company =
+                            b.UserId != null
+                            && companiesByOwnerId.TryGetValue(b.UserId, out var found)
+                                ? found
+                                : null;
 
-            var result = bids.Select(b =>
-            {
-                var u = b.User;
-                var company = b.UserId != null && companiesByOwnerId.TryGetValue(b.UserId, out var found)
-                    ? found
-                    : null;
+                        var documentUrl = !string.IsNullOrWhiteSpace(b.DocumentUrl)
+                            ? Url.Action(
+                                nameof(DownloadBidDocument),
+                                "Bids",
+                                new { id = b.Id },
+                                protocol: Request.Scheme
+                            )
+                            : null;
 
-                var documentUrl = !string.IsNullOrWhiteSpace(b.DocumentUrl)
-                    ? Url.Action(
-                        nameof(DownloadBidDocument),
-                        "Bids",
-                        new { id = b.Id },
-                        protocol: Request.Scheme
-                    )
-                    : null;
+                        var first = u?.FirstName ?? string.Empty;
+                        var last = u?.LastName ?? string.Empty;
+                        var fullName = string.Join(
+                                " ",
+                                new[] { first, last }.Where(x => !string.IsNullOrWhiteSpace(x))
+                            )
+                            .Trim();
 
-                var first = u?.FirstName ?? string.Empty;
-                var last = u?.LastName ?? string.Empty;
-                var fullName = string.Join(" ", new[] { first, last }.Where(x => !string.IsNullOrWhiteSpace(x))).Trim();
-
-                var locationParts = new[] { u?.City, u?.State, u?.Country }
-                    .Where(x => !string.IsNullOrWhiteSpace(x))
-                    .Select(x => x!.Trim())
-                    .ToArray();
-                var location = locationParts.Length > 0 ? string.Join(", ", locationParts) : "N/A";
+                        var locationParts = new[] { u?.City, u?.State, u?.Country }
+                            .Where(x => !string.IsNullOrWhiteSpace(x))
+                            .Select(x => x!.Trim())
+                            .ToArray();
+                        var location =
+                            locationParts.Length > 0 ? string.Join(", ", locationParts) : "N/A";
 
                 var buildigRating = u?.ProbuildRating ?? 0;
                 var googleRating = u?.GoogleRating ?? 0;
 
-                var companyName =
-                    !string.IsNullOrWhiteSpace(u?.CompanyName)
-                        ? u!.CompanyName!
-                        : (!string.IsNullOrWhiteSpace(company?.Name)
-                            ? company!.Name!
-                            : fullName);
+                        var companyName = !string.IsNullOrWhiteSpace(u?.CompanyName)
+                            ? u!.CompanyName!
+                            : (
+                                !string.IsNullOrWhiteSpace(company?.Name)
+                                    ? company!.Name!
+                                    : fullName
+                            );
 
-                var email = !string.IsNullOrWhiteSpace(u?.Email)
-                    ? u!.Email!
-                    : (company?.Email ?? "N/A");
-                var phone = !string.IsNullOrWhiteSpace(u?.PhoneNumber)
-                    ? u!.PhoneNumber!
-                    : (company?.PhoneNumber ?? "N/A");
+                        var email = !string.IsNullOrWhiteSpace(u?.Email)
+                            ? u!.Email!
+                            : (company?.Email ?? "N/A");
+                        var phone = !string.IsNullOrWhiteSpace(u?.PhoneNumber)
+                            ? u!.PhoneNumber!
+                            : (company?.PhoneNumber ?? "N/A");
 
-                var yearsText = !string.IsNullOrWhiteSpace(u?.YearsOfOperation)
-                    ? u!.YearsOfOperation
-                    : company?.YearsOfOperation;
+                        var yearsText = !string.IsNullOrWhiteSpace(u?.YearsOfOperation)
+                            ? u!.YearsOfOperation
+                            : company?.YearsOfOperation;
 
-                var yearsParsed = 0;
-                if (!string.IsNullOrWhiteSpace(yearsText))
-                {
-                    int.TryParse(yearsText.Trim(), out yearsParsed);
-                }
+                        var yearsParsed = 0;
+                        if (!string.IsNullOrWhiteSpace(yearsText))
+                        {
+                            int.TryParse(yearsText.Trim(), out yearsParsed);
+                        }
 
-                var specialty = !string.IsNullOrWhiteSpace(u?.Trade)
-                    ? u!.Trade!
-                    : (company?.Trade ?? "General Trade");
+                        var specialty = !string.IsNullOrWhiteSpace(u?.Trade)
+                            ? u!.Trade!
+                            : (company?.Trade ?? "General Trade");
 
-                var licenseNo = !string.IsNullOrWhiteSpace(u?.CompanyRegNo)
-                    ? u!.CompanyRegNo!
-                    : (company?.CompanyRegNo ?? "N/A");
+                        var licenseNo = !string.IsNullOrWhiteSpace(u?.CompanyRegNo)
+                            ? u!.CompanyRegNo!
+                            : (company?.CompanyRegNo ?? "N/A");
 
-                return new
-                {
-                    id = b.Id,
-                    userId = b.UserId,
-                    amount = b.Amount,
-                    inclusions = b.Inclusions,
-                    exclusions = b.Exclusions,
-                    biddingRound = b.BiddingRound,
-                    isFinalist = b.IsFinalist,
-                    status = b.Status,
-                    submittedAt = b.SubmittedAt,
-                    jobId = b.JobId,
-                    task = b.Task,
-                    duration = b.Duration,
-                    documentUrl,
-                    quoteId = b.QuoteId,
-                    tradePackageId = b.TradePackageId,
+                        return new
+                        {
+                            id = b.Id,
+                            userId = b.UserId,
+                            amount = b.Amount,
+                            inclusions = b.Inclusions,
+                            exclusions = b.Exclusions,
+                            biddingRound = b.BiddingRound,
+                            isFinalist = b.IsFinalist,
+                            status = b.Status,
+                            submittedAt = b.SubmittedAt,
+                            jobId = b.JobId,
+                            task = b.Task,
+                            duration = b.Duration,
+                            documentUrl,
+                            quoteId = b.QuoteId,
+                            tradePackageId = b.TradePackageId,
 
-                    companyName,
-                    contact = !string.IsNullOrWhiteSpace(fullName) ? fullName : "N/A",
-                    phone,
-                    email,
-                    yearsInBusiness = yearsParsed,
-                    specialty,
-                    location,
+                            companyName,
+                            contact = !string.IsNullOrWhiteSpace(fullName) ? fullName : "N/A",
+                            phone,
+                            email,
+                            yearsInBusiness = yearsParsed,
+                            specialty,
+                            location,
 
-                    licenseNo,
+                            licenseNo,
 
                     rating = buildigRating,
                     buildIgRating = buildigRating,
@@ -236,11 +242,10 @@ namespace BuildigBackend.Controllers
                 };
             }).ToList();
 
-            return Ok(result);
+                return Ok(result);
             }
             catch (Exception)
             {
-
                 throw;
             }
         }
@@ -279,14 +284,18 @@ namespace BuildigBackend.Controllers
 
                 if (!string.IsNullOrWhiteSpace(jobOwnerId))
                 {
-                    var quote = await _context.Quotes.FirstOrDefaultAsync(q => q.Id == bidRequest.QuoteId.Value);
+                    var quote = await _context.Quotes.FirstOrDefaultAsync(q =>
+                        q.Id == bidRequest.QuoteId.Value
+                    );
                     if (quote != null)
                     {
                         quote.SentTo = jobOwnerId;
 
                         if (quote.Status == "Draft")
                         {
-                            var canSubmit = await _subscriptionService.CanSubmitQuote(quote.CreatedID);
+                            var canSubmit = await _subscriptionService.CanSubmitQuote(
+                                quote.CreatedID
+                            );
                             if (!canSubmit)
                             {
                                 return BadRequest("Quote submission limit reached.");

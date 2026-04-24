@@ -1,5 +1,6 @@
 ﻿using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
@@ -13,6 +14,9 @@ using BuildigBackend.Middleware;
 using BuildigBackend.Models;
 using BuildigBackend.Models.DTO;
 using IEmailSender = BuildigBackend.Interface.IEmailSender;
+using BuildigBackend.Services;
+using BuildigBackend.Models.DTO;
+using BuildigBackend.Models;
 
 namespace BuildigBackend.Controllers
 {
@@ -26,6 +30,7 @@ namespace BuildigBackend.Controllers
         private readonly IEmailSender _emailSender;
         private readonly IDataProtectionProvider _dataProtectionProvider;
         private readonly IHubContext<NotificationHub> _hubContext;
+        private readonly AzureBlobService _azureBlobService;
         public readonly IEmailTemplateService _emailTemplate;
 
         public TeamsController(
@@ -34,7 +39,8 @@ namespace BuildigBackend.Controllers
             IEmailSender emailSender,
             IDataProtectionProvider dataProtectionProvider,
             IHubContext<NotificationHub> hubContext,
-            IEmailTemplateService emailTemplate
+            IEmailTemplateService emailTemplate,
+            AzureBlobService azureBlobService
         )
         {
             _context = context;
@@ -43,6 +49,7 @@ namespace BuildigBackend.Controllers
             _dataProtectionProvider = dataProtectionProvider;
             _hubContext = hubContext;
             _emailTemplate = emailTemplate;
+            _azureBlobService = azureBlobService;
         }
 
         [HttpPost("members")]
@@ -86,6 +93,20 @@ namespace BuildigBackend.Controllers
                     existingTeamMember.LastName = dto.LastName;
                     existingTeamMember.PhoneNumber = dto.PhoneNumber;
                     existingTeamMember.Role = dto.Role;
+                    existingTeamMember.HourlyRate = dto.HourlyRate;
+                    existingTeamMember.YearsExperience = dto.YearsExperience;
+                    existingTeamMember.Certifications = dto.Certifications;
+                    existingTeamMember.Specialties =
+                        dto.Specialties != null
+                            ? string.Join(
+                                ",",
+                                dto.Specialties.Where(x => !string.IsNullOrWhiteSpace(x))
+                            )
+                            : null;
+                    existingTeamMember.CertificationFilesJson =
+                        dto.CertificationFiles != null
+                            ? JsonSerializer.Serialize(dto.CertificationFiles)
+                            : null;
                     teamMemberToInvite = existingTeamMember;
                     teamMemberToInvite.InvitationToken = safeToken;
                     teamMemberToInvite.TokenExpiration = DateTime.UtcNow.AddDays(7);
@@ -124,6 +145,20 @@ namespace BuildigBackend.Controllers
                     Email = dto.Email,
                     PhoneNumber = dto.PhoneNumber,
                     Role = dto.Role,
+                    HourlyRate = dto.HourlyRate,
+                    YearsExperience = dto.YearsExperience,
+                    Certifications = dto.Certifications,
+                    Specialties =
+                        dto.Specialties != null
+                            ? string.Join(
+                                ",",
+                                dto.Specialties.Where(x => !string.IsNullOrWhiteSpace(x))
+                            )
+                            : null,
+                    CertificationFilesJson =
+                        dto.CertificationFiles != null
+                            ? JsonSerializer.Serialize(dto.CertificationFiles)
+                            : null,
                     Status = "Invited",
                     InvitationToken = safeToken,
                     TokenExpiration = DateTime.UtcNow.AddDays(7),
@@ -307,6 +342,144 @@ namespace BuildigBackend.Controllers
             return Ok(teamMember);
         }
 
+        [HttpPut("members/{id}")]
+        public async Task<IActionResult> UpdateTeamMember(
+            string id,
+            [FromBody] UpdateTeamMemberDto dto
+        )
+        {
+            var inviterId = User.FindFirstValue("UserId");
+            if (inviterId == null)
+            {
+                return Unauthorized();
+            }
+
+            var currentUserAsTeamMember = await _context.TeamMembers.FirstOrDefaultAsync(tm =>
+                tm.Id == inviterId
+            );
+            var inviterIdToUse = currentUserAsTeamMember?.InviterId ?? inviterId;
+
+            var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(m =>
+                m.Id == id && m.InviterId == inviterIdToUse
+            );
+
+            if (teamMember == null)
+            {
+                return NotFound("Team member not found.");
+            }
+
+            teamMember.Role = dto.Role;
+            teamMember.HourlyRate = dto.HourlyRate;
+            teamMember.YearsExperience = dto.YearsExperience;
+            teamMember.Certifications = dto.Certifications;
+            teamMember.Specialties =
+                dto.Specialties != null
+                    ? string.Join(",", dto.Specialties.Where(x => !string.IsNullOrWhiteSpace(x)))
+                    : null;
+            teamMember.CertificationFilesJson =
+                dto.CertificationFiles != null
+                    ? JsonSerializer.Serialize(dto.CertificationFiles)
+                    : null;
+
+            _context.TeamMembers.Update(teamMember);
+            await _context.SaveChangesAsync();
+
+            return Ok(teamMember);
+        }
+
+        [HttpPost("members/{id}/certifications/upload")]
+        [RequestSizeLimit(200 * 1024 * 1024)]
+        public async Task<IActionResult> UploadTeamMemberCertificationFiles(
+            string id,
+            [FromForm] UploadTeamMemberCertificationDto dto
+        )
+        {
+            var inviterId = User.FindFirstValue("UserId");
+            if (inviterId == null)
+            {
+                return Unauthorized();
+            }
+
+            var currentUserAsTeamMember = await _context.TeamMembers.FirstOrDefaultAsync(tm =>
+                tm.Id == inviterId
+            );
+            var inviterIdToUse = currentUserAsTeamMember?.InviterId ?? inviterId;
+
+            var teamMember = await _context.TeamMembers.FirstOrDefaultAsync(m =>
+                m.Id == id && m.InviterId == inviterIdToUse
+            );
+
+            if (teamMember == null)
+            {
+                return NotFound("Team member not found.");
+            }
+
+            if (dto.Files == null || !dto.Files.Any())
+            {
+                return BadRequest(new { error = "No certification files provided." });
+            }
+
+            var allowedExtensions = new[] { ".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx" };
+            foreach (var file in dto.Files)
+            {
+                if (file.Length == 0)
+                {
+                    return BadRequest(new { error = $"Empty file detected: {file.FileName}" });
+                }
+
+                var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+                if (!allowedExtensions.Contains(extension))
+                {
+                    return BadRequest(new { error = $"Invalid file type: {file.FileName}" });
+                }
+            }
+
+            string connectionId =
+                dto.ConnectionId
+                ?? HttpContext?.Connection.Id
+                ?? throw new InvalidOperationException("No valid connectionId provided.");
+
+            var uploadedFileUrls = await _azureBlobService.UploadFiles(
+                dto.Files,
+                null,
+                connectionId
+            );
+
+            var createdDocs = new List<TeamMemberCertificationDocument>();
+            for (var index = 0; index < dto.Files.Count; index++)
+            {
+                var file = dto.Files[index];
+                var url = uploadedFileUrls[index];
+                var doc = new TeamMemberCertificationDocument
+                {
+                    TeamMemberId = teamMember.Id,
+                    FileName = Path.GetFileName(new Uri(url).LocalPath),
+                    BlobUrl = url,
+                    ContentType = file.ContentType,
+                    UploadedAt = DateTime.UtcNow,
+                };
+
+                _context.TeamMemberCertificationDocuments.Add(doc);
+                createdDocs.Add(doc);
+            }
+
+            await _context.SaveChangesAsync();
+
+            var responseFiles = createdDocs.Select(
+                (doc, index) =>
+                    new TeamMemberCertificationFileDto
+                    {
+                        Id = doc.Id,
+                        Name = dto.Files[index].FileName,
+                        Type = dto.Files[index].ContentType,
+                        UploadedAt = doc.UploadedAt.ToString("yyyy-MM-dd"),
+                        Url = doc.BlobUrl,
+                    }
+            );
+
+            return Ok(new { fileUrls = uploadedFileUrls, files = responseFiles });
+        }
+
         [HttpGet("members/profile/{id}")]
         public async Task<IActionResult> GetTeamMemberProfile(string id)
         {
@@ -324,6 +497,8 @@ namespace BuildigBackend.Controllers
                 Email = teamMember.Email,
                 PhoneNumber = teamMember.PhoneNumber,
                 UserType = teamMember.Role,
+                Trade = teamMember.Specialties,
+                CertificationDocumentPath = teamMember.CertificationFilesJson,
             };
 
             return Ok(userProfile);

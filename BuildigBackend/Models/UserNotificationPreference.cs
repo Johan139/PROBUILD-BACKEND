@@ -1,4 +1,5 @@
-﻿using Elastic.Apm.Api;
+﻿using System.ComponentModel.DataAnnotations;
+using Elastic.Apm.Api;
 using BuildigBackend.Models.Enums;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
@@ -25,8 +26,6 @@ namespace BuildigBackend.Models
         public DateTime CreatedDate { get; set; } = DateTime.UtcNow;
 
         public DateTime? ModifiedDate { get; set; }
-
-        /* ================= NAVIGATION ================= */
 
         public User User { get; set; }
     }
