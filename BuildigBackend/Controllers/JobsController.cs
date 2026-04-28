@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO.Compression;
 using System.Security.Claims;
@@ -156,6 +156,122 @@ namespace BuildigBackend.Controllers
                 _cache.Set(cacheKey, fallbackState, TimeSpan.FromSeconds(3));
                 return Ok(fallbackState);
             }
+        }
+
+        [HttpGet("{jobId}/analysis-state-lite")]
+        public async Task<ActionResult<object>> GetAnalysisStateLite(
+            int jobId,
+            CancellationToken cancellationToken
+        )
+        {
+            var cacheKey = $"analysis-state-lite:{jobId}";
+            try
+            {
+                if (_cache.TryGetValue(cacheKey, out object? cachedState) && cachedState != null)
+                {
+                    return Ok(cachedState);
+                }
+
+                var state = await _context
+                    .JobAnalysisStates.AsNoTracking()
+                    .Where(s => s.JobId == jobId)
+                    .Select(s => new
+                    {
+                        JobId = s.JobId,
+                        CurrentStep = s.CurrentStep,
+                        TotalSteps = s.TotalSteps,
+                        StatusMessage = s.StatusMessage,
+                        IsComplete = s.IsComplete,
+                        HasFailed = s.HasFailed,
+                        ErrorMessage = s.ErrorMessage,
+                        LastUpdated = s.LastUpdated,
+                        ExtractedDataJson = s.ExtractedDataJson,
+                    })
+                    .FirstOrDefaultAsync(cancellationToken);
+
+                if (state == null)
+                {
+                    var initialState = new
+                    {
+                        JobId = jobId,
+                        CurrentStep = 0,
+                        TotalSteps = 0,
+                        StatusMessage = "Initializing...",
+                        IsComplete = false,
+                        HasFailed = false,
+                        ErrorMessage = "",
+                        LastUpdated = (DateTime?)null,
+                        EmailSent = false,
+                    };
+                    _cache.Set(cacheKey, initialState, TimeSpan.FromSeconds(3));
+                    return Ok(initialState);
+                }
+
+                var liteState = new
+                {
+                    state.JobId,
+                    state.CurrentStep,
+                    state.TotalSteps,
+                    state.StatusMessage,
+                    state.IsComplete,
+                    state.HasFailed,
+                    state.ErrorMessage,
+                    state.LastUpdated,
+                    EmailSent = IsEmailSentFlagSet(state.ExtractedDataJson),
+                };
+
+                _cache.Set(cacheKey, liteState, TimeSpan.FromSeconds(3));
+                return Ok(liteState);
+            }
+            catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == -2)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "SQL timeout while fetching lite analysis state for Job {JobId}",
+                    jobId
+                );
+
+                var fallbackState = new
+                {
+                    JobId = jobId,
+                    CurrentStep = 0,
+                    TotalSteps = 0,
+                    StatusMessage = "Loading analysis state...",
+                    IsComplete = false,
+                    HasFailed = false,
+                    ErrorMessage = "",
+                    LastUpdated = (DateTime?)null,
+                    EmailSent = false,
+                };
+                _cache.Set(cacheKey, fallbackState, TimeSpan.FromSeconds(3));
+                return Ok(fallbackState);
+            }
+        }
+
+        private static bool IsEmailSentFlagSet(string? extractedDataJson)
+        {
+            if (string.IsNullOrWhiteSpace(extractedDataJson))
+            {
+                return false;
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(extractedDataJson);
+                if (
+                    doc.RootElement.TryGetProperty("emailSent", out var emailSentProp)
+                    && emailSentProp.ValueKind == JsonValueKind.True
+                )
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+                // Ignore malformed JSON for lightweight polling endpoint.
+            }
+
+            return false;
         }
 
         private async Task<bool> UserCanAccessJobAsync(int jobId, string userId)

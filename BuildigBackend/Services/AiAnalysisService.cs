@@ -6670,7 +6670,7 @@ Anchors:
                 var jsonValue = JsonSerializer.Serialize(data);
                 var path = dataType.All(c => char.IsLetterOrDigit(c) || c == '_')
                     ? $"$.{dataType}"
-                    : $"$[\"{dataType}\"]";
+                    : $"$.\"{dataType.Replace("\"", "\\\"")}\"";
 
                 await _context.Database.ExecuteSqlInterpolatedAsync(
                     $@"
