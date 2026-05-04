@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using Elastic.Apm.NetCoreAll;
 using Hangfire;
 using Hangfire.Dashboard.BasicAuthorization;
@@ -252,6 +252,8 @@ builder.Services.AddSingleton<AzureBlobService>();
 builder.Services.AddSingleton<IProgressService, ProgressService>();
 builder.Services.AddScoped<EmailAutomationManager>();
 builder.Services.AddScoped<PaymentService>();
+builder.Services.AddScoped<PromotionalCampaignService>();
+builder.Services.AddScoped<ReferralService>();
 builder.Services.AddScoped<SubscriptionService>();
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<

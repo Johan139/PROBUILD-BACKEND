@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using BuildigBackend.Interface;
@@ -19,18 +19,24 @@ namespace BuildigBackend.Controllers
         private readonly ApplicationDbContext _context;
         private readonly PaymentService _paymentService;
         private readonly IEmailSender _emailSender;
+        private readonly PromotionalCampaignService _promotionalCampaignService;
+        private readonly ReferralService _referralService;
 
         public StripeController(
             IConfiguration configuration,
             ApplicationDbContext context,
             PaymentService paymentService,
-            IEmailSender emailSender
+            IEmailSender emailSender,
+            PromotionalCampaignService promotionalCampaignService,
+            ReferralService referralService
         )
         {
             _context = context;
             _configuration = configuration;
             _paymentService = paymentService;
             _emailSender = emailSender;
+            _promotionalCampaignService = promotionalCampaignService;
+            _referralService = referralService;
         }
 
         [HttpPost("create-checkout-session")]
@@ -71,6 +77,63 @@ namespace BuildigBackend.Controllers
             {
                 stripePriceId = stripeModel.StripeProductIdAnually;
             }
+            PromotionalCampaignLink? promoLink = null;
+            ReferralLink? referralLink = null;
+            if (!string.IsNullOrWhiteSpace(request.PromotionalLinkCode))
+            {
+                promoLink = await _promotionalCampaignService.TryResolveActiveLinkAsync(
+                    request.PromotionalLinkCode
+                );
+                if (promoLink == null)
+                {
+                    return BadRequest("Invalid or expired promotional link.");
+                }
+
+                if (
+                    !string.IsNullOrWhiteSpace(promoLink.AllowedPackageName)
+                    && !string.Equals(
+                        promoLink.AllowedPackageName,
+                        request.PackageName,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    return BadRequest("This promotional link only applies to a specific plan.");
+                }
+
+                if (
+                    !string.IsNullOrWhiteSpace(promoLink.AllowedBillingCycle)
+                    && !string.Equals(
+                        promoLink.AllowedBillingCycle,
+                        request.BillingCycle,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    return BadRequest(
+                        "This promotional link only applies to a specific billing cycle."
+                    );
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(request.ReferralCode))
+            {
+                referralLink = await _referralService.ResolveActiveLinkAsync(request.ReferralCode);
+                if (referralLink == null)
+                {
+                    return BadRequest("Invalid referral link.");
+                }
+                if (
+                    string.Equals(
+                        referralLink.ReferrerUserId,
+                        request.UserId,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    return BadRequest("You cannot use your own referral link.");
+                }
+            }
+
             var metadata = new Dictionary<string, string>
             {
                 { "userId", request.UserId },
@@ -82,6 +145,28 @@ namespace BuildigBackend.Controllers
             {
                 metadata["assignedUser"] = teamMemberUserId;
             }
+
+            if (promoLink != null)
+            {
+                metadata["promotionalLinkId"] = promoLink.Id.ToString();
+                metadata["promotionalCampaignKind"] = promoLink.CampaignKind.ToString();
+                metadata["promotionalMonth1Percent"] = promoLink.Month1DiscountPercent.ToString();
+                if (promoLink.Month2DiscountPercent.HasValue)
+                {
+                    metadata["promotionalMonth2Percent"] =
+                        promoLink.Month2DiscountPercent.Value.ToString();
+                }
+                if (!string.IsNullOrWhiteSpace(promoLink.RepLabel))
+                {
+                    metadata["promotionalRepLabel"] = promoLink.RepLabel!;
+                }
+            }
+            if (referralLink != null)
+            {
+                metadata["referralLinkId"] = referralLink.Id.ToString();
+                metadata["referrerUserId"] = referralLink.ReferrerUserId;
+            }
+
             var customerId = await GetOrCreateCustomerAsync(request.UserId);
             var options = new SessionCreateOptions
             {
@@ -108,6 +193,34 @@ namespace BuildigBackend.Controllers
                 AutomaticTax = new SessionAutomaticTaxOptions { Enabled = false },
             };
 
+            if (promoLink != null && string.IsNullOrWhiteSpace(promoLink.StripeCouponId))
+            {
+                promoLink.StripeCouponId = await EnsurePromotionalStripeCouponAsync(promoLink);
+                await _context.SaveChangesAsync();
+            }
+
+            if (!string.IsNullOrWhiteSpace(promoLink?.StripeCouponId))
+            {
+                options.Discounts = new List<SessionDiscountOptions>
+                {
+                    new SessionDiscountOptions { Coupon = promoLink!.StripeCouponId },
+                };
+            }
+            else if (referralLink != null)
+            {
+                if (string.IsNullOrWhiteSpace(referralLink.StripeCouponId))
+                {
+                    referralLink.StripeCouponId = await _referralService.EnsureReferralCouponAsync(
+                        referralLink,
+                        15
+                    );
+                }
+                options.Discounts = new List<SessionDiscountOptions>
+                {
+                    new SessionDiscountOptions { Coupon = referralLink.StripeCouponId },
+                };
+            }
+
             try
             {
                 var service = new SessionService();
@@ -132,6 +245,111 @@ namespace BuildigBackend.Controllers
             return Stripeproduct != null
                 ? Stripeproduct
                 : throw new Exception($"No Price ID found for package: {packageName}");
+        }
+
+        private async Task<string> EnsurePromotionalStripeCouponAsync(PromotionalCampaignLink promoLink)
+        {
+            var couponService = new CouponService();
+
+            if (promoLink.Month1DiscountPercent <= 0)
+            {
+                throw new InvalidOperationException("Promotional link has no valid month 1 discount.");
+            }
+
+            var hasSecondMonthDiscount = promoLink.Month2DiscountPercent.HasValue
+                && promoLink.Month2DiscountPercent.Value > 0;
+            var isSameDiscountForFirstTwoMonths = hasSecondMonthDiscount
+                && promoLink.Month2DiscountPercent == promoLink.Month1DiscountPercent;
+
+            var createOptions = new CouponCreateOptions
+            {
+                PercentOff = promoLink.Month1DiscountPercent,
+                Duration = isSameDiscountForFirstTwoMonths ? "repeating" : "once",
+                DurationInMonths = isSameDiscountForFirstTwoMonths ? 2 : null,
+                Name = $"Promo {promoLink.Code}",
+                Metadata = new Dictionary<string, string>
+                {
+                    { "promotionalLinkId", promoLink.Id.ToString() },
+                    { "promotionalCode", promoLink.Code },
+                    { "campaignKind", promoLink.CampaignKind.ToString() },
+                },
+            };
+
+            Coupon createdCoupon = await couponService.CreateAsync(createOptions);
+            return createdCoupon.Id;
+        }
+
+        private async Task TryApplySecondMonthDiscountAsync(
+            string subscriptionId,
+            PromotionalCampaignLink promoLink,
+            string? subscriptionUserId
+        )
+        {
+            try
+            {
+                var secondMonthPercent = promoLink.Month2DiscountPercent ?? 0;
+                if (secondMonthPercent <= 0)
+                    return;
+
+                var subscriptionService = new Stripe.SubscriptionService();
+                var subscription = await subscriptionService.GetAsync(subscriptionId);
+
+                var existingMetadata = new Dictionary<string, string>(
+                    subscription.Metadata ?? new Dictionary<string, string>()
+                );
+                if (
+                    existingMetadata.TryGetValue("promotionalSecondMonthCouponApplied", out var applied)
+                    && string.Equals(applied, "true", StringComparison.OrdinalIgnoreCase)
+                )
+                {
+                    return;
+                }
+
+                var couponService = new CouponService();
+                var month2Coupon = await couponService.CreateAsync(
+                    new CouponCreateOptions
+                    {
+                        PercentOff = secondMonthPercent,
+                        Duration = "once",
+                        Name =
+                            $"Promo {promoLink.Code} M2 {subscriptionId[..Math.Min(8, subscriptionId.Length)]}",
+                        Metadata = new Dictionary<string, string>
+                        {
+                            { "promotionalLinkId", promoLink.Id.ToString() },
+                            { "promotionalCode", promoLink.Code },
+                            { "campaignKind", promoLink.CampaignKind.ToString() },
+                            { "month", "2" },
+                        },
+                    }
+                );
+
+                existingMetadata["promotionalSecondMonthCouponApplied"] = "true";
+                existingMetadata["promotionalSecondMonthPercent"] = secondMonthPercent.ToString();
+                existingMetadata["promotionalSecondMonthCouponId"] = month2Coupon.Id;
+                existingMetadata["promotionalLinkId"] = promoLink.Id.ToString();
+                if (!string.IsNullOrWhiteSpace(subscriptionUserId))
+                {
+                    existingMetadata["userId"] = subscriptionUserId;
+                }
+
+                await subscriptionService.UpdateAsync(
+                    subscriptionId,
+                    new SubscriptionUpdateOptions
+                    {
+                        Discounts = new List<SubscriptionDiscountOptions>
+                        {
+                            new SubscriptionDiscountOptions { Coupon = month2Coupon.Id },
+                        },
+                        Metadata = existingMetadata,
+                    }
+                );
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(
+                    $"Failed to apply second month promotional discount for {subscriptionId}: {ex.Message}"
+                );
+            }
         }
 
         [HttpPost("webhook")]
@@ -239,6 +457,21 @@ namespace BuildigBackend.Controllers
                             chosenLine?.Metadata != null
                             && chosenLine.Metadata.TryGetValue("dbTrialRecordId", out var dbTrialId)
                                 ? dbTrialId
+                                : null;
+                        var promotionalLinkId =
+                            chosenLine?.Metadata != null
+                            && chosenLine.Metadata.TryGetValue("promotionalLinkId", out var promoId)
+                                ? promoId
+                                : null;
+                        var referralLinkId =
+                            chosenLine?.Metadata != null
+                            && chosenLine.Metadata.TryGetValue("referralLinkId", out var refId)
+                                ? refId
+                                : null;
+                        var referrerUserId =
+                            chosenLine?.Metadata != null
+                            && chosenLine.Metadata.TryGetValue("referrerUserId", out var refUser)
+                                ? refUser
                                 : null;
                         // After: var invoice = (JObject)root["data"]?["object"];
                         string invoiceNumber = invoices.Number; // fallback to "in_..." if null
@@ -353,6 +586,56 @@ namespace BuildigBackend.Controllers
                             {
                                 Console.WriteLine(
                                     "Failed to send ProWelcomeSetup email: " + ex.Message
+                                );
+                            }
+
+                            if (int.TryParse(promotionalLinkId, out var promoLinkIdInt))
+                            {
+                                var promoLink = await _context.PromotionalCampaignLinks.FirstOrDefaultAsync(
+                                    x => x.Id == promoLinkIdInt
+                                );
+                                if (promoLink != null)
+                                {
+                                    promoLink.CurrentRedemptionCount += 1;
+                                    await _context.SaveChangesAsync();
+
+                                    await _promotionalCampaignService.TrackEventByCodeAsync(
+                                        promoLink.Code,
+                                        "converted",
+                                        email: null,
+                                        userId: subscriptionUserId,
+                                        stripeSubscriptionId: subscriptionId,
+                                        revenueAmount: subscriptionAmount,
+                                        currency: invoices.Currency
+                                    );
+
+                                    if (
+                                        promoLink.Month2DiscountPercent.HasValue
+                                        && promoLink.Month2DiscountPercent.Value > 0
+                                        && promoLink.Month2DiscountPercent.Value
+                                            != promoLink.Month1DiscountPercent
+                                        && !string.IsNullOrWhiteSpace(subscriptionId)
+                                    )
+                                    {
+                                        await TryApplySecondMonthDiscountAsync(
+                                            subscriptionId,
+                                            promoLink,
+                                            subscriptionUserId
+                                        );
+                                    }
+                                }
+                            }
+
+                            if (
+                                int.TryParse(referralLinkId, out var referralLinkIdInt)
+                                && !string.IsNullOrWhiteSpace(referrerUserId)
+                            )
+                            {
+                                await _referralService.RecordConversionAsync(
+                                    referralLinkIdInt,
+                                    referrerUserId,
+                                    subscriptionUserId,
+                                    subscriptionId
                                 );
                             }
                         }

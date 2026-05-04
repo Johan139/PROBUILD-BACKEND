@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using BuildigBackend.Models;
 
@@ -67,6 +67,11 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
     public DbSet<BidAnalysis> BidAnalyses { get; set; }
     public DbSet<Invitation> Invitations { get; set; }
     public DbSet<CompaniesModel> Companies { get; set; }
+
+    public DbSet<PromotionalCampaignLink> PromotionalCampaignLinks { get; set; }
+    public DbSet<PromotionalCampaignEvent> PromotionalCampaignEvents { get; set; }
+    public DbSet<ReferralLink> ReferralLinks { get; set; }
+    public DbSet<ReferralConversion> ReferralConversions { get; set; }
 
     public DbSet<UserNotificationPreference> UserNotificationPreferences { get; set; }
     public DbSet<CompanyAddressModel> CompanyAddresses { get; set; }
@@ -534,6 +539,48 @@ public class ApplicationDbContext : DbContext, IDataProtectionKeyContext
         modelBuilder.Entity<JobAnalysisState>(entity =>
         {
             entity.HasIndex(e => e.JobId);
+        });
+
+        modelBuilder.Entity<PromotionalCampaignLink>(entity =>
+        {
+            entity.HasIndex(e => e.Code).IsUnique();
+            entity.HasIndex(e => e.PublicCode).IsUnique();
+            entity.Property(e => e.Code).HasMaxLength(64);
+            entity.Property(e => e.PublicCode).HasMaxLength(64);
+            entity.Property(e => e.RepLabel).HasMaxLength(128);
+            entity.Property(e => e.RepUserId).HasMaxLength(128);
+            entity.Property(e => e.StripeCouponId).HasMaxLength(128);
+            entity.Property(e => e.AllowedPackageName).HasMaxLength(128);
+            entity.Property(e => e.AllowedBillingCycle).HasMaxLength(16);
+        });
+
+        modelBuilder.Entity<PromotionalCampaignEvent>(entity =>
+        {
+            entity.HasIndex(e => new { e.PromotionalCampaignLinkId, e.CreatedAtUtc });
+            entity.HasIndex(e => e.EventType);
+            entity.Property(e => e.EventType).HasMaxLength(64);
+            entity.Property(e => e.Email).HasMaxLength(256);
+            entity.Property(e => e.UserId).HasMaxLength(128);
+            entity.Property(e => e.StripeSubscriptionId).HasMaxLength(128);
+            entity.Property(e => e.Currency).HasMaxLength(16);
+            entity.Property(e => e.RevenueAmount).HasColumnType("decimal(18,2)");
+        });
+
+        modelBuilder.Entity<ReferralLink>(entity =>
+        {
+            entity.HasIndex(e => e.Code).IsUnique();
+            entity.Property(e => e.Code).HasMaxLength(64);
+            entity.Property(e => e.ReferrerUserId).HasMaxLength(128);
+            entity.Property(e => e.StripeCouponId).HasMaxLength(128);
+        });
+
+        modelBuilder.Entity<ReferralConversion>(entity =>
+        {
+            entity.HasIndex(e => new { e.ReferralLinkId, e.ReferredUserId });
+            entity.HasIndex(e => e.StripeSubscriptionId);
+            entity.Property(e => e.ReferrerUserId).HasMaxLength(128);
+            entity.Property(e => e.ReferredUserId).HasMaxLength(128);
+            entity.Property(e => e.StripeSubscriptionId).HasMaxLength(128);
         });
 
         base.OnModelCreating(modelBuilder);
