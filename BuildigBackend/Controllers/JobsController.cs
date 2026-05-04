@@ -88,6 +88,22 @@ namespace BuildigBackend.Controllers
             return HttpContext?.TraceIdentifier ?? Guid.NewGuid().ToString("N");
         }
 
+        private static bool IsAcceptableConstructionDesiredStartDate(DateTime desiredStartDate)
+        {
+            var date = desiredStartDate.Date;
+            if (date == default)
+            {
+                return false;
+            }
+
+            if (date == new DateTime(2001, 1, 1))
+            {
+                return false;
+            }
+
+            return date >= DateTime.UtcNow.Date;
+        }
+
         [HttpGet("{jobId}/analysis-state")]
         public async Task<ActionResult<JobAnalysisState>> GetAnalysisState(
             int jobId,
@@ -1783,6 +1799,18 @@ namespace BuildigBackend.Controllers
             if (existingJob == null)
             {
                 return NotFound($"Job with ID {id} not found.");
+            }
+
+            var incomingDesiredStart = jobDto.DesiredStartDate.Date;
+            var existingDesiredStart = existingJob.DesiredStartDate.Date;
+            if (incomingDesiredStart != existingDesiredStart)
+            {
+                if (!IsAcceptableConstructionDesiredStartDate(jobDto.DesiredStartDate))
+                {
+                    return BadRequest(
+                        "DesiredStartDate must be today or a future date. Legacy placeholder dates (for example January 1, 2001) cannot be saved."
+                    );
+                }
             }
 
             existingJob.ProjectName = jobDto.ProjectName;
